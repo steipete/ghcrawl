@@ -9,7 +9,7 @@ function makeTestService(github: GitcrawlService['github']): GitcrawlService {
       workspaceRoot: process.cwd(),
       dbPath: ':memory:',
       apiPort: 5179,
-      summaryModel: 'gpt-4.1-mini',
+      summaryModel: 'gpt-5-mini',
       embedModel: 'text-embedding-3-small',
       openSearchIndex: 'gitcrawl-threads',
       githubToken: 'test-token',

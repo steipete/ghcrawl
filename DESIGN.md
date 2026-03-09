@@ -137,7 +137,7 @@ Environment variables:
 - `OPENAI_API_KEY`
 - `GITCRAWL_DB_PATH` with default `data/gitcrawl.db`
 - `GITCRAWL_API_PORT` with default `5179`
-- `GITCRAWL_SUMMARY_MODEL` with default `gpt-4.1-mini`
+- `GITCRAWL_SUMMARY_MODEL` with default `gpt-5-mini`
 - `GITCRAWL_EMBED_MODEL` with default `text-embedding-3-small`
 - `GITCRAWL_OPENSEARCH_URL` optional
 - `GITCRAWL_OPENSEARCH_INDEX` optional
@@ -279,7 +279,7 @@ Use OpenAI for two distinct jobs:
 
 Default models:
 
-- summarization: `gpt-4.1-mini`
+- summarization: `gpt-5-mini`
 - embeddings: `text-embedding-3-small`
 
 Relevant official constraints to design around:

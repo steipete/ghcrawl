@@ -14,7 +14,7 @@ test('loadConfig applies defaults', () => {
   });
 
   assert.equal(config.apiPort, 6123);
-  assert.equal(config.summaryModel, 'gpt-4.1-mini');
+  assert.equal(config.summaryModel, 'gpt-5-mini');
   assert.match(config.dbPath, /data\/test\.db$/);
 });
 

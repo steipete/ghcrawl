@@ -9,6 +9,7 @@ This is the quickest way to run `gitcrawl` locally against `openclaw/openclaw`.
 - `.env.local` present in the repo root with:
   - `GITHUB_TOKEN`
   - `OPENAI_API_KEY`
+  - optional `GITCRAWL_SUMMARY_MODEL=gpt-5-mini`
 
 ## Install
 

@@ -47,7 +47,7 @@ export function loadConfig(options: { cwd?: string; env?: NodeJS.ProcessEnv } = 
     apiPort,
     githubToken: env.GITHUB_TOKEN,
     openaiApiKey: env.OPENAI_API_KEY,
-    summaryModel: env.GITCRAWL_SUMMARY_MODEL ?? 'gpt-4.1-mini',
+    summaryModel: env.GITCRAWL_SUMMARY_MODEL ?? 'gpt-5-mini',
     embedModel: env.GITCRAWL_EMBED_MODEL ?? 'text-embedding-3-small',
     openSearchUrl: env.GITCRAWL_OPENSEARCH_URL,
     openSearchIndex: env.GITCRAWL_OPENSEARCH_INDEX ?? 'gitcrawl-threads',
