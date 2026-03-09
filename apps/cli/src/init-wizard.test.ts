@@ -100,6 +100,7 @@ test('runInitWizard can configure 1Password CLI metadata without persisting plai
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'gitcrawl-init-test-'));
   const env = { ...process.env, HOME: home };
   const notes: Array<{ title?: string; message: string }> = [];
+  const confirms: string[] = [];
 
   const result = await runInitWizard({
     env,
@@ -108,6 +109,10 @@ test('runInitWizard can configure 1Password CLI metadata without persisting plai
       text: async ({ message }) => (message.includes('vault') ? 'Private' : 'gitcrawl'),
       note: async (message, title) => {
         notes.push({ title, message });
+      },
+      confirm: async ({ message }) => {
+        confirms.push(message);
+        return true;
       },
     }),
     isInteractive: true,
@@ -120,5 +125,10 @@ test('runInitWizard can configure 1Password CLI metadata without persisting plai
   assert.equal(persisted.data.opItemName, 'gitcrawl');
   assert.equal(persisted.data.githubToken, undefined);
   assert.equal(persisted.data.openaiApiKey, undefined);
-  assert.equal(notes.some((entry) => entry.title === '1Password CLI' && entry.message.includes('gitcrawl-op()')), true);
+  assert.equal(
+    notes.some((entry) => entry.title === '1Password Setup' && entry.message.includes('op://Private/gitcrawl/GITHUB_TOKEN')),
+    true,
+  );
+  assert.equal(notes.some((entry) => entry.title === 'Next Commands' && entry.message.includes('pnpm op:doctor')), true);
+  assert.equal(confirms.some((message) => message.includes('I created the Secure Note')), true);
 });

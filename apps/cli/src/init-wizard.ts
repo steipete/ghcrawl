@@ -231,22 +231,42 @@ export async function runInitWizard(
     const opReferenceBase = `op://${nextConfig.opVaultName}/${nextConfig.opItemName}`;
     await prompter.note(
       [
-        'Create a Secure Note in 1Password with concealed fields named exactly:',
+        'Create a 1Password Secure Note with:',
+        `- Vault: ${nextConfig.opVaultName}`,
+        `- Item: ${nextConfig.opItemName}`,
+        '',
+        'Add concealed fields named exactly:',
         '- GITHUB_TOKEN',
         '- OPENAI_API_KEY',
         '',
-        'Example ~/.zshrc helper:',
-        'gitcrawl-op() {',
-        `  env GITHUB_TOKEN=\"$(op read '${opReferenceBase}/GITHUB_TOKEN')\" \\`,
-        `      OPENAI_API_KEY=\"$(op read '${opReferenceBase}/OPENAI_API_KEY')\" \\`,
-        '      gitcrawl \"$@\"',
-        '}',
-        '',
-        'Copy/paste example to get started right now:',
-        `env GITHUB_TOKEN=\"$(op read '${opReferenceBase}/GITHUB_TOKEN')\" OPENAI_API_KEY=\"$(op read '${opReferenceBase}/OPENAI_API_KEY')\" pnpm --filter @gitcrawl/cli cli doctor`,
+        'Secret refs:',
+        `- ${opReferenceBase}/GITHUB_TOKEN`,
+        `- ${opReferenceBase}/OPENAI_API_KEY`,
       ].join('\n'),
-      '1Password CLI',
+      '1Password Setup',
     );
+    await prompter.note(
+      [
+        'After saving that Secure Note, run:',
+        '- pnpm op:doctor',
+        '- pnpm op:tui',
+        '- pnpm op:shell',
+        '',
+        'Optional ~/.zshrc helper:',
+        'gitcrawl-op() {',
+        '  pnpm op:exec -- "$@"',
+        '}',
+      ].join('\n'),
+      'Next Commands',
+    );
+    const ready = await prompter.confirm({
+      message: 'I created the Secure Note and I am ready to save this gitcrawl config.',
+      initialValue: true,
+    });
+    if (isCancel(ready) || ready !== true) {
+      prompter.cancel('init cancelled');
+      throw new Error('init cancelled');
+    }
   }
 
   const result = writePersistedConfig(nextConfig, { cwd, env });
