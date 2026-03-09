@@ -401,6 +401,7 @@ function renderDetailPane(
   return [
     `{bold}${thread.kind} #${thread.number}{/bold}  ${thread.title}`,
     '',
+    `{bold}Author:{/bold} ${thread.authorLogin ?? 'unknown'}`,
     `{bold}Updated:{/bold} ${thread.updatedAtGh ?? 'unknown'}`,
     `{bold}Labels:{/bold} ${labels}`,
     `{bold}URL:{/bold} ${thread.htmlUrl}`,
