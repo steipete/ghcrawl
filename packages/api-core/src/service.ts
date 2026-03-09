@@ -81,6 +81,10 @@ type StoredEmbeddingRow = ThreadRow & {
   embedding_json: string;
 };
 
+type ParsedStoredEmbeddingRow = Omit<StoredEmbeddingRow, 'embedding_json'> & {
+  embedding: number[];
+};
+
 export type TuiClusterSortMode = 'recent' | 'size';
 
 export type TuiRepoStats = {
@@ -261,6 +265,7 @@ export class GitcrawlService {
   readonly db: SqliteDatabase;
   readonly github: GitHubClient;
   readonly ai?: AiProvider;
+  private readonly parsedEmbeddingCache = new Map<number, ParsedStoredEmbeddingRow[]>();
 
   constructor(options: {
     config?: GitcrawlConfig;
@@ -277,6 +282,7 @@ export class GitcrawlService {
   }
 
   close(): void {
+    this.parsedEmbeddingCache.clear();
     this.db.close();
   }
 
@@ -667,7 +673,7 @@ export class GitcrawlService {
     const k = params.k ?? 6;
 
     try {
-      const rows = this.loadStoredEmbeddings(repository.id);
+      const rows = this.loadParsedStoredEmbeddings(repository.id);
       const threadMeta = new Map<number, { number: number; title: string }>();
       for (const row of rows) {
         threadMeta.set(row.id, { number: row.number, title: row.title });
@@ -781,9 +787,9 @@ export class GitcrawlService {
 
     if (mode !== 'keyword' && this.ai) {
       const [queryEmbedding] = await this.ai.embedTexts({ model: this.config.embedModel, texts: [params.query] });
-      const rows = this.loadStoredEmbeddings(repository.id);
+      const rows = this.loadParsedStoredEmbeddings(repository.id);
       for (const row of rows) {
-        const score = cosineSimilarity(queryEmbedding, JSON.parse(row.embedding_json) as number[]);
+        const score = cosineSimilarity(queryEmbedding, row.embedding);
         if (score < 0.2) continue;
         semanticScores.set(row.id, Math.max(semanticScores.get(row.id) ?? -1, score));
       }
@@ -881,7 +887,7 @@ export class GitcrawlService {
     const limit = params.limit ?? 10;
     const minScore = params.minScore ?? 0.2;
 
-    const rows = this.loadStoredEmbeddings(repository.id);
+    const rows = this.loadParsedStoredEmbeddings(repository.id);
     const targetRows = rows.filter((row) => row.number === params.threadNumber);
     if (targetRows.length === 0) {
       throw new Error(
@@ -891,7 +897,7 @@ export class GitcrawlService {
     const targetRow = targetRows[0];
     const targetBySource = new Map<EmbeddingSourceKind, number[]>();
     for (const row of targetRows) {
-      targetBySource.set(row.source_kind, JSON.parse(row.embedding_json) as number[]);
+      targetBySource.set(row.source_kind, row.embedding);
     }
 
     const aggregated = new Map<number, { number: number; kind: 'issue' | 'pull_request'; title: string; score: number }>();
@@ -899,7 +905,7 @@ export class GitcrawlService {
       if (row.id === targetRow.id) continue;
       const targetEmbedding = targetBySource.get(row.source_kind);
       if (!targetEmbedding) continue;
-      const score = cosineSimilarity(targetEmbedding, JSON.parse(row.embedding_json) as number[]);
+      const score = cosineSimilarity(targetEmbedding, row.embedding);
       if (score < minScore) continue;
       const previous = aggregated.get(row.id);
       if (!previous || score > previous.score) {
@@ -1076,6 +1082,7 @@ export class GitcrawlService {
     repo: string;
     threadId?: number;
     threadNumber?: number;
+    includeNeighbors?: boolean;
   }): TuiThreadDetail {
     const repository = this.requireRepository(params.owner, params.repo);
     const row = params.threadId
@@ -1126,16 +1133,18 @@ export class GitcrawlService {
     }
 
     let neighbors: SearchHitDto['neighbors'] = [];
-    try {
-      neighbors = this.listNeighbors({
-        owner: params.owner,
-        repo: params.repo,
-        threadNumber: row.number,
-        limit: 8,
-        minScore: 0.2,
-      }).neighbors;
-    } catch {
-      neighbors = [];
+    if (params.includeNeighbors !== false) {
+      try {
+        neighbors = this.listNeighbors({
+          owner: params.owner,
+          repo: params.repo,
+          threadNumber: row.number,
+          limit: 8,
+          minScore: 0.2,
+        }).neighbors;
+      } catch {
+        neighbors = [];
+      }
     }
 
     return {
@@ -1814,6 +1823,20 @@ export class GitcrawlService {
       .all(repoId, this.config.embedModel) as StoredEmbeddingRow[];
   }
 
+  private loadParsedStoredEmbeddings(repoId: number): ParsedStoredEmbeddingRow[] {
+    const cached = this.parsedEmbeddingCache.get(repoId);
+    if (cached) {
+      return cached;
+    }
+
+    const parsed = this.loadStoredEmbeddings(repoId).map((row) => ({
+      ...row,
+      embedding: JSON.parse(row.embedding_json) as number[],
+    }));
+    this.parsedEmbeddingCache.set(repoId, parsed);
+    return parsed;
+  }
+
   private loadCombinedSummaryTextMap(repoId: number, threadNumber?: number): Map<number, string> {
     let sql =
       `select s.thread_id, s.summary_kind, s.summary_text
@@ -1862,13 +1885,13 @@ export class GitcrawlService {
   }
 
   private aggregateRepositoryEdges(
-    rows: StoredEmbeddingRow[],
+    rows: ParsedStoredEmbeddingRow[],
     params: { limit: number; minScore: number },
   ): Map<string, { leftThreadId: number; rightThreadId: number; score: number; sourceKinds: Set<EmbeddingSourceKind> }> {
     const bySource = new Map<EmbeddingSourceKind, Array<{ id: number; embedding: number[] }>>();
     for (const row of rows) {
       const list = bySource.get(row.source_kind) ?? [];
-      list.push({ id: row.id, embedding: JSON.parse(row.embedding_json) as number[] });
+      list.push({ id: row.id, embedding: row.embedding });
       bySource.set(row.source_kind, list);
     }
 
@@ -1936,6 +1959,10 @@ export class GitcrawlService {
         nowIso(),
         nowIso(),
       );
+    const row = this.db.prepare('select repo_id from threads where id = ? limit 1').get(threadId) as { repo_id: number } | undefined;
+    if (row) {
+      this.parsedEmbeddingCache.delete(row.repo_id);
+    }
   }
 
   private startRun(table: RunTable, repoId: number, scope: string): number {

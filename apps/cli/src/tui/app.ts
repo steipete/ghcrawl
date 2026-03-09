@@ -39,6 +39,11 @@ type Widgets = {
   footer: blessed.Widgets.BoxElement;
 };
 
+type ThreadDetailCacheEntry = {
+  detail: TuiThreadDetail;
+  hasNeighbors: boolean;
+};
+
 export async function startTui(params: StartTuiParams): Promise<void> {
   const widgets = createWidgets(params.owner, params.repo);
 
@@ -54,10 +59,50 @@ export async function startTui(params: StartTuiParams): Promise<void> {
   let memberRows: MemberListRow[] = [];
   let memberIndex = -1;
   let status = 'Ready';
+  const clusterDetailCache = new Map<number, TuiClusterDetail>();
+  const threadDetailCache = new Map<number, ThreadDetailCacheEntry>();
+
+  const clearCaches = (): void => {
+    clusterDetailCache.clear();
+    threadDetailCache.clear();
+  };
+
+  const loadClusterDetail = (clusterId: number): TuiClusterDetail => {
+    const cached = clusterDetailCache.get(clusterId);
+    if (cached) return cached;
+    const detail = params.service.getTuiClusterDetail({
+      owner: params.owner,
+      repo: params.repo,
+      clusterId,
+    });
+    clusterDetailCache.set(clusterId, detail);
+    return detail;
+  };
+
+  const loadThreadDetail = (threadId: number, includeNeighbors: boolean): TuiThreadDetail => {
+    const cached = threadDetailCache.get(threadId);
+    if (cached && (cached.hasNeighbors || !includeNeighbors)) {
+      return cached.detail;
+    }
+
+    const detail = params.service.getTuiThreadDetail({
+      owner: params.owner,
+      repo: params.repo,
+      threadId,
+      includeNeighbors,
+    });
+    threadDetailCache.set(threadId, { detail, hasNeighbors: includeNeighbors });
+    return detail;
+  };
+
+  const loadSelectedThreadDetail = (includeNeighbors: boolean): void => {
+    threadDetail = selectedMemberThreadId !== null ? loadThreadDetail(selectedMemberThreadId, includeNeighbors) : null;
+  };
 
   const refreshAll = (preserveSelection: boolean): void => {
     const previousClusterId = preserveSelection ? selectedClusterId : null;
     const previousMemberId = preserveSelection ? selectedMemberThreadId : null;
+    clearCaches();
     snapshot = params.service.getTuiSnapshot({
       owner: params.owner,
       repo: params.repo,
@@ -68,25 +113,14 @@ export async function startTui(params: StartTuiParams): Promise<void> {
     selectedClusterId = preserveSelectedId(snapshot.clusters.map((cluster) => cluster.clusterId), previousClusterId);
 
     if (selectedClusterId !== null) {
-      clusterDetail = params.service.getTuiClusterDetail({
-        owner: params.owner,
-        repo: params.repo,
-        clusterId: selectedClusterId,
-      });
+      clusterDetail = loadClusterDetail(selectedClusterId);
       memberRows = buildMemberRows(clusterDetail);
       selectedMemberThreadId = preserveSelectedId(
         memberRows.filter((row) => row.selectable).map((row) => row.threadId),
         previousMemberId,
       );
       memberIndex = findSelectableIndex(memberRows, selectedMemberThreadId);
-      threadDetail =
-        selectedMemberThreadId !== null
-          ? params.service.getTuiThreadDetail({
-              owner: params.owner,
-              repo: params.repo,
-              threadId: selectedMemberThreadId,
-            })
-          : null;
+      loadSelectedThreadDetail(false);
     } else {
       clusterDetail = null;
       memberRows = [];
@@ -101,6 +135,9 @@ export async function startTui(params: StartTuiParams): Promise<void> {
 
   const updateFocus = (nextFocus: TuiFocusPane): void => {
     focusPane = nextFocus;
+    if (focusPane === 'detail' && selectedMemberThreadId !== null) {
+      loadSelectedThreadDetail(true);
+    }
     if (focusPane === 'clusters') widgets.clusters.focus();
     if (focusPane === 'members') widgets.members.focus();
     if (focusPane === 'detail') widgets.detail.focus();
@@ -137,7 +174,7 @@ export async function startTui(params: StartTuiParams): Promise<void> {
       widgets.members.select(memberIndex);
     }
 
-    widgets.detail.setContent(renderDetailPane(threadDetail, clusterDetail));
+    widgets.detail.setContent(renderDetailPane(threadDetail, clusterDetail, focusPane));
     updatePaneStyles(widgets, focusPane);
     widgets.footer.setContent(
       `${status}  |  Tab focus  j/k move  Enter drill  s sort  f min  / filter  r refresh  o open  q quit`,
@@ -156,25 +193,14 @@ export async function startTui(params: StartTuiParams): Promise<void> {
       const nextIndex = (currentIndex + delta + snapshot.clusters.length) % snapshot.clusters.length;
       selectedClusterId = snapshot.clusters[nextIndex]?.clusterId ?? null;
       if (selectedClusterId !== null) {
-        clusterDetail = params.service.getTuiClusterDetail({
-          owner: params.owner,
-          repo: params.repo,
-          clusterId: selectedClusterId,
-        });
+        clusterDetail = loadClusterDetail(selectedClusterId);
         memberRows = buildMemberRows(clusterDetail);
         selectedMemberThreadId = preserveSelectedId(
           memberRows.filter((row) => row.selectable).map((row) => row.threadId),
           null,
         );
         memberIndex = findSelectableIndex(memberRows, selectedMemberThreadId);
-        threadDetail =
-          selectedMemberThreadId !== null
-            ? params.service.getTuiThreadDetail({
-                owner: params.owner,
-                repo: params.repo,
-                threadId: selectedMemberThreadId,
-              })
-            : null;
+        loadSelectedThreadDetail(false);
       }
       status = `Cluster ${nextIndex + 1}/${snapshot.clusters.length}`;
       render();
@@ -185,14 +211,7 @@ export async function startTui(params: StartTuiParams): Promise<void> {
       if (memberRows.length === 0) return;
       memberIndex = moveSelectableIndex(memberRows, memberIndex < 0 ? 0 : memberIndex, delta);
       selectedMemberThreadId = selectedThreadIdFromRow(memberRows, memberIndex);
-      threadDetail =
-        selectedMemberThreadId !== null
-          ? params.service.getTuiThreadDetail({
-              owner: params.owner,
-              repo: params.repo,
-              threadId: selectedMemberThreadId,
-            })
-          : null;
+      loadSelectedThreadDetail(false);
       status = selectedMemberThreadId !== null ? `Selected #${threadDetail?.thread.number ?? '?'}` : 'No selectable member';
       render();
     }
@@ -244,8 +263,15 @@ export async function startTui(params: StartTuiParams): Promise<void> {
   widgets.screen.key(['j', 'down'], () => moveSelection(1));
   widgets.screen.key(['k', 'up'], () => moveSelection(-1));
   widgets.screen.key(['enter'], () => {
-    if (focusPane === 'clusters') updateFocus('members');
-    else if (focusPane === 'members') updateFocus('detail');
+    if (focusPane === 'clusters') {
+      updateFocus('members');
+      return;
+    }
+    if (focusPane === 'members') {
+      loadSelectedThreadDetail(true);
+      status = selectedMemberThreadId !== null ? `Loaded neighbors for #${threadDetail?.thread.number ?? '?'}` : status;
+      updateFocus('detail');
+    }
   });
   widgets.screen.key(['s'], () => {
     sortMode = cycleSortMode(sortMode);
@@ -347,7 +373,11 @@ function updatePaneStyles(widgets: Widgets, focus: TuiFocusPane): void {
   widgets.detail.style.border = { fg: focus === 'detail' ? 'white' : '#fde74c' };
 }
 
-function renderDetailPane(threadDetail: TuiThreadDetail | null, clusterDetail: TuiClusterDetail | null): string {
+function renderDetailPane(
+  threadDetail: TuiThreadDetail | null,
+  clusterDetail: TuiClusterDetail | null,
+  focusPane: TuiFocusPane,
+): string {
   if (!clusterDetail) {
     return 'No cluster selected.\n\nRun `gitcrawl cluster owner/repo` if you have not clustered this repository yet.';
   }
@@ -365,7 +395,9 @@ function renderDetailPane(threadDetail: TuiThreadDetail | null, clusterDetail: T
       ? threadDetail.neighbors
           .map((neighbor) => `#${neighbor.number} ${neighbor.kind} ${(neighbor.score * 100).toFixed(1)}%  ${neighbor.title}`)
           .join('\n')
-      : 'No neighbors available.';
+      : focusPane === 'detail'
+        ? 'No neighbors available.'
+        : 'Neighbors load when the detail pane is focused.';
   return [
     `{bold}${thread.kind} #${thread.number}{/bold}  ${thread.title}`,
     '',

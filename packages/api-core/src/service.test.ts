@@ -1198,6 +1198,86 @@ test('tui cluster detail and thread detail expose members, summaries, and neighb
   }
 });
 
+test('getTuiThreadDetail can skip neighbor loading for fast browse paths', () => {
+  const service = makeTestService({
+    checkAuth: async () => undefined,
+    getRepo: async () => ({ id: 1, full_name: 'openclaw/openclaw' }),
+    listRepositoryIssues: async () => [],
+    getIssue: async () => {
+      throw new Error('not expected');
+    },
+    getPull: async () => {
+      throw new Error('not expected');
+    },
+    listIssueComments: async () => [],
+    listPullReviews: async () => [],
+    listPullReviewComments: async () => [],
+  });
+
+  try {
+    const now = '2026-03-09T00:00:00Z';
+    service.db
+      .prepare(
+        `insert into repositories (id, owner, name, full_name, github_repo_id, raw_json, updated_at)
+         values (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(1, 'openclaw', 'openclaw', 'openclaw/openclaw', '1', '{}', now);
+    service.db
+      .prepare(
+        `insert into threads (
+          id, repo_id, github_id, number, kind, state, title, body, author_login, author_type, html_url,
+          labels_json, assignees_json, raw_json, content_hash, is_draft, created_at_gh, updated_at_gh,
+          closed_at_gh, merged_at_gh, first_pulled_at, last_pulled_at, updated_at
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        10,
+        1,
+        '100',
+        42,
+        'issue',
+        'open',
+        'Fast browse thread',
+        'body',
+        'alice',
+        'User',
+        'https://github.com/openclaw/openclaw/issues/42',
+        '[]',
+        '[]',
+        '{}',
+        'hash-42',
+        0,
+        now,
+        now,
+        null,
+        null,
+        now,
+        now,
+        now,
+      );
+
+    const originalListNeighbors = service.listNeighbors.bind(service);
+    let neighborCalls = 0;
+    service.listNeighbors = ((...args: Parameters<typeof originalListNeighbors>) => {
+      neighborCalls += 1;
+      return originalListNeighbors(...args);
+    }) as typeof service.listNeighbors;
+
+    const detail = service.getTuiThreadDetail({
+      owner: 'openclaw',
+      repo: 'openclaw',
+      threadId: 10,
+      includeNeighbors: false,
+    });
+
+    assert.equal(detail.thread.number, 42);
+    assert.deepEqual(detail.neighbors, []);
+    assert.equal(neighborCalls, 0);
+  } finally {
+    service.close();
+  }
+});
+
 test('syncRepository reconciles stale open threads and marks confirmed closures without re-fetching comments', async () => {
   let listIssueCommentCalls = 0;
   let getIssueCalls = 0;
