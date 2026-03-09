@@ -1,5 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { existsSync, readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { formatLogLine, parseOwnerRepo, parseRepoFlags, resolveSinceValue, run } from './main.js';
 
@@ -76,4 +79,15 @@ test('resolveSinceValue rejects unsupported syntax', () => {
 
 test('formatLogLine prefixes ISO timestamps with millisecond resolution', () => {
   assert.equal(formatLogLine('[sync] hello', new Date('2026-03-09T12:34:56.789Z')), '[2026-03-09T12:34:56.789Z] [sync] hello');
+});
+
+test('published cli package exposes a gitcrawl bin shim', () => {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const packageJsonPath = path.resolve(here, '..', 'package.json');
+  const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8')) as { bin?: Record<string, string> };
+  const binPath = packageJson.bin?.gitcrawl;
+
+  assert.equal(typeof binPath, 'string');
+  assert.equal(binPath, './bin/gitcrawl.js');
+  assert.equal(existsSync(path.resolve(here, '..', binPath)), true);
 });

@@ -1440,3 +1440,99 @@ test('syncRepository skips stale-open reconciliation for filtered crawls', async
     service.close();
   }
 });
+
+test('repository-scoped reads and neighbors do not leak across repos in the same database', () => {
+  const service = makeTestService({
+    checkAuth: async () => undefined,
+    getRepo: async () => ({ id: 1, full_name: 'owner-one/repo-one' }),
+    listRepositoryIssues: async () => [],
+    getIssue: async () => {
+      throw new Error('not expected');
+    },
+    getPull: async () => {
+      throw new Error('not expected');
+    },
+    listIssueComments: async () => [],
+    listPullReviews: async () => [],
+    listPullReviewComments: async () => [],
+  });
+
+  try {
+    const now = '2026-03-09T00:00:00Z';
+    const insertRepo = service.db.prepare(
+      `insert into repositories (id, owner, name, full_name, github_repo_id, raw_json, updated_at)
+       values (?, ?, ?, ?, ?, ?, ?)`,
+    );
+    insertRepo.run(1, 'owner-one', 'repo-one', 'owner-one/repo-one', '1', '{}', now);
+    insertRepo.run(2, 'owner-two', 'repo-two', 'owner-two/repo-two', '2', '{}', now);
+
+    const insertThread = service.db.prepare(
+      `insert into threads (
+        id, repo_id, github_id, number, kind, state, title, body, author_login, author_type, html_url,
+        labels_json, assignees_json, raw_json, content_hash, is_draft, created_at_gh, updated_at_gh,
+        closed_at_gh, merged_at_gh, first_pulled_at, last_pulled_at, updated_at
+      ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    insertThread.run(10, 1, '100', 42, 'issue', 'open', 'Repo one issue', 'body', 'alice', 'User', 'https://github.com/owner-one/repo-one/issues/42', '[]', '[]', '{}', 'hash-10', 0, now, now, null, null, now, now, now);
+    insertThread.run(11, 1, '101', 43, 'pull_request', 'open', 'Repo one pr', 'body', 'bob', 'User', 'https://github.com/owner-one/repo-one/pull/43', '[]', '[]', '{}', 'hash-11', 0, now, now, null, null, now, now, now);
+    insertThread.run(20, 2, '200', 42, 'issue', 'open', 'Repo two issue', 'body', 'carol', 'User', 'https://github.com/owner-two/repo-two/issues/42', '[]', '[]', '{}', 'hash-20', 0, now, now, null, null, now, now, now);
+
+    service.db
+      .prepare(`insert into cluster_runs (id, repo_id, scope, status, started_at, finished_at) values (?, ?, ?, ?, ?, ?)`)
+      .run(1, 1, 'owner-one/repo-one', 'completed', now, now);
+    service.db
+      .prepare(`insert into cluster_runs (id, repo_id, scope, status, started_at, finished_at) values (?, ?, ?, ?, ?, ?)`)
+      .run(2, 2, 'owner-two/repo-two', 'completed', now, now);
+    service.db
+      .prepare(`insert into clusters (id, repo_id, cluster_run_id, representative_thread_id, member_count, created_at) values (?, ?, ?, ?, ?, ?)`)
+      .run(100, 1, 1, 10, 2, now);
+    service.db
+      .prepare(`insert into clusters (id, repo_id, cluster_run_id, representative_thread_id, member_count, created_at) values (?, ?, ?, ?, ?, ?)`)
+      .run(200, 2, 2, 20, 1, now);
+    service.db
+      .prepare(`insert into cluster_members (cluster_id, thread_id, score_to_representative, created_at) values (?, ?, ?, ?)`)
+      .run(100, 10, null, now);
+    service.db
+      .prepare(`insert into cluster_members (cluster_id, thread_id, score_to_representative, created_at) values (?, ?, ?, ?)`)
+      .run(100, 11, 0.91, now);
+    service.db
+      .prepare(`insert into cluster_members (cluster_id, thread_id, score_to_representative, created_at) values (?, ?, ?, ?)`)
+      .run(200, 20, null, now);
+
+    const insertEmbedding = service.db.prepare(
+      `insert into document_embeddings (thread_id, source_kind, model, dimensions, content_hash, embedding_json, created_at, updated_at)
+       values (?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    insertEmbedding.run(10, 'title', 'text-embedding-3-large', 2, 'hash-a', '[1,0]', now, now);
+    insertEmbedding.run(11, 'title', 'text-embedding-3-large', 2, 'hash-b', '[0.9,0.1]', now, now);
+    insertEmbedding.run(20, 'title', 'text-embedding-3-large', 2, 'hash-c', '[1,0]', now, now);
+
+    const repoOneThreads = service.listThreads({ owner: 'owner-one', repo: 'repo-one' });
+    assert.equal(repoOneThreads.threads.length, 2);
+    assert.deepEqual(
+      repoOneThreads.threads.map((thread) => thread.number),
+      [43, 42],
+    );
+
+    const repoOneSnapshot = service.getTuiSnapshot({ owner: 'owner-one', repo: 'repo-one', minSize: 0 });
+    assert.equal(repoOneSnapshot.repository.fullName, 'owner-one/repo-one');
+    assert.deepEqual(
+      repoOneSnapshot.clusters.map((cluster) => cluster.clusterId),
+      [100],
+    );
+
+    const repoOneNeighbors = service.listNeighbors({
+      owner: 'owner-one',
+      repo: 'repo-one',
+      threadNumber: 42,
+      limit: 5,
+      minScore: 0.1,
+    });
+    assert.deepEqual(
+      repoOneNeighbors.neighbors.map((neighbor) => neighbor.number),
+      [43],
+    );
+  } finally {
+    service.close();
+  }
+});

@@ -13,11 +13,34 @@ Current status:
 
 ```bash
 pnpm install
-pnpm --filter @gitcrawl/cli cli init
-pnpm --filter @gitcrawl/cli cli doctor
+pnpm setup
+pnpm doctor
 ```
 
 For a full first-run walkthrough against `openclaw/openclaw`, see [GETTING-STARTED.md](/Users/huntharo/github/gitcrawl/GETTING-STARTED.md).
+
+## Root Helpers
+
+The root package exposes pass-through helpers so you do not need to remember the workspace filter syntax:
+
+```bash
+pnpm tui openclaw/openclaw
+pnpm sync openclaw/openclaw --since 7d
+pnpm summarize openclaw/openclaw
+pnpm embed openclaw/openclaw
+pnpm cluster openclaw/openclaw
+pnpm search openclaw/openclaw --query "download stalls"
+pnpm serve
+```
+
+## Installed CLI
+
+The CLI package exposes a real `gitcrawl` bin entrypoint for installed use:
+
+```bash
+gitcrawl tui openclaw/openclaw
+gitcrawl sync openclaw/openclaw --since 7d
+```
 
 ## Typical flow
 

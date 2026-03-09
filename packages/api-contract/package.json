@@ -1,8 +1,33 @@
 {
   "name": "@gitcrawl/api-contract",
   "version": "0.1.0",
-  "private": true,
   "type": "module",
+  "description": "Gitcrawl shared transport contracts and validation schemas",
+  "author": "PwrDrvr LLC <harold@pwrdrvr.com>",
+  "license": "UNLICENSED",
+  "homepage": "https://github.com/pwrdrvr/gitcrawl",
+  "bugs": {
+    "url": "https://github.com/pwrdrvr/gitcrawl/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pwrdrvr/gitcrawl.git"
+  },
+  "keywords": [
+    "gitcrawl",
+    "api",
+    "contracts",
+    "zod"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "files": [
+    "src"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "exports": {
     ".": {
       "types": "./src/index.ts",

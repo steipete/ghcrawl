@@ -20,18 +20,26 @@ From [gitcrawl](/Users/huntharo/github/gitcrawl):
 pnpm install
 ```
 
+You can use the root helper scripts instead of the longer workspace filter form:
+
+```bash
+pnpm setup
+pnpm doctor
+pnpm tui openclaw/openclaw
+```
+
 ## Verify local setup
 
 Initialize local runtime paths and DB:
 
 ```bash
-pnpm --filter @gitcrawl/cli cli init
+pnpm setup
 ```
 
 Check GitHub auth, OpenAI auth, DB wiring, and optional OpenSearch config:
 
 ```bash
-pnpm --filter @gitcrawl/cli cli doctor
+pnpm doctor
 ```
 
 ## Sync `openclaw/openclaw`

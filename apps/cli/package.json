@@ -1,10 +1,38 @@
 {
   "name": "@gitcrawl/cli",
   "version": "0.1.0",
-  "private": true,
   "type": "module",
+  "description": "Gitcrawl terminal UI and CLI runtime",
+  "author": "PwrDrvr LLC <harold@pwrdrvr.com>",
+  "license": "UNLICENSED",
+  "homepage": "https://github.com/pwrdrvr/gitcrawl",
+  "bugs": {
+    "url": "https://github.com/pwrdrvr/gitcrawl/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pwrdrvr/gitcrawl.git"
+  },
+  "keywords": [
+    "gitcrawl",
+    "github",
+    "cli",
+    "tui",
+    "sqlite",
+    "embeddings"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "files": [
+    "bin",
+    "src"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "bin": {
-    "gitcrawl": "./src/main.ts"
+    "gitcrawl": "./bin/gitcrawl.js"
   },
   "scripts": {
     "cli": "tsx src/main.ts",
@@ -14,6 +42,7 @@
   "dependencies": {
     "@gitcrawl/api-core": "workspace:*",
     "@types/blessed": "^0.1.27",
-    "neo-blessed": "^0.2.0"
+    "neo-blessed": "^0.2.0",
+    "tsx": "^4.20.5"
   }
 }
