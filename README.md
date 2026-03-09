@@ -22,13 +22,19 @@ For a full first-run walkthrough against `openclaw/openclaw`, see [GETTING-START
 ## Typical flow
 
 ```bash
-pnpm --filter @gitcrawl/cli cli sync --owner openclaw --repo openclaw
-pnpm --filter @gitcrawl/cli cli sync --owner openclaw --repo openclaw --limit 25
-pnpm --filter @gitcrawl/cli cli summarize --owner openclaw --repo openclaw
-pnpm --filter @gitcrawl/cli cli embed --owner openclaw --repo openclaw
-pnpm --filter @gitcrawl/cli cli cluster --owner openclaw --repo openclaw
-pnpm --filter @gitcrawl/cli cli search --owner openclaw --repo openclaw --query "download stalls"
+pnpm --filter @gitcrawl/cli cli sync openclaw/openclaw
+pnpm --filter @gitcrawl/cli cli sync openclaw/openclaw --limit 25
+pnpm --filter @gitcrawl/cli cli summarize openclaw/openclaw
+pnpm --filter @gitcrawl/cli cli embed openclaw/openclaw
+pnpm --filter @gitcrawl/cli cli cluster openclaw/openclaw
+pnpm --filter @gitcrawl/cli cli search openclaw/openclaw --query "download stalls"
 pnpm --filter @gitcrawl/cli cli serve
+```
+
+Alternate form:
+
+```bash
+pnpm --filter @gitcrawl/cli cli sync --repo openclaw/openclaw --limit 25
 ```
 
 ## Environment
@@ -49,7 +55,8 @@ Supported variables:
 ## Current caveats
 
 - `serve` starts the local HTTP API only. The web UI is not built yet.
+- `sync` only pulls open issues and PRs now.
 - `sync` currently fetches comments and PR review data thread-by-thread, so a large repo can take a while.
 - `sync --limit <count>` is the best smoke-test path on a busy repository.
-- GitHub API rate limits can stop a long sync early because the current crawler makes multiple API requests per thread.
+- sync now pauses between 100-thread batches and uses stronger rate-limit backoff, but a long crawl can still hit GitHub limits.
 - For a first pass on a large repository, prefer `sync --since <iso-timestamp>` before doing a full backfill.

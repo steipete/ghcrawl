@@ -37,47 +37,54 @@ pnpm --filter @gitcrawl/cli cli doctor
 Full sync:
 
 ```bash
-pnpm --filter @gitcrawl/cli cli sync --owner openclaw --repo openclaw
+pnpm --filter @gitcrawl/cli cli sync openclaw/openclaw
 ```
 
 Smaller first pass for recent changes only:
 
 ```bash
-pnpm --filter @gitcrawl/cli cli sync --owner openclaw --repo openclaw --since 2026-03-01T00:00:00Z
+pnpm --filter @gitcrawl/cli cli sync openclaw/openclaw --since 2026-03-01T00:00:00Z
 ```
 
 Smallest smoke-test path:
 
 ```bash
-pnpm --filter @gitcrawl/cli cli sync --owner openclaw --repo openclaw --limit 25
+pnpm --filter @gitcrawl/cli cli sync openclaw/openclaw --limit 25
+```
+
+Alternate explicit form:
+
+```bash
+pnpm --filter @gitcrawl/cli cli sync --repo openclaw/openclaw --limit 25
 ```
 
 Notes:
 
+- `sync` only ingests open issues and PRs.
 - `sync` currently fetches issue comments and PR review data thread-by-thread.
 - On a large repository, the full sync can take a while.
 - Starting with `--since` is the safer first run.
 - `--limit` is the safest way to confirm the pipeline works before attempting a full crawl.
-- Long syncs can hit GitHub rate limits because the current implementation does multiple per-thread API calls.
+- Long syncs can still hit GitHub rate limits, but the crawler now pauses every 100 threads and backs off more aggressively when GitHub asks it to slow down.
 
 ## Enrich the local data
 
 Generate summaries:
 
 ```bash
-pnpm --filter @gitcrawl/cli cli summarize --owner openclaw --repo openclaw
+pnpm --filter @gitcrawl/cli cli summarize openclaw/openclaw
 ```
 
 Generate embeddings:
 
 ```bash
-pnpm --filter @gitcrawl/cli cli embed --owner openclaw --repo openclaw
+pnpm --filter @gitcrawl/cli cli embed openclaw/openclaw
 ```
 
 Build similarity clusters:
 
 ```bash
-pnpm --filter @gitcrawl/cli cli cluster --owner openclaw --repo openclaw
+pnpm --filter @gitcrawl/cli cli cluster openclaw/openclaw
 ```
 
 ## Search
@@ -85,19 +92,19 @@ pnpm --filter @gitcrawl/cli cli cluster --owner openclaw --repo openclaw
 Hybrid search:
 
 ```bash
-pnpm --filter @gitcrawl/cli cli search --owner openclaw --repo openclaw --query "download stalls" --mode hybrid
+pnpm --filter @gitcrawl/cli cli search openclaw/openclaw --query "download stalls" --mode hybrid
 ```
 
 Keyword-only search:
 
 ```bash
-pnpm --filter @gitcrawl/cli cli search --owner openclaw --repo openclaw --query "panic nil pointer" --mode keyword
+pnpm --filter @gitcrawl/cli cli search openclaw/openclaw --query "panic nil pointer" --mode keyword
 ```
 
 Semantic-only search:
 
 ```bash
-pnpm --filter @gitcrawl/cli cli search --owner openclaw --repo openclaw --query "transfer hangs near completion" --mode semantic
+pnpm --filter @gitcrawl/cli cli search openclaw/openclaw --query "transfer hangs near completion" --mode semantic
 ```
 
 ## Run the local API

@@ -12,16 +12,25 @@ function usage(): string {
 Commands:
   init
   doctor
-  sync --owner <owner> --repo <repo> [--since <iso>] [--limit <count>]
-  summarize --owner <owner> --repo <repo> [--number <thread>]
-  embed --owner <owner> --repo <repo> [--number <thread>]
-  cluster --owner <owner> --repo <repo> [--k <count>] [--threshold <score>]
-  search --owner <owner> --repo <repo> --query <text> [--mode keyword|semantic|hybrid]
+  sync <owner/repo> [--since <iso>] [--limit <count>]
+  summarize <owner/repo> [--number <thread>]
+  embed <owner/repo> [--number <thread>]
+  cluster <owner/repo> [--k <count>] [--threshold <score>]
+  search <owner/repo> --query <text> [--mode keyword|semantic|hybrid]
   serve
 `;
 }
 
-function parseRepoFlags(args: string[]): { owner: string; repo: string; values: Record<string, string | boolean> } {
+export function parseOwnerRepo(value: string): { owner: string; repo: string } {
+  const trimmed = value.trim();
+  const parts = trimmed.split('/');
+  if (parts.length !== 2 || !parts[0] || !parts[1]) {
+    throw new Error(`Expected owner/repo, received: ${value}`);
+  }
+  return { owner: parts[0], repo: parts[1] };
+}
+
+export function parseRepoFlags(args: string[]): { owner: string; repo: string; values: Record<string, string | boolean> } {
   const parsed = parseArgs({
     args,
     allowPositionals: true,
@@ -39,12 +48,23 @@ function parseRepoFlags(args: string[]): { owner: string; repo: string; values: 
     },
   });
 
+  if (typeof parsed.values.repo === 'string' && parsed.values.repo.includes('/')) {
+    const target = parseOwnerRepo(parsed.values.repo);
+    return { ...target, values: parsed.values };
+  }
+
+  if (parsed.positionals.length > 0) {
+    const target = parseOwnerRepo(parsed.positionals[0]);
+    return { ...target, values: parsed.values };
+  }
+
   const owner = parsed.values.owner;
   const repo = parsed.values.repo;
-  if (typeof owner !== 'string' || typeof repo !== 'string') {
-    throw new Error('Both --owner and --repo are required');
+  if (typeof owner === 'string' && typeof repo === 'string') {
+    return { owner, repo, values: parsed.values };
   }
-  return { owner, repo, values: parsed.values };
+
+  throw new Error('Use --repo owner/repo or provide owner/repo as the first positional argument');
 }
 
 export async function run(argv: string[], stdout: NodeJS.WritableStream = process.stdout): Promise<void> {

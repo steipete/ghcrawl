@@ -18,7 +18,8 @@ test('syncRepository reports progress and persists repository/thread data', asyn
     github: {
       checkAuth: async () => undefined,
       getRepo: async () => ({ id: 1, full_name: 'openclaw/openclaw' }),
-      listRepositoryIssues: async () => [
+      listRepositoryIssues: async (_owner, _repo, _since, limit) =>
+        [
         {
           id: 100,
           number: 42,
@@ -30,7 +31,7 @@ test('syncRepository reports progress and persists repository/thread data', asyn
           assignees: [],
           user: { login: 'alice', type: 'User' },
         },
-      ],
+        ].slice(0, limit ?? 1),
       getPull: async () => {
         throw new Error('not expected');
       },

@@ -17,15 +17,59 @@ type RequestOptions = {
   token: string;
   userAgent?: string;
   timeoutMs?: number;
+  pageDelayMs?: number;
 };
+
+class GitHubRequestError extends Error {
+  constructor(
+    message: string,
+    readonly retryable: boolean,
+  ) {
+    super(message);
+    this.name = 'GitHubRequestError';
+  }
+}
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function isRateLimitedResponse(res: Response, bodyText: string): boolean {
+  if (res.status === 429) return true;
+  if (res.status !== 403) return false;
+  if (res.headers.get('x-ratelimit-remaining') === '0') return true;
+  return /rate limit/i.test(bodyText);
+}
+
+function parseRetryDelayMs(res: Response, attempt: number, bodyText: string): number {
+  const retryAfter = res.headers.get('retry-after');
+  if (retryAfter) {
+    const retryAfterSeconds = Number(retryAfter);
+    if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0) {
+      return retryAfterSeconds * 1000;
+    }
+  }
+
+  const resetAt = res.headers.get('x-ratelimit-reset');
+  if (resetAt) {
+    const resetSeconds = Number(resetAt);
+    if (Number.isFinite(resetSeconds) && resetSeconds > 0) {
+      const waitUntilResetMs = Math.max(resetSeconds * 1000 - Date.now(), 0);
+      if (waitUntilResetMs > 0) return waitUntilResetMs;
+    }
+  }
+
+  if (isRateLimitedResponse(res, bodyText)) {
+    return 5000 + 1000 * 2 ** Math.max(attempt - 1, 0);
+  }
+
+  return Math.min(1000 * 2 ** Math.max(attempt - 1, 0), 8000);
+}
+
 export function makeGitHubClient(options: RequestOptions): GitHubClient {
   const userAgent = options.userAgent ?? 'gitcrawl';
   const timeoutMs = options.timeoutMs ?? 30_000;
+  const pageDelayMs = options.pageDelayMs ?? 5000;
 
   async function request<T>(url: string): Promise<{ data: T; headers: Headers }> {
     let attempt = 0;
@@ -46,14 +90,25 @@ export function makeGitHubClient(options: RequestOptions): GitHubClient {
           return { data: (await res.json()) as T, headers: res.headers };
         }
 
-        if ((res.status === 429 || res.status >= 500) && attempt < 5) {
-          await delay(Math.min(1000 * 2 ** (attempt - 1), 8000));
+        const text = await res.text().catch(() => '');
+        const shouldRetry = res.status >= 500 || isRateLimitedResponse(res, text);
+        if (shouldRetry && attempt < 5) {
+          await delay(parseRetryDelayMs(res, attempt, text));
           continue;
         }
 
-        const text = await res.text().catch(() => '');
-        throw new Error(`GitHub API failed ${res.status} ${res.statusText} for ${url}: ${text.slice(0, 2000)}`);
+        throw new GitHubRequestError(
+          `GitHub API failed ${res.status} ${res.statusText} for ${url}: ${text.slice(0, 2000)}`,
+          shouldRetry,
+        );
       } catch (error) {
+        if (error instanceof GitHubRequestError) {
+          if (error.retryable && attempt < 5) {
+            await delay(Math.min(1000 * 2 ** (attempt - 1), 8000));
+            continue;
+          }
+          throw error;
+        }
         if (attempt < 5) {
           await delay(Math.min(1000 * 2 ** (attempt - 1), 8000));
           continue;
@@ -78,6 +133,9 @@ export function makeGitHubClient(options: RequestOptions): GitHubClient {
       const link: string | null = headers.get('link');
       const match: RegExpMatchArray | null | undefined = link?.match(/<([^>]+)>;\s*rel="next"/);
       next = match?.[1] ?? null;
+      if (next) {
+        await delay(pageDelayMs);
+      }
     }
     return out;
   }
@@ -92,7 +150,7 @@ export function makeGitHubClient(options: RequestOptions): GitHubClient {
     },
     async listRepositoryIssues(owner, repo, since, limit) {
       const search = new URLSearchParams({
-        state: 'all',
+        state: 'open',
         sort: 'updated',
         direction: 'desc',
         per_page: '100',

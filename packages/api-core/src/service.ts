@@ -76,6 +76,9 @@ type SyncOptions = {
 
 type SearchResultInternal = SearchResponse;
 
+const SYNC_BATCH_SIZE = 100;
+const SYNC_BATCH_DELAY_MS = 5000;
+
 function nowIso(): string {
   return new Date().toISOString();
 }
@@ -271,6 +274,10 @@ export class GitcrawlService {
       let commentsSynced = 0;
 
       for (const [index, item] of items.entries()) {
+        if (index > 0 && index % SYNC_BATCH_SIZE === 0) {
+          params.onProgress?.(`[sync] batch boundary reached at ${index} threads; sleeping 5s before continuing`);
+          await new Promise((resolve) => setTimeout(resolve, SYNC_BATCH_DELAY_MS));
+        }
         const number = Number(item.number);
         const isPr = isPullRequestPayload(item);
         const kind = isPr ? 'pull_request' : 'issue';
