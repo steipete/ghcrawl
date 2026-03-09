@@ -18,11 +18,12 @@ export type TuiLayout = {
 
 export function computeTuiLayout(width: number, height: number): TuiLayout {
   const safeWidth = Math.max(60, width);
-  const safeHeight = Math.max(12, height);
+  const safeHeight = Math.max(16, height);
+  const footerHeight = 5;
   const contentTop = 1;
-  const contentHeight = Math.max(6, safeHeight - 2);
+  const contentHeight = Math.max(6, safeHeight - 1 - footerHeight);
   const header = { top: 0, left: 0, width: safeWidth, height: 1 };
-  const footer = { top: safeHeight - 1, left: 0, width: safeWidth, height: 1 };
+  const footer = { top: safeHeight - footerHeight, left: 0, width: safeWidth, height: footerHeight };
 
   if (safeWidth >= 140) {
     const leftWidth = Math.floor(safeWidth * 0.34);

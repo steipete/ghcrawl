@@ -7,7 +7,8 @@ test('computeTuiLayout uses wide mode for large terminals', () => {
   const layout = computeTuiLayout(160, 40);
   assert.equal(layout.mode, 'wide');
   assert.equal(layout.clusters.top, 1);
-  assert.equal(layout.footer.top, 39);
+  assert.equal(layout.footer.top, 35);
+  assert.equal(layout.footer.height, 5);
 });
 
 test('computeTuiLayout switches to stacked mode for narrow terminals', () => {

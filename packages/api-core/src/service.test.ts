@@ -1049,6 +1049,12 @@ test('tui snapshot returns mixed issue and pull request counts with default rece
       .prepare(`insert into cluster_runs (id, repo_id, scope, status, started_at, finished_at) values (?, ?, ?, ?, ?, ?)`)
       .run(1, 1, 'openclaw/openclaw', 'completed', now, '2026-03-09T14:30:00Z');
     service.db
+      .prepare(`insert into sync_runs (id, repo_id, scope, status, started_at, finished_at) values (?, ?, ?, ?, ?, ?)`)
+      .run(1, 1, 'openclaw/openclaw', 'completed', now, '2026-03-09T12:00:00Z');
+    service.db
+      .prepare(`insert into embedding_runs (id, repo_id, scope, status, started_at, finished_at) values (?, ?, ?, ?, ?, ?)`)
+      .run(1, 1, 'openclaw/openclaw', 'completed', now, '2026-03-09T13:00:00Z');
+    service.db
       .prepare(
         `insert into clusters (id, repo_id, cluster_run_id, representative_thread_id, member_count, created_at)
          values (?, ?, ?, ?, ?, ?)`,
@@ -1073,6 +1079,10 @@ test('tui snapshot returns mixed issue and pull request counts with default rece
     const snapshot = service.getTuiSnapshot({ owner: 'openclaw', repo: 'openclaw' });
     assert.equal(snapshot.stats.openIssueCount, 3);
     assert.equal(snapshot.stats.openPullRequestCount, 2);
+    assert.equal(snapshot.stats.lastGithubReconciliationAt, '2026-03-09T12:00:00Z');
+    assert.equal(snapshot.stats.lastEmbedRefreshAt, '2026-03-09T13:00:00Z');
+    assert.equal(snapshot.stats.staleEmbedThreadCount, 5);
+    assert.equal(snapshot.stats.staleEmbedSourceCount, 10);
     assert.equal(snapshot.stats.latestClusterRunId, 1);
     assert.equal(snapshot.clusters.length, 0);
 

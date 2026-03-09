@@ -85,11 +85,27 @@ type ParsedStoredEmbeddingRow = Omit<StoredEmbeddingRow, 'embedding_json'> & {
   embedding: number[];
 };
 
+type EmbeddingWorkset = {
+  rows: Array<{
+    id: number;
+    number: number;
+    title: string;
+    body: string | null;
+  }>;
+  tasks: EmbeddingTask[];
+  existing: Map<string, string>;
+  pending: EmbeddingTask[];
+};
+
 export type TuiClusterSortMode = 'recent' | 'size';
 
 export type TuiRepoStats = {
   openIssueCount: number;
   openPullRequestCount: number;
+  lastGithubReconciliationAt: string | null;
+  lastEmbedRefreshAt: string | null;
+  staleEmbedThreadCount: number;
+  staleEmbedSourceCount: number;
   latestClusterRunId: number | null;
   latestClusterRunFinishedAt: string | null;
 };
@@ -571,50 +587,7 @@ export class GitcrawlService {
     const runId = this.startRun('embedding_runs', repository.id, params.threadNumber ? `thread:${params.threadNumber}` : repository.fullName);
 
     try {
-      let sql =
-        `select t.id, t.number, t.title, t.body
-         from threads t
-         where t.repo_id = ? and t.state = 'open'`;
-      const args: Array<string | number> = [repository.id];
-      if (params.threadNumber) {
-        sql += ' and t.number = ?';
-        args.push(params.threadNumber);
-      }
-      sql += ' order by t.number asc';
-      const rows = this.db.prepare(sql).all(...args) as Array<{
-        id: number;
-        number: number;
-        title: string;
-        body: string | null;
-      }>;
-      const summaryTexts = this.loadCombinedSummaryTextMap(repository.id, params.threadNumber);
-
-      const tasks = rows.flatMap((row) =>
-        this.buildEmbeddingTasks({
-          threadId: row.id,
-          threadNumber: row.number,
-          title: row.title,
-          body: row.body,
-          dedupeSummary: summaryTexts.get(row.id) ?? null,
-        }),
-      );
-      const existingRows = this.db
-        .prepare(
-          `select e.thread_id, e.source_kind, e.content_hash
-           from document_embeddings e
-           join threads t on t.id = e.thread_id
-           where t.repo_id = ? and e.model = ?`,
-        )
-        .all(repository.id, this.config.embedModel) as Array<{
-          thread_id: number;
-          source_kind: EmbeddingSourceKind;
-          content_hash: string;
-        }>;
-      const existing = new Map<string, string>();
-      for (const row of existingRows) {
-        existing.set(`${row.thread_id}:${row.source_kind}`, row.content_hash);
-      }
-      const pending = tasks.filter((task) => existing.get(`${task.threadId}:${task.sourceKind}`) !== task.contentHash);
+      const { rows, tasks, pending } = this.getEmbeddingWorkset(repository.id, params.threadNumber);
       const skipped = tasks.length - pending.length;
       const truncated = tasks.filter((task) => task.wasTruncated).length;
 
@@ -1196,9 +1169,21 @@ export class GitcrawlService {
       )
       .all(repoId) as Array<{ kind: 'issue' | 'pull_request'; count: number }>;
     const latestRun = this.getLatestClusterRun(repoId);
+    const latestSync = (this.db
+      .prepare("select finished_at from sync_runs where repo_id = ? and status = 'completed' order by id desc limit 1")
+      .get(repoId) as { finished_at: string | null } | undefined) ?? null;
+    const latestEmbed = (this.db
+      .prepare("select finished_at from embedding_runs where repo_id = ? and status = 'completed' order by id desc limit 1")
+      .get(repoId) as { finished_at: string | null } | undefined) ?? null;
+    const embeddingWorkset = this.getEmbeddingWorkset(repoId);
+    const staleThreadIds = new Set<number>(embeddingWorkset.pending.map((task) => task.threadId));
     return {
       openIssueCount: counts.find((row) => row.kind === 'issue')?.count ?? 0,
       openPullRequestCount: counts.find((row) => row.kind === 'pull_request')?.count ?? 0,
+      lastGithubReconciliationAt: latestSync?.finished_at ?? null,
+      lastEmbedRefreshAt: latestEmbed?.finished_at ?? null,
+      staleEmbedThreadCount: staleThreadIds.size,
+      staleEmbedSourceCount: embeddingWorkset.pending.length,
       latestClusterRunId: latestRun?.id ?? null,
       latestClusterRunFinishedAt: latestRun?.finished_at ?? null,
     };
@@ -1835,6 +1820,53 @@ export class GitcrawlService {
     }));
     this.parsedEmbeddingCache.set(repoId, parsed);
     return parsed;
+  }
+
+  private getEmbeddingWorkset(repoId: number, threadNumber?: number): EmbeddingWorkset {
+    let sql =
+      `select t.id, t.number, t.title, t.body
+       from threads t
+       where t.repo_id = ? and t.state = 'open'`;
+    const args: Array<string | number> = [repoId];
+    if (threadNumber) {
+      sql += ' and t.number = ?';
+      args.push(threadNumber);
+    }
+    sql += ' order by t.number asc';
+    const rows = this.db.prepare(sql).all(...args) as Array<{
+      id: number;
+      number: number;
+      title: string;
+      body: string | null;
+    }>;
+    const summaryTexts = this.loadCombinedSummaryTextMap(repoId, threadNumber);
+    const tasks = rows.flatMap((row) =>
+      this.buildEmbeddingTasks({
+        threadId: row.id,
+        threadNumber: row.number,
+        title: row.title,
+        body: row.body,
+        dedupeSummary: summaryTexts.get(row.id) ?? null,
+      }),
+    );
+    const existingRows = this.db
+      .prepare(
+        `select e.thread_id, e.source_kind, e.content_hash
+         from document_embeddings e
+         join threads t on t.id = e.thread_id
+         where t.repo_id = ? and e.model = ?`,
+      )
+      .all(repoId, this.config.embedModel) as Array<{
+        thread_id: number;
+        source_kind: EmbeddingSourceKind;
+        content_hash: string;
+      }>;
+    const existing = new Map<string, string>();
+    for (const row of existingRows) {
+      existing.set(`${row.thread_id}:${row.source_kind}`, row.content_hash);
+    }
+    const pending = tasks.filter((task) => existing.get(`${task.threadId}:${task.sourceKind}`) !== task.contentHash);
+    return { rows, tasks, existing, pending };
   }
 
   private loadCombinedSummaryTextMap(repoId: number, threadNumber?: number): Map<number, string> {

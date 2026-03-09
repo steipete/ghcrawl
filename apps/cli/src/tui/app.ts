@@ -44,6 +44,9 @@ type ThreadDetailCacheEntry = {
   hasNeighbors: boolean;
 };
 
+const ACTIVITY_LOG_LIMIT = 200;
+const FOOTER_LOG_LINES = 4;
+
 export async function startTui(params: StartTuiParams): Promise<void> {
   const widgets = createWidgets(params.owner, params.repo);
 
@@ -59,12 +62,23 @@ export async function startTui(params: StartTuiParams): Promise<void> {
   let memberRows: MemberListRow[] = [];
   let memberIndex = -1;
   let status = 'Ready';
+  const activityLines: string[] = [];
   const clusterDetailCache = new Map<number, TuiClusterDetail>();
   const threadDetailCache = new Map<number, ThreadDetailCacheEntry>();
+  let syncJobRunning = false;
+  let embedJobRunning = false;
 
   const clearCaches = (): void => {
     clusterDetailCache.clear();
     threadDetailCache.clear();
+  };
+
+  const pushActivity = (message: string): void => {
+    activityLines.push(`${formatActivityTimestamp()} ${message}`);
+    if (activityLines.length > ACTIVITY_LOG_LIMIT) {
+      activityLines.splice(0, activityLines.length - ACTIVITY_LOG_LIMIT);
+    }
+    render();
   };
 
   const loadClusterDetail = (clusterId: number): TuiClusterDetail => {
@@ -155,8 +169,18 @@ export async function startTui(params: StartTuiParams): Promise<void> {
     applyRect(widgets.footer, layout.footer);
 
     const repoLabel = snapshot?.repository.fullName ?? `${params.owner}/${params.repo}`;
+    const ghStatus = formatRelativeTime(snapshot?.stats.lastGithubReconciliationAt ?? null);
+    const embedAge = formatRelativeTime(snapshot?.stats.lastEmbedRefreshAt ?? null);
+    const embedStatus =
+      snapshot && snapshot.stats.staleEmbedThreadCount > 0
+        ? `${snapshot.stats.staleEmbedThreadCount} stale / ${embedAge}`
+        : embedAge;
+    const clusterStatus =
+      snapshot?.stats.latestClusterRunId != null
+        ? `#${snapshot.stats.latestClusterRunId} ${formatRelativeTime(snapshot.stats.latestClusterRunFinishedAt ?? null)}`
+        : 'never';
     widgets.header.setContent(
-      `{bold}${repoLabel}{/bold}  {cyan-fg}${snapshot?.stats.openPullRequestCount ?? 0} PR{/cyan-fg}  {green-fg}${snapshot?.stats.openIssueCount ?? 0} issues{/green-fg}  run ${snapshot?.stats.latestClusterRunId ?? '-'}  ${snapshot?.stats.latestClusterRunFinishedAt ?? 'no cluster run'}  sort:${sortMode}  min:${minSize === 0 ? 'all' : `${minSize}+`}  filter:${search || 'none'}`,
+      `{bold}${repoLabel}{/bold}  {cyan-fg}${snapshot?.stats.openPullRequestCount ?? 0} PR{/cyan-fg}  {green-fg}${snapshot?.stats.openIssueCount ?? 0} issues{/green-fg}  GH:${ghStatus}  Emb:${embedStatus}  Cl:${clusterStatus}  sort:${sortMode}  min:${minSize === 0 ? 'all' : `${minSize}+`}  filter:${search || 'none'}`,
     );
 
     const clusterItems =
@@ -176,9 +200,16 @@ export async function startTui(params: StartTuiParams): Promise<void> {
 
     widgets.detail.setContent(renderDetailPane(threadDetail, clusterDetail, focusPane));
     updatePaneStyles(widgets, focusPane);
-    widgets.footer.setContent(
-      `${status}  |  Tab focus  j/k move-or-scroll  PgUp/PgDn scroll  Enter drill  s sort  f min  / filter  r refresh  o open  q quit`,
+    const activeJobs = [syncJobRunning ? 'sync' : null, embedJobRunning ? 'embed' : null].filter(Boolean).join(', ') || 'idle';
+    const logLines = activityLines.slice(-FOOTER_LOG_LINES);
+    const footerLines = [...logLines];
+    while (footerLines.length < FOOTER_LOG_LINES) {
+      footerLines.unshift('');
+    }
+    footerLines.push(
+      `${status}  |  jobs:${activeJobs}  |  Tab focus  j/k move-or-scroll  PgUp/PgDn scroll  g sync  e embed  s sort  f min  / filter  r refresh  o open  q quit`,
     );
+    widgets.footer.setContent(footerLines.join('\n'));
     widgets.screen.render();
   };
 
@@ -190,6 +221,62 @@ export async function startTui(params: StartTuiParams): Promise<void> {
     if (focusPane !== 'detail') return;
     widgets.detail.scroll(offset);
     widgets.screen.render();
+  };
+
+  const startSyncJob = (): void => {
+    if (syncJobRunning) {
+      pushActivity('[jobs] GitHub reconciliation already running');
+      return;
+    }
+    syncJobRunning = true;
+    status = 'Running GitHub reconciliation';
+    pushActivity('[jobs] starting GitHub reconciliation');
+    void (async () => {
+      try {
+        const result = await params.service.syncRepository({
+          owner: params.owner,
+          repo: params.repo,
+          onProgress: pushActivity,
+        });
+        pushActivity(
+          `[jobs] GitHub reconciliation complete threads=${result.threadsSynced} comments=${result.commentsSynced} closed=${result.threadsClosed}`,
+        );
+        refreshAll(true);
+      } catch (error) {
+        pushActivity(`[jobs] GitHub reconciliation failed: ${error instanceof Error ? error.message : String(error)}`);
+      } finally {
+        syncJobRunning = false;
+        status = 'Ready';
+        render();
+      }
+    })();
+  };
+
+  const startEmbedJob = (): void => {
+    if (embedJobRunning) {
+      pushActivity('[jobs] embed refresh already running');
+      return;
+    }
+    embedJobRunning = true;
+    status = 'Running embed refresh';
+    pushActivity('[jobs] starting embed refresh');
+    void (async () => {
+      try {
+        const result = await params.service.embedRepository({
+          owner: params.owner,
+          repo: params.repo,
+          onProgress: pushActivity,
+        });
+        pushActivity(`[jobs] embed refresh complete embeddings=${result.embedded}`);
+        refreshAll(true);
+      } catch (error) {
+        pushActivity(`[jobs] embed refresh failed: ${error instanceof Error ? error.message : String(error)}`);
+      } finally {
+        embedJobRunning = false;
+        status = 'Ready';
+        render();
+      }
+    })();
   };
 
   const moveSelection = (delta: -1 | 1): void => {
@@ -320,6 +407,8 @@ export async function startTui(params: StartTuiParams): Promise<void> {
     refreshAll(false);
   });
   widgets.screen.key(['/'], () => promptFilter());
+  widgets.screen.key(['g'], () => startSyncJob());
+  widgets.screen.key(['e'], () => startEmbedJob());
   widgets.screen.key(['r'], () => {
     status = 'Refreshing';
     refreshAll(true);
@@ -333,6 +422,7 @@ export async function startTui(params: StartTuiParams): Promise<void> {
 
   widgets.screen.program.hideCursor();
   refreshAll(false);
+  pushActivity('[jobs] press g to reconcile GitHub and e to refresh embeddings');
   updateFocus('clusters');
 
   await new Promise<void>((resolve) => widgets.screen.once('destroy', () => resolve()));
@@ -462,4 +552,30 @@ function openUrl(url: string): void {
     stdio: 'ignore',
   });
   child.unref();
+}
+
+function formatActivityTimestamp(now: Date = new Date()): string {
+  return now.toISOString().slice(11, 19);
+}
+
+function formatRelativeTime(value: string | null, now: Date = new Date()): string {
+  if (!value) return 'never';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  const diffMs = Math.max(0, now.getTime() - parsed.getTime());
+  const minuteMs = 60_000;
+  const hourMs = 60 * minuteMs;
+  const dayMs = 24 * hourMs;
+
+  if (diffMs < hourMs) {
+    const minutes = Math.max(1, Math.floor(diffMs / minuteMs));
+    return `${minutes}m ago`;
+  }
+  if (diffMs < dayMs) {
+    return `${Math.floor(diffMs / hourMs)}h ago`;
+  }
+  if (diffMs < 14 * dayMs) {
+    return `${Math.floor(diffMs / dayMs)}d ago`;
+  }
+  return parsed.toISOString().slice(0, 10);
 }
