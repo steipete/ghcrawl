@@ -1,0 +1,17 @@
+{
+  "name": "@gitcrawl/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "gitcrawl": "./src/main.ts"
+  },
+  "scripts": {
+    "cli": "tsx src/main.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsx --test src/**/*.test.ts"
+  },
+  "dependencies": {
+    "@gitcrawl/api-core": "workspace:*"
+  }
+}

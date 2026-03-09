@@ -1,0 +1,7 @@
+.env.local
+node_modules/
+dist/
+coverage/
+data/
+tmp/
+ui/dist/

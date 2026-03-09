@@ -1,0 +1,14 @@
+{
+  "name": "@gitcrawl/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Deferred future Vite + shadcn/ui web app placeholder",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsx --test src/**/*.test.ts"
+  },
+  "dependencies": {
+    "@gitcrawl/api-contract": "workspace:*"
+  }
+}
