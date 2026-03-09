@@ -177,8 +177,18 @@ export async function startTui(params: StartTuiParams): Promise<void> {
     widgets.detail.setContent(renderDetailPane(threadDetail, clusterDetail, focusPane));
     updatePaneStyles(widgets, focusPane);
     widgets.footer.setContent(
-      `${status}  |  Tab focus  j/k move  Enter drill  s sort  f min  / filter  r refresh  o open  q quit`,
+      `${status}  |  Tab focus  j/k move-or-scroll  PgUp/PgDn scroll  Enter drill  s sort  f min  / filter  r refresh  o open  q quit`,
     );
+    widgets.screen.render();
+  };
+
+  const resetDetailScroll = (): void => {
+    widgets.detail.setScroll(0);
+  };
+
+  const scrollDetail = (offset: number): void => {
+    if (focusPane !== 'detail') return;
+    widgets.detail.scroll(offset);
     widgets.screen.render();
   };
 
@@ -201,6 +211,7 @@ export async function startTui(params: StartTuiParams): Promise<void> {
         );
         memberIndex = findSelectableIndex(memberRows, selectedMemberThreadId);
         loadSelectedThreadDetail(false);
+        resetDetailScroll();
       }
       status = `Cluster ${nextIndex + 1}/${snapshot.clusters.length}`;
       render();
@@ -212,6 +223,7 @@ export async function startTui(params: StartTuiParams): Promise<void> {
       memberIndex = moveSelectableIndex(memberRows, memberIndex < 0 ? 0 : memberIndex, delta);
       selectedMemberThreadId = selectedThreadIdFromRow(memberRows, memberIndex);
       loadSelectedThreadDetail(false);
+      resetDetailScroll();
       status = selectedMemberThreadId !== null ? `Selected #${threadDetail?.thread.number ?? '?'}` : 'No selectable member';
       render();
     }
@@ -260,8 +272,32 @@ export async function startTui(params: StartTuiParams): Promise<void> {
   });
   widgets.screen.key(['tab'], () => updateFocus(cycleFocusPane(focusPane, 1)));
   widgets.screen.key(['S-tab'], () => updateFocus(cycleFocusPane(focusPane, -1)));
-  widgets.screen.key(['j', 'down'], () => moveSelection(1));
-  widgets.screen.key(['k', 'up'], () => moveSelection(-1));
+  widgets.screen.key(['j', 'down'], () => {
+    if (focusPane === 'detail') {
+      scrollDetail(3);
+      return;
+    }
+    moveSelection(1);
+  });
+  widgets.screen.key(['k', 'up'], () => {
+    if (focusPane === 'detail') {
+      scrollDetail(-3);
+      return;
+    }
+    moveSelection(-1);
+  });
+  widgets.screen.key(['pageup'], () => scrollDetail(-12));
+  widgets.screen.key(['pagedown'], () => scrollDetail(12));
+  widgets.screen.key(['home'], () => {
+    if (focusPane !== 'detail') return;
+    widgets.detail.setScroll(0);
+    widgets.screen.render();
+  });
+  widgets.screen.key(['end'], () => {
+    if (focusPane !== 'detail') return;
+    widgets.detail.setScrollPerc(100);
+    widgets.screen.render();
+  });
   widgets.screen.key(['enter'], () => {
     if (focusPane === 'clusters') {
       updateFocus('members');
