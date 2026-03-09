@@ -26,6 +26,8 @@ pnpm --filter @gitcrawl/cli cli sync openclaw/openclaw
 pnpm --filter @gitcrawl/cli cli sync openclaw/openclaw --limit 25
 pnpm --filter @gitcrawl/cli cli sync openclaw/openclaw --include-comments --limit 25
 pnpm --filter @gitcrawl/cli cli summarize openclaw/openclaw
+pnpm --filter @gitcrawl/cli cli summarize openclaw/openclaw --include-comments --number 42
+pnpm --filter @gitcrawl/cli cli purge-comments openclaw/openclaw
 pnpm --filter @gitcrawl/cli cli embed openclaw/openclaw
 pnpm --filter @gitcrawl/cli cli cluster openclaw/openclaw
 pnpm --filter @gitcrawl/cli cli neighbors openclaw/openclaw --number 42 --limit 10
@@ -60,10 +62,13 @@ Supported variables:
 - `sync` only pulls open issues and PRs now.
 - `sync` is metadata-only by default. It pulls titles, bodies, labels, assignees, state, and timestamps without fetching comment bodies.
 - `sync --include-comments` enables issue comments, PR reviews, and review comments for deeper per-thread context.
+- `summarize` is metadata-only by default too. It summarizes title, body, and labels unless you pass `--include-comments`.
+- `summarize` now logs per-thread token usage when the OpenAI API reports it.
+- `purge-comments` removes hydrated comments from the local DB and refreshes canonical documents so older comment-heavy crawls can be cleaned up.
 - `sync --since` accepts either an ISO timestamp or a relative duration like `15m`, `2h`, `7d`, or `1mo`.
 - `sync --limit <count>` and `sync --since <iso|duration>` are filtered crawls. They do not run stale-open reconciliation for items outside the filtered window.
 - `sync --limit <count>` is the best smoke-test path on a busy repository.
-- `summarize`, `embed`, and `cluster` now print progress to stderr during long runs.
+- `summarize`, `embed`, and `cluster` now print timestamped progress lines to stderr during long runs.
 - `neighbors` shows exact local nearest neighbors for one embedded thread and is useful for inspecting vector quality before clustering.
 - sync now pauses between 100-thread batches and uses stronger rate-limit backoff, but a long crawl can still hit GitHub limits.
 - For a first pass on a large repository, prefer `sync --since <iso-timestamp>` before doing a full backfill.

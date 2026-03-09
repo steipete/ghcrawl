@@ -4,7 +4,17 @@ import { parseArgs } from 'node:util';
 
 import { createApiServer, GitcrawlService } from '@gitcrawl/api-core';
 
-type CommandName = 'init' | 'doctor' | 'sync' | 'summarize' | 'embed' | 'cluster' | 'search' | 'neighbors' | 'serve';
+type CommandName =
+  | 'init'
+  | 'doctor'
+  | 'sync'
+  | 'summarize'
+  | 'purge-comments'
+  | 'embed'
+  | 'cluster'
+  | 'search'
+  | 'neighbors'
+  | 'serve';
 
 function usage(): string {
   return `gitcrawl <command> [options]
@@ -13,7 +23,8 @@ Commands:
   init
   doctor
   sync <owner/repo> [--since <iso|duration>] [--limit <count>] [--include-comments]
-  summarize <owner/repo> [--number <thread>]
+  summarize <owner/repo> [--number <thread>] [--include-comments]
+  purge-comments <owner/repo> [--number <thread>]
   embed <owner/repo> [--number <thread>]
   cluster <owner/repo> [--k <count>] [--threshold <score>]
   search <owner/repo> --query <text> [--mode keyword|semantic|hybrid]
@@ -114,6 +125,14 @@ export function resolveSinceValue(value: string, now: Date = new Date()): string
   return resolved.toISOString();
 }
 
+export function formatLogLine(message: string, now: Date = new Date()): string {
+  return `[${now.toISOString()}] ${message}`;
+}
+
+function writeProgress(message: string): void {
+  process.stderr.write(`${formatLogLine(message)}\n`);
+}
+
 export async function run(argv: string[], stdout: NodeJS.WritableStream = process.stdout): Promise<void> {
   const [commandRaw, ...rest] = argv;
   const command = commandRaw as CommandName | undefined;
@@ -141,9 +160,7 @@ export async function run(argv: string[], stdout: NodeJS.WritableStream = proces
           since: typeof values.since === 'string' ? resolveSinceValue(values.since) : undefined,
           limit: typeof values.limit === 'string' ? Number(values.limit) : undefined,
           includeComments: values['include-comments'] === true,
-          onProgress: (message) => {
-            process.stderr.write(`${message}\n`);
-          },
+          onProgress: writeProgress,
         });
         stdout.write(`${JSON.stringify(result, null, 2)}\n`);
         return;
@@ -154,9 +171,19 @@ export async function run(argv: string[], stdout: NodeJS.WritableStream = proces
           owner,
           repo,
           threadNumber: typeof values.number === 'string' ? Number(values.number) : undefined,
-          onProgress: (message) => {
-            process.stderr.write(`${message}\n`);
-          },
+          includeComments: values['include-comments'] === true,
+          onProgress: writeProgress,
+        });
+        stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+        return;
+      }
+      case 'purge-comments': {
+        const { owner, repo, values } = parseRepoFlags(rest);
+        const result = service.purgeComments({
+          owner,
+          repo,
+          threadNumber: typeof values.number === 'string' ? Number(values.number) : undefined,
+          onProgress: writeProgress,
         });
         stdout.write(`${JSON.stringify(result, null, 2)}\n`);
         return;
@@ -167,9 +194,7 @@ export async function run(argv: string[], stdout: NodeJS.WritableStream = proces
           owner,
           repo,
           threadNumber: typeof values.number === 'string' ? Number(values.number) : undefined,
-          onProgress: (message) => {
-            process.stderr.write(`${message}\n`);
-          },
+          onProgress: writeProgress,
         });
         stdout.write(`${JSON.stringify(result, null, 2)}\n`);
         return;
@@ -181,9 +206,7 @@ export async function run(argv: string[], stdout: NodeJS.WritableStream = proces
           repo,
           k: typeof values.k === 'string' ? Number(values.k) : undefined,
           minScore: typeof values.threshold === 'string' ? Number(values.threshold) : undefined,
-          onProgress: (message) => {
-            process.stderr.write(`${message}\n`);
-          },
+          onProgress: writeProgress,
         });
         stdout.write(`${JSON.stringify(result, null, 2)}\n`);
         return;
@@ -251,7 +274,7 @@ export async function run(argv: string[], stdout: NodeJS.WritableStream = proces
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   run(process.argv.slice(2)).catch((error) => {
-    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+    writeProgress(error instanceof Error ? error.message : String(error));
     process.exit(1);
   });
 }

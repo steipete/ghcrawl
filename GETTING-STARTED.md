@@ -85,6 +85,18 @@ Generate summaries:
 pnpm --filter @gitcrawl/cli cli summarize openclaw/openclaw
 ```
 
+Generate one summary with hydrated human comments included:
+
+```bash
+pnpm --filter @gitcrawl/cli cli summarize openclaw/openclaw --number 42 --include-comments
+```
+
+Remove previously hydrated comments from the local DB and refresh derived documents:
+
+```bash
+pnpm --filter @gitcrawl/cli cli purge-comments openclaw/openclaw
+```
+
 Generate embeddings:
 
 ```bash
@@ -105,7 +117,10 @@ pnpm --filter @gitcrawl/cli cli neighbors openclaw/openclaw --number 42 --limit 
 
 Notes:
 
-- `summarize`, `embed`, and `cluster` print progress to stderr during long runs
+- `summarize` is metadata-only by default and excludes comments unless you pass `--include-comments`
+- `summarize` logs per-thread token usage when OpenAI reports it
+- `summarize`, `embed`, and `cluster` print timestamped progress to stderr during long runs
+- `purge-comments` is useful if you previously hydrated comments and want to get back to a lean metadata-only local corpus
 - `neighbors` only works after `embed` has populated dedupe-summary embeddings
 
 ## Search

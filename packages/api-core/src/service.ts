@@ -144,6 +144,10 @@ function stableContentHash(input: string): string {
   return crypto.createHash('sha256').update(input).digest('hex');
 }
 
+function normalizeSummaryText(value: string): string {
+  return value.replace(/\r/g, '\n').replace(/\s+/g, ' ').trim();
+}
+
 function repositoryToDto(row: Record<string, unknown>): RepositoryDto {
   return {
     id: Number(row.id),
@@ -341,17 +345,18 @@ export class GitcrawlService {
     owner: string;
     repo: string;
     threadNumber?: number;
+    includeComments?: boolean;
     onProgress?: (message: string) => void;
-  }): Promise<{ runId: number; summarized: number }> {
+  }): Promise<{ runId: number; summarized: number; inputTokens: number; outputTokens: number; totalTokens: number }> {
     const ai = this.requireAi();
     const repository = this.requireRepository(params.owner, params.repo);
     const runId = this.startRun('summary_runs', repository.id, params.threadNumber ? `thread:${params.threadNumber}` : repository.fullName);
+    const includeComments = params.includeComments ?? false;
 
     try {
       let sql =
-        `select t.id, t.number, t.content_hash, d.raw_text, d.dedupe_text
+        `select t.id, t.number, t.title, t.body, t.labels_json
          from threads t
-         join documents d on d.thread_id = t.id
          where t.repo_id = ? and t.state = 'open'`;
       const args: Array<number> = [repository.id];
       if (params.threadNumber) {
@@ -363,20 +368,30 @@ export class GitcrawlService {
       const rows = this.db.prepare(sql).all(...args) as Array<{
         id: number;
         number: number;
-        content_hash: string;
-        raw_text: string;
-        dedupe_text: string;
+        title: string;
+        body: string | null;
+        labels_json: string;
       }>;
 
       params.onProgress?.(`[summarize] loaded ${rows.length} candidate thread(s) for ${repository.fullName}`);
+      params.onProgress?.(
+        includeComments
+          ? '[summarize] include-comments enabled; hydrated human comments may be included in the summary input'
+          : '[summarize] metadata-only mode; comments are excluded from the summary input',
+      );
 
-      const pending = rows.filter((row) => {
+      const sources = rows.map((row) => {
+        const source = this.buildSummarySource(row.id, row.title, row.body, parseArray(row.labels_json), includeComments);
+        return { ...row, ...source };
+      });
+
+      const pending = sources.filter((row) => {
         const latest = this.db
           .prepare(
             'select content_hash from document_summaries where thread_id = ? and summary_kind = ? and model = ? limit 1',
           )
           .get(row.id, 'dedupe_summary', this.config.summaryModel) as { content_hash: string } | undefined;
-        return latest?.content_hash !== row.content_hash;
+        return latest?.content_hash !== row.summaryContentHash;
       });
 
       params.onProgress?.(
@@ -384,26 +399,79 @@ export class GitcrawlService {
       );
 
       let summarized = 0;
+      let inputTokens = 0;
+      let outputTokens = 0;
+      let totalTokens = 0;
       for (const [index, row] of pending.entries()) {
         params.onProgress?.(`[summarize] ${index + 1}/${pending.length} thread #${row.number}`);
-        const summary = await ai.summarizeThread({
+        const result = await ai.summarizeThread({
           model: this.config.summaryModel,
-          text: `${row.raw_text}\n\n---\n\nDedupe focus:\n${row.dedupe_text}`,
+          text: row.summaryInput,
         });
+        const summary = result.summary;
 
-        this.upsertSummary(row.id, row.content_hash, 'problem_summary', summary.problemSummary);
-        this.upsertSummary(row.id, row.content_hash, 'solution_summary', summary.solutionSummary);
-        this.upsertSummary(row.id, row.content_hash, 'maintainer_signal_summary', summary.maintainerSignalSummary);
-        this.upsertSummary(row.id, row.content_hash, 'dedupe_summary', summary.dedupeSummary);
+        this.upsertSummary(row.id, row.summaryContentHash, 'problem_summary', summary.problemSummary);
+        this.upsertSummary(row.id, row.summaryContentHash, 'solution_summary', summary.solutionSummary);
+        this.upsertSummary(row.id, row.summaryContentHash, 'maintainer_signal_summary', summary.maintainerSignalSummary);
+        this.upsertSummary(row.id, row.summaryContentHash, 'dedupe_summary', summary.dedupeSummary);
+        if (result.usage) {
+          inputTokens += result.usage.inputTokens;
+          outputTokens += result.usage.outputTokens;
+          totalTokens += result.usage.totalTokens;
+          params.onProgress?.(
+            `[summarize] tokens thread #${row.number} in=${result.usage.inputTokens} out=${result.usage.outputTokens} total=${result.usage.totalTokens} cached_in=${result.usage.cachedInputTokens} reasoning=${result.usage.reasoningTokens}`,
+          );
+        }
         summarized += 1;
       }
 
-      this.finishRun('summary_runs', runId, 'completed', { summarized });
-      return { runId, summarized };
+      this.finishRun('summary_runs', runId, 'completed', { summarized, inputTokens, outputTokens, totalTokens });
+      return { runId, summarized, inputTokens, outputTokens, totalTokens };
     } catch (error) {
       this.finishRun('summary_runs', runId, 'failed', null, error);
       throw error;
     }
+  }
+
+  purgeComments(params: {
+    owner: string;
+    repo: string;
+    threadNumber?: number;
+    onProgress?: (message: string) => void;
+  }): { purgedComments: number; refreshedThreads: number } {
+    const repository = this.requireRepository(params.owner, params.repo);
+
+    let sql = 'select id, number from threads where repo_id = ?';
+    const args: Array<number> = [repository.id];
+    if (params.threadNumber) {
+      sql += ' and number = ?';
+      args.push(params.threadNumber);
+    }
+    sql += ' order by number asc';
+
+    const threads = this.db.prepare(sql).all(...args) as Array<{ id: number; number: number }>;
+    if (threads.length === 0) {
+      return { purgedComments: 0, refreshedThreads: 0 };
+    }
+
+    params.onProgress?.(`[purge-comments] removing hydrated comments from ${threads.length} thread(s) in ${repository.fullName}`);
+
+    const deleteComments = this.db.prepare('delete from comments where thread_id = ?');
+    let purgedComments = 0;
+    for (const thread of threads) {
+      const row = this.db.prepare('select count(*) as count from comments where thread_id = ?').get(thread.id) as { count: number };
+      if (row.count > 0) {
+        deleteComments.run(thread.id);
+        purgedComments += row.count;
+      }
+      this.refreshDocument(thread.id);
+    }
+
+    params.onProgress?.(
+      `[purge-comments] removed ${purgedComments} comment(s) and refreshed ${threads.length} document(s) for ${repository.fullName}`,
+    );
+
+    return { purgedComments, refreshedThreads: threads.length };
   }
 
   async embedRepository(params: {
@@ -1170,6 +1238,57 @@ export class GitcrawlService {
       .run(threadId, thread.title, thread.body, canonical.rawText, canonical.dedupeText, nowIso());
 
     this.db.prepare('update threads set content_hash = ?, updated_at = ? where id = ?').run(canonical.contentHash, nowIso(), threadId);
+  }
+
+  private buildSummarySource(
+    threadId: number,
+    title: string,
+    body: string | null,
+    labels: string[],
+    includeComments: boolean,
+  ): { summaryInput: string; summaryContentHash: string } {
+    const parts = [`title: ${normalizeSummaryText(title)}`];
+    const normalizedBody = normalizeSummaryText(body ?? '');
+    if (normalizedBody) {
+      parts.push(`body: ${normalizedBody}`);
+    }
+    if (labels.length > 0) {
+      parts.push(`labels: ${labels.join(', ')}`);
+    }
+
+    if (includeComments) {
+      const comments = this.db
+        .prepare(
+          `select body, author_login, author_type, is_bot
+           from comments
+           where thread_id = ?
+           order by coalesce(created_at_gh, updated_at_gh) asc, id asc`,
+        )
+        .all(threadId) as Array<{ body: string; author_login: string | null; author_type: string | null; is_bot: number }>;
+
+      const humanComments = comments
+        .filter((comment) =>
+          !isBotLikeAuthor({
+            authorLogin: comment.author_login,
+            authorType: comment.author_type,
+            isBot: comment.is_bot === 1,
+          }),
+        )
+        .map((comment) => {
+          const author = comment.author_login ? `@${comment.author_login}` : 'unknown';
+          const normalized = normalizeSummaryText(comment.body);
+          return normalized ? `${author}: ${normalized}` : '';
+        })
+        .filter(Boolean);
+
+      if (humanComments.length > 0) {
+        parts.push(`discussion:\n${humanComments.join('\n')}`);
+      }
+    }
+
+    const summaryInput = parts.join('\n\n');
+    const summaryContentHash = stableContentHash(`summary:${includeComments ? 'with-comments' : 'metadata-only'}\n${summaryInput}`);
+    return { summaryInput, summaryContentHash };
   }
 
   private upsertSummary(threadId: number, contentHash: string, summaryKind: string, summaryText: string): void {

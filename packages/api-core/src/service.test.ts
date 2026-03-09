@@ -3,7 +3,10 @@ import assert from 'node:assert/strict';
 
 import { GitcrawlService } from './service.js';
 
-function makeTestService(github: GitcrawlService['github']): GitcrawlService {
+function makeTestService(
+  github: GitcrawlService['github'],
+  ai?: GitcrawlService['ai'],
+): GitcrawlService {
   return new GitcrawlService({
     config: {
       workspaceRoot: process.cwd(),
@@ -15,6 +18,7 @@ function makeTestService(github: GitcrawlService['github']): GitcrawlService {
       githubToken: 'test-token',
     },
     github,
+    ai,
   });
 }
 
@@ -237,6 +241,316 @@ test('syncRepository fetches comments, reviews, and review comments when include
 
     const commentCount = service.db.prepare('select count(*) as count from comments').get() as { count: number };
     assert.equal(commentCount.count, 3);
+  } finally {
+    service.close();
+  }
+});
+
+test('summarizeRepository excludes hydrated comments by default and reports token usage', async () => {
+  const summaryInputs: string[] = [];
+  const service = makeTestService(
+    {
+      checkAuth: async () => undefined,
+      getRepo: async () => ({ id: 1, full_name: 'openclaw/openclaw' }),
+      listRepositoryIssues: async () => [],
+      getIssue: async () => {
+        throw new Error('not expected');
+      },
+      getPull: async () => {
+        throw new Error('not expected');
+      },
+      listIssueComments: async () => [],
+      listPullReviews: async () => [],
+      listPullReviewComments: async () => [],
+    },
+    {
+      checkAuth: async () => undefined,
+      summarizeThread: async ({ text }) => {
+        summaryInputs.push(text);
+        return {
+          summary: {
+            problemSummary: 'Problem',
+            solutionSummary: 'Solution',
+            maintainerSignalSummary: 'Signal',
+            dedupeSummary: 'Dedupe',
+          },
+          usage: {
+            inputTokens: 123,
+            outputTokens: 45,
+            totalTokens: 168,
+            cachedInputTokens: 0,
+            reasoningTokens: 0,
+          },
+        };
+      },
+      embedTexts: async () => [],
+    },
+  );
+
+  try {
+    const now = '2026-03-09T00:00:00Z';
+    service.db
+      .prepare(
+        `insert into repositories (id, owner, name, full_name, github_repo_id, raw_json, updated_at)
+         values (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(1, 'openclaw', 'openclaw', 'openclaw/openclaw', '1', '{}', now);
+    service.db
+      .prepare(
+        `insert into threads (
+          id, repo_id, github_id, number, kind, state, title, body, author_login, author_type, html_url,
+          labels_json, assignees_json, raw_json, content_hash, is_draft, created_at_gh, updated_at_gh, closed_at_gh,
+          merged_at_gh, first_pulled_at, last_pulled_at, updated_at
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        10,
+        1,
+        '100',
+        42,
+        'issue',
+        'open',
+        'Downloader hangs',
+        'The transfer never finishes.',
+        'alice',
+        'User',
+        'https://github.com/openclaw/openclaw/issues/42',
+        '["bug"]',
+        '[]',
+        '{}',
+        'hash-42',
+        0,
+        now,
+        now,
+        null,
+        null,
+        now,
+        now,
+        now,
+      );
+    service.db
+      .prepare(
+        `insert into comments (
+          thread_id, github_id, comment_type, author_login, author_type, body, is_bot, raw_json, created_at_gh, updated_at_gh
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(10, '200', 'issue_comment', 'human', 'User', 'This extra comment should stay out.', 0, '{}', now, now);
+    const result = await service.summarizeRepository({
+      owner: 'openclaw',
+      repo: 'openclaw',
+      threadNumber: 42,
+    });
+
+    assert.equal(result.summarized, 1);
+    assert.equal(result.inputTokens, 123);
+    assert.equal(result.outputTokens, 45);
+    assert.equal(result.totalTokens, 168);
+    assert.equal(summaryInputs.length, 1);
+    assert.match(summaryInputs[0], /title: Downloader hangs/);
+    assert.match(summaryInputs[0], /body: The transfer never finishes\./);
+    assert.doesNotMatch(summaryInputs[0], /This extra comment should stay out/);
+  } finally {
+    service.close();
+  }
+});
+
+test('summarizeRepository includes hydrated human comments when includeComments is enabled', async () => {
+  const summaryInputs: string[] = [];
+  const service = makeTestService(
+    {
+      checkAuth: async () => undefined,
+      getRepo: async () => ({ id: 1, full_name: 'openclaw/openclaw' }),
+      listRepositoryIssues: async () => [],
+      getIssue: async () => {
+        throw new Error('not expected');
+      },
+      getPull: async () => {
+        throw new Error('not expected');
+      },
+      listIssueComments: async () => [],
+      listPullReviews: async () => [],
+      listPullReviewComments: async () => [],
+    },
+    {
+      checkAuth: async () => undefined,
+      summarizeThread: async ({ text }) => {
+        summaryInputs.push(text);
+        return {
+          summary: {
+            problemSummary: 'Problem',
+            solutionSummary: 'Solution',
+            maintainerSignalSummary: 'Signal',
+            dedupeSummary: 'Dedupe',
+          },
+        };
+      },
+      embedTexts: async () => [],
+    },
+  );
+
+  try {
+    const now = '2026-03-09T00:00:00Z';
+    service.db
+      .prepare(
+        `insert into repositories (id, owner, name, full_name, github_repo_id, raw_json, updated_at)
+         values (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(1, 'openclaw', 'openclaw', 'openclaw/openclaw', '1', '{}', now);
+    service.db
+      .prepare(
+        `insert into threads (
+          id, repo_id, github_id, number, kind, state, title, body, author_login, author_type, html_url,
+          labels_json, assignees_json, raw_json, content_hash, is_draft, created_at_gh, updated_at_gh, closed_at_gh,
+          merged_at_gh, first_pulled_at, last_pulled_at, updated_at
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        10,
+        1,
+        '100',
+        42,
+        'issue',
+        'open',
+        'Downloader hangs',
+        'The transfer never finishes.',
+        'alice',
+        'User',
+        'https://github.com/openclaw/openclaw/issues/42',
+        '["bug"]',
+        '[]',
+        '{}',
+        'hash-42',
+        0,
+        now,
+        now,
+        null,
+        null,
+        now,
+        now,
+        now,
+      );
+    service.db
+      .prepare(
+        `insert into comments (
+          thread_id, github_id, comment_type, author_login, author_type, body, is_bot, raw_json, created_at_gh, updated_at_gh
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(10, '200', 'issue_comment', 'human', 'User', 'Same here on macOS.', 0, '{}', now, now);
+    service.db
+      .prepare(
+        `insert into comments (
+          thread_id, github_id, comment_type, author_login, author_type, body, is_bot, raw_json, created_at_gh, updated_at_gh
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(10, '201', 'issue_comment', 'dependabot[bot]', 'Bot', 'Noise', 1, '{}', now, now);
+
+    const result = await service.summarizeRepository({
+      owner: 'openclaw',
+      repo: 'openclaw',
+      threadNumber: 42,
+      includeComments: true,
+    });
+
+    assert.equal(result.summarized, 1);
+    assert.equal(summaryInputs.length, 1);
+    assert.match(summaryInputs[0], /discussion:/);
+    assert.match(summaryInputs[0], /@human: Same here on macOS\./);
+    assert.doesNotMatch(summaryInputs[0], /dependabot/);
+  } finally {
+    service.close();
+  }
+});
+
+test('purgeComments removes hydrated comments and refreshes canonical documents', () => {
+  const service = makeTestService({
+    checkAuth: async () => undefined,
+    getRepo: async () => ({ id: 1, full_name: 'openclaw/openclaw' }),
+    listRepositoryIssues: async () => [],
+    getIssue: async () => {
+      throw new Error('not expected');
+    },
+    getPull: async () => {
+      throw new Error('not expected');
+    },
+    listIssueComments: async () => [],
+    listPullReviews: async () => [],
+    listPullReviewComments: async () => [],
+  });
+
+  try {
+    const now = '2026-03-09T00:00:00Z';
+    service.db
+      .prepare(
+        `insert into repositories (id, owner, name, full_name, github_repo_id, raw_json, updated_at)
+         values (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(1, 'openclaw', 'openclaw', 'openclaw/openclaw', '1', '{}', now);
+    service.db
+      .prepare(
+        `insert into threads (
+          id, repo_id, github_id, number, kind, state, title, body, author_login, author_type, html_url,
+          labels_json, assignees_json, raw_json, content_hash, is_draft, created_at_gh, updated_at_gh, closed_at_gh,
+          merged_at_gh, first_pulled_at, last_pulled_at, updated_at
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        10,
+        1,
+        '100',
+        42,
+        'issue',
+        'open',
+        'Downloader hangs',
+        'The transfer never finishes.',
+        'alice',
+        'User',
+        'https://github.com/openclaw/openclaw/issues/42',
+        '["bug"]',
+        '[]',
+        '{}',
+        'hash-42',
+        0,
+        now,
+        now,
+        null,
+        null,
+        now,
+        now,
+        now,
+      );
+    service.db
+      .prepare(
+        `insert into comments (
+          thread_id, github_id, comment_type, author_login, author_type, body, is_bot, raw_json, created_at_gh, updated_at_gh
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(10, '200', 'issue_comment', 'human', 'User', 'Same here on macOS.', 0, '{}', now, now);
+    service.db
+      .prepare(
+        `insert into documents (thread_id, title, body, raw_text, dedupe_text, updated_at)
+         values (?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        10,
+        'Downloader hangs',
+        'The transfer never finishes.',
+        'Downloader hangs\n\nThe transfer never finishes.\n\nSame here on macOS.',
+        'title: Downloader hangs\n\nbody: The transfer never finishes.\n\ndiscussion: @human: Same here on macOS.',
+        now,
+      );
+
+    const before = service.db.prepare('select dedupe_text from documents where thread_id = ?').get(10) as { dedupe_text: string };
+    assert.match(before.dedupe_text, /discussion:/);
+
+    const result = service.purgeComments({ owner: 'openclaw', repo: 'openclaw' });
+
+    const count = service.db.prepare('select count(*) as count from comments').get() as { count: number };
+    const after = service.db.prepare('select dedupe_text from documents where thread_id = ?').get(10) as { dedupe_text: string };
+
+    assert.equal(result.purgedComments, 1);
+    assert.equal(result.refreshedThreads, 1);
+    assert.equal(count.count, 0);
+    assert.doesNotMatch(after.dedupe_text, /discussion:/);
   } finally {
     service.close();
   }

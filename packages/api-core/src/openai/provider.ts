@@ -9,9 +9,17 @@ export type SummaryResult = {
   dedupeSummary: string;
 };
 
+export type SummaryUsage = {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  cachedInputTokens: number;
+  reasoningTokens: number;
+};
+
 export type AiProvider = {
   checkAuth: () => Promise<void>;
-  summarizeThread: (params: { model: string; text: string }) => Promise<SummaryResult>;
+  summarizeThread: (params: { model: string; text: string }) => Promise<{ summary: SummaryResult; usage?: SummaryUsage }>;
   embedTexts: (params: { model: string; texts: string[] }) => Promise<number[][]>;
 };
 
@@ -33,7 +41,7 @@ export class OpenAiProvider implements AiProvider {
     await this.client.models.list();
   }
 
-  async summarizeThread(params: { model: string; text: string }): Promise<SummaryResult> {
+  async summarizeThread(params: { model: string; text: string }): Promise<{ summary: SummaryResult; usage?: SummaryUsage }> {
     const format = zodTextFormat(summarySchema, 'gitcrawl_thread_summary');
     let lastError: Error | null = null;
 
@@ -68,10 +76,21 @@ export class OpenAiProvider implements AiProvider {
         const parsed = summarySchema.parse(JSON.parse(raw));
 
         return {
-          problemSummary: parsed.problem_summary,
-          solutionSummary: parsed.solution_summary,
-          maintainerSignalSummary: parsed.maintainer_signal_summary,
-          dedupeSummary: parsed.dedupe_summary,
+          summary: {
+            problemSummary: parsed.problem_summary,
+            solutionSummary: parsed.solution_summary,
+            maintainerSignalSummary: parsed.maintainer_signal_summary,
+            dedupeSummary: parsed.dedupe_summary,
+          },
+          usage: response.usage
+            ? {
+                inputTokens: response.usage.input_tokens,
+                outputTokens: response.usage.output_tokens,
+                totalTokens: response.usage.total_tokens,
+                cachedInputTokens: response.usage.input_tokens_details?.cached_tokens ?? 0,
+                reasoningTokens: response.usage.output_tokens_details?.reasoning_tokens ?? 0,
+              }
+            : undefined,
         };
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error));

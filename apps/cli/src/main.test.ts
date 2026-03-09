@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { parseOwnerRepo, parseRepoFlags, resolveSinceValue, run } from './main.js';
+import { formatLogLine, parseOwnerRepo, parseRepoFlags, resolveSinceValue, run } from './main.js';
 
 test('run prints usage with no command', async () => {
   let output = '';
@@ -57,4 +57,8 @@ test('resolveSinceValue parses month duration shorthand', () => {
 
 test('resolveSinceValue rejects unsupported syntax', () => {
   assert.throws(() => resolveSinceValue('yesterday'), /Invalid --since value/);
+});
+
+test('formatLogLine prefixes ISO timestamps with millisecond resolution', () => {
+  assert.equal(formatLogLine('[sync] hello', new Date('2026-03-09T12:34:56.789Z')), '[2026-03-09T12:34:56.789Z] [sync] hello');
 });
