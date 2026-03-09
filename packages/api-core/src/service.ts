@@ -184,11 +184,6 @@ export type DoctorResult = {
     authOk: boolean;
     error: string | null;
   };
-  openSearch: {
-    configured: boolean;
-    ok: boolean;
-    error: string | null;
-  };
 };
 
 type SyncOptions = {
@@ -338,7 +333,6 @@ export class GitcrawlService {
       apiPort: this.config.apiPort,
       githubConfigured: Boolean(this.config.githubToken),
       openaiConfigured: Boolean(this.config.openaiApiKey),
-      openSearchConfigured: Boolean(this.config.openSearchUrl),
     };
     return healthResponseSchema.parse(response);
   }
@@ -359,12 +353,6 @@ export class GitcrawlService {
       authOk: false,
       error: null as string | null,
     };
-    const openSearch = {
-      configured: Boolean(this.config.openSearchUrl),
-      ok: false,
-      error: null as string | null,
-    };
-
     if (github.configured) {
       if (!github.formatOk) {
         github.error = 'Token format does not look like a GitHub personal access token.';
@@ -391,19 +379,7 @@ export class GitcrawlService {
       }
     }
 
-    if (this.config.openSearchUrl) {
-      try {
-        const response = await fetch(this.config.openSearchUrl, { method: 'GET' });
-        openSearch.ok = response.ok;
-        if (!response.ok) {
-          openSearch.error = `HTTP ${response.status}`;
-        }
-      } catch (error) {
-        openSearch.error = error instanceof Error ? error.message : String(error);
-      }
-    }
-
-    return { health, github, openai, openSearch };
+    return { health, github, openai };
   }
 
   listRepositories(): RepositoriesResponse {

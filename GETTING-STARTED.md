@@ -46,7 +46,7 @@ Recommended GitHub token shape:
 
 If you use a classic PAT and need private repo access, `repo` is the safe fallback scope.
 
-Check GitHub auth, OpenAI auth, DB wiring, and optional OpenSearch config:
+Check GitHub auth, OpenAI auth, and DB wiring:
 
 ```bash
 pnpm doctor
@@ -98,25 +98,7 @@ Notes:
 - `--limit` is the safest way to confirm the pipeline works before attempting a full crawl.
 - Long syncs can still hit GitHub rate limits, but the crawler now pauses every 100 threads and backs off more aggressively when GitHub asks it to slow down.
 
-## Enrich the local data
-
-Generate summaries:
-
-```bash
-pnpm --filter @gitcrawl/cli cli summarize openclaw/openclaw
-```
-
-Generate one summary with hydrated human comments included:
-
-```bash
-pnpm --filter @gitcrawl/cli cli summarize openclaw/openclaw --number 42 --include-comments
-```
-
-Remove previously hydrated comments from the local DB and refresh derived documents:
-
-```bash
-pnpm --filter @gitcrawl/cli cli purge-comments openclaw/openclaw
-```
+## Build embeddings and clusters
 
 Generate embeddings:
 
@@ -144,12 +126,8 @@ pnpm --filter @gitcrawl/cli cli tui openclaw/openclaw
 
 Notes:
 
-- `summarize` is metadata-only by default and excludes comments unless you pass `--include-comments`
-- `summarize` logs per-thread token usage when OpenAI reports it
-- `summarize`, `embed`, and `cluster` print timestamped progress to stderr during long runs
-- `purge-comments` is useful if you previously hydrated comments and want to get back to a lean metadata-only local corpus
 - `embed` defaults to `text-embedding-3-large`
-- `embed` creates separate vectors for `title` and `body`, plus a summary-derived vector when summaries exist
+- `embed` creates separate vectors for `title` and `body`, and also uses stored summary text when present
 - unchanged embedding inputs are skipped by stored hash, so reruns do not resubmit identical text
 - oversized embedding inputs are truncated locally and requests are split by a conservative token budget before submission
 - the embedding worker defaults are `batch_size=8`, `concurrency=10`, and `max_unread=20`; override them with `GITCRAWL_EMBED_BATCH_SIZE`, `GITCRAWL_EMBED_CONCURRENCY`, and `GITCRAWL_EMBED_MAX_UNREAD` if needed
@@ -201,6 +179,5 @@ Useful endpoints:
 ## Current limitations
 
 - There is no web UI yet. `serve` is API-only.
-- OpenSearch is not wired yet; search is local SQLite FTS plus exact in-process vector similarity.
 - Timeline event ingestion and durable incremental sync cursors are still future work.
 - repo-root `.env.local` is still accepted as a fallback for development, but normal setup should use `pnpm bootstrap`

@@ -12,7 +12,6 @@ test('health schema accepts configured status payload', () => {
     apiPort: 5179,
     githubConfigured: true,
     openaiConfigured: false,
-    openSearchConfigured: false,
   });
 
   assert.equal(parsed.apiPort, 5179);

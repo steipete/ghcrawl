@@ -24,7 +24,6 @@ Current priorities:
 - GitHub API: Octokit
 - OpenAI API: official `openai` Node SDK
 - vector search: exact cosine similarity in-process
-- optional future ANN backend: OpenSearch, deferred
 
 ## Important Current Behavior
 
@@ -38,8 +37,8 @@ Current priorities:
 
 ## Where To Read First
 
-- product/design: [DESIGN.md](/Users/huntharo/github/gitcrawl/DESIGN.md)
-- implementation status and next phases: [PLAN.md](/Users/huntharo/github/gitcrawl/PLAN.md)
+- product/design: [docs/DESIGN.md](/Users/huntharo/github/gitcrawl/docs/DESIGN.md)
+- implementation status and next phases: [docs/PLAN.md](/Users/huntharo/github/gitcrawl/docs/PLAN.md)
 - operator overview: [README.md](/Users/huntharo/github/gitcrawl/README.md)
 - local usage walkthrough: [GETTING-STARTED.md](/Users/huntharo/github/gitcrawl/GETTING-STARTED.md)
 
@@ -89,6 +88,5 @@ If a change affects OpenAI-backed paths, avoid unnecessary live spend unless the
   - `apps/web` must not depend on `api-core`
   - browser code must not access SQLite, GitHub, or OpenAI directly
 - Prefer metadata-first sync unless there is a strong reason to hydrate comments.
-- Do not add OpenSearch as a default dependency path.
+- Do not add a heavyweight external search service as a default dependency path.
 - Preserve operator-facing progress output for long-running commands.
-

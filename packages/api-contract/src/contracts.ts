@@ -40,7 +40,6 @@ export const healthResponseSchema = z.object({
   apiPort: z.number().int().positive(),
   githubConfigured: z.boolean(),
   openaiConfigured: z.boolean(),
-  openSearchConfigured: z.boolean(),
 });
 export type HealthResponse = z.infer<typeof healthResponseSchema>;
 

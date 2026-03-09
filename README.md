@@ -7,7 +7,6 @@ Current status:
 - `pnpm` monorepo scaffold is in place
 - SQLite is the canonical local store
 - the CLI hosts the only supported runtime in V1
-- the future web UI is intentionally deferred
 
 ## Quick start
 
@@ -28,7 +27,6 @@ The root package exposes pass-through helpers so you do not need to remember the
 ```bash
 pnpm tui openclaw/openclaw
 pnpm sync openclaw/openclaw --since 7d
-pnpm summarize openclaw/openclaw
 pnpm embed openclaw/openclaw
 pnpm cluster openclaw/openclaw
 pnpm search openclaw/openclaw --query "download stalls"
@@ -63,9 +61,6 @@ CI also runs a package smoke check on pull requests and `main` by packing the pu
 pnpm --filter @gitcrawl/cli cli sync openclaw/openclaw
 pnpm --filter @gitcrawl/cli cli sync openclaw/openclaw --limit 25
 pnpm --filter @gitcrawl/cli cli sync openclaw/openclaw --include-comments --limit 25
-pnpm --filter @gitcrawl/cli cli summarize openclaw/openclaw
-pnpm --filter @gitcrawl/cli cli summarize openclaw/openclaw --include-comments --number 42
-pnpm --filter @gitcrawl/cli cli purge-comments openclaw/openclaw
 pnpm --filter @gitcrawl/cli cli embed openclaw/openclaw
 pnpm --filter @gitcrawl/cli cli cluster openclaw/openclaw
 pnpm --filter @gitcrawl/cli cli neighbors openclaw/openclaw --number 42 --limit 10
@@ -113,7 +108,6 @@ GitHub token guidance:
 - local DB path wiring
 - GitHub token presence, token-shape validation, and a live auth smoke check
 - OpenAI key presence, key-shape validation, and a live auth smoke check
-- optional OpenSearch reachability if configured
 
 Environment overrides are still supported and take precedence over the saved config:
 
@@ -126,8 +120,6 @@ Environment overrides are still supported and take precedence over the saved con
 - `GITCRAWL_EMBED_BATCH_SIZE`
 - `GITCRAWL_EMBED_CONCURRENCY`
 - `GITCRAWL_EMBED_MAX_UNREAD`
-- `GITCRAWL_OPENSEARCH_URL`
-- `GITCRAWL_OPENSEARCH_INDEX`
 
 For local development, repo-root `.env.local` is still accepted as a fallback, but it is no longer the primary setup path.
 
@@ -137,18 +129,15 @@ For local development, repo-root `.env.local` is still accepted as a fallback, b
 - `sync` only pulls open issues and PRs now.
 - `sync` is metadata-only by default. It pulls titles, bodies, labels, assignees, state, and timestamps without fetching comment bodies.
 - `sync --include-comments` enables issue comments, PR reviews, and review comments for deeper per-thread context.
-- `summarize` is metadata-only by default too. It summarizes title, body, and labels unless you pass `--include-comments`.
-- `summarize` now logs per-thread token usage when the OpenAI API reports it.
-- `purge-comments` removes hydrated comments from the local DB and refreshes canonical documents so older comment-heavy crawls can be cleaned up.
 - `embed` now defaults to `text-embedding-3-large`.
-- `embed` generates separate vectors for `title` and `body`, and also a summary-derived vector when summary fields exist.
+- `embed` generates separate vectors for `title` and `body`, and also uses stored summary text when present.
 - `embed` stores an input hash per source kind and will not resubmit unchanged text for re-embedding.
 - `embed` now truncates oversized source text before submission and splits requests on a conservative token budget to avoid OpenAI context-limit failures.
-- semantic search, neighbors, and clustering now aggregate across the stored embedding sources instead of relying only on summary vectors.
+- semantic search, neighbors, and clustering aggregate across the stored embedding sources.
 - `sync --since` accepts either an ISO timestamp or a relative duration like `15m`, `2h`, `7d`, or `1mo`.
 - `sync --limit <count>` and `sync --since <iso|duration>` are filtered crawls. They do not run stale-open reconciliation for items outside the filtered window.
 - `sync --limit <count>` is the best smoke-test path on a busy repository.
-- `summarize`, `embed`, and `cluster` now print timestamped progress lines to stderr during long runs.
+- `embed` and `cluster` print timestamped progress lines to stderr during long runs.
 - `neighbors` shows exact local nearest neighbors for one embedded thread and is useful for inspecting vector quality before clustering.
 - `tui` opens the local full-screen cluster browser with cluster list, member list, and thread detail panes.
 - `tui` defaults to showing clusters of size `10+`; use `f` inside the TUI to cycle `10`, `20`, `50`, and `all`.
