@@ -13,7 +13,10 @@ function makeTestService(
       dbPath: ':memory:',
       apiPort: 5179,
       summaryModel: 'gpt-5-mini',
-      embedModel: 'text-embedding-3-small',
+      embedModel: 'text-embedding-3-large',
+      embedBatchSize: 2,
+      embedConcurrency: 2,
+      embedMaxUnread: 4,
       openSearchIndex: 'gitcrawl-threads',
       githubToken: 'test-token',
     },
@@ -556,6 +559,110 @@ test('purgeComments removes hydrated comments and refreshes canonical documents'
   }
 });
 
+test('embedRepository batches multi-source embeddings and skips unchanged inputs by hash', async () => {
+  const embedCalls: string[][] = [];
+  const service = makeTestService(
+    {
+      checkAuth: async () => undefined,
+      getRepo: async () => ({ id: 1, full_name: 'openclaw/openclaw' }),
+      listRepositoryIssues: async () => [],
+      getIssue: async () => {
+        throw new Error('not expected');
+      },
+      getPull: async () => {
+        throw new Error('not expected');
+      },
+      listIssueComments: async () => [],
+      listPullReviews: async () => [],
+      listPullReviewComments: async () => [],
+    },
+    {
+      checkAuth: async () => undefined,
+      summarizeThread: async () => {
+        throw new Error('not expected');
+      },
+      embedTexts: async ({ texts }) => {
+        embedCalls.push(texts);
+        return texts.map((text, index) => [text.length, index]);
+      },
+    },
+  );
+
+  try {
+    const now = '2026-03-09T00:00:00Z';
+    service.db
+      .prepare(
+        `insert into repositories (id, owner, name, full_name, github_repo_id, raw_json, updated_at)
+         values (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(1, 'openclaw', 'openclaw', 'openclaw/openclaw', '1', '{}', now);
+    service.db
+      .prepare(
+        `insert into threads (
+          id, repo_id, github_id, number, kind, state, title, body, author_login, author_type, html_url,
+          labels_json, assignees_json, raw_json, content_hash, is_draft, created_at_gh, updated_at_gh, closed_at_gh,
+          merged_at_gh, first_pulled_at, last_pulled_at, updated_at
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        10,
+        1,
+        '100',
+        42,
+        'issue',
+        'open',
+        'Downloader hangs',
+        'The transfer never finishes.',
+        'alice',
+        'User',
+        'https://github.com/openclaw/openclaw/issues/42',
+        '["bug"]',
+        '[]',
+        '{}',
+        'hash-42',
+        0,
+        now,
+        now,
+        null,
+        null,
+        now,
+        now,
+        now,
+      );
+    service.db
+      .prepare(
+        `insert into document_summaries (thread_id, summary_kind, model, content_hash, summary_text, created_at, updated_at)
+         values (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(10, 'dedupe_summary', 'gpt-5-mini', 'summary-hash', 'Transfer hangs near completion.', now, now);
+
+    const first = await service.embedRepository({ owner: 'openclaw', repo: 'openclaw' });
+    assert.equal(first.embedded, 3);
+    assert.equal(embedCalls.length, 2);
+    assert.deepEqual(
+      service.db
+        .prepare('select source_kind from document_embeddings order by source_kind asc')
+        .all()
+        .map((row: unknown) => (row as { source_kind: string }).source_kind),
+      ['body', 'dedupe_summary', 'title'],
+    );
+
+    const second = await service.embedRepository({ owner: 'openclaw', repo: 'openclaw' });
+    assert.equal(second.embedded, 0);
+    assert.equal(embedCalls.length, 2);
+
+    service.db
+      .prepare('update threads set body = ?, updated_at = ? where id = ?')
+      .run('The transfer now stalls at 99%.', now, 10);
+    const third = await service.embedRepository({ owner: 'openclaw', repo: 'openclaw' });
+    assert.equal(third.embedded, 1);
+    assert.equal(embedCalls.length, 3);
+    assert.deepEqual(embedCalls[2], ['The transfer now stalls at 99%.']);
+  } finally {
+    service.close();
+  }
+});
+
 test('listNeighbors returns exact nearest neighbors for an embedded thread', () => {
   const service = makeTestService({
     checkAuth: async () => undefined,
@@ -608,19 +715,19 @@ test('listNeighbors returns exact nearest neighbors for an embedded thread', () 
         `insert into document_embeddings (thread_id, source_kind, model, dimensions, content_hash, embedding_json, created_at, updated_at)
          values (?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(10, 'dedupe_summary', 'text-embedding-3-small', 2, 'hash-42', '[1,0]', now, now);
+      .run(10, 'dedupe_summary', 'text-embedding-3-large', 2, 'hash-42', '[1,0]', now, now);
     service.db
       .prepare(
         `insert into document_embeddings (thread_id, source_kind, model, dimensions, content_hash, embedding_json, created_at, updated_at)
          values (?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(11, 'dedupe_summary', 'text-embedding-3-small', 2, 'hash-43', '[0.99,0.01]', now, now);
+      .run(11, 'dedupe_summary', 'text-embedding-3-large', 2, 'hash-43', '[0.99,0.01]', now, now);
     service.db
       .prepare(
         `insert into document_embeddings (thread_id, source_kind, model, dimensions, content_hash, embedding_json, created_at, updated_at)
          values (?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(12, 'dedupe_summary', 'text-embedding-3-small', 2, 'hash-44', '[0,1]', now, now);
+      .run(12, 'dedupe_summary', 'text-embedding-3-large', 2, 'hash-44', '[0,1]', now, now);
 
     const result = service.listNeighbors({
       owner: 'openclaw',

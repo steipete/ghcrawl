@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import { APIConnectionError, APIConnectionTimeoutError, APIError, RateLimitError } from 'openai/error';
 import { zodTextFormat } from 'openai/helpers/zod';
 import { z } from 'zod';
 
@@ -104,11 +105,37 @@ export class OpenAiProvider implements AiProvider {
   }
 
   async embedTexts(params: { model: string; texts: string[] }): Promise<number[][]> {
-    const response = await this.client.embeddings.create({
-      model: params.model,
-      input: params.texts,
-    });
+    if (params.texts.length === 0) {
+      return [];
+    }
 
-    return response.data.map((item) => item.embedding);
+    let lastError: Error | null = null;
+    for (const attempt of [1, 2, 3, 4, 5]) {
+      try {
+        const response = await this.client.embeddings.create({
+          model: params.model,
+          input: params.texts,
+        });
+
+        return response.data.map((item) => item.embedding);
+      } catch (error) {
+        const shouldRetry =
+          error instanceof RateLimitError ||
+          error instanceof APIConnectionError ||
+          error instanceof APIConnectionTimeoutError ||
+          (error instanceof APIError && typeof error.status === 'number' && error.status >= 500);
+        lastError = error instanceof Error ? error : new Error(String(error));
+        if (!shouldRetry || attempt === 5) {
+          break;
+        }
+        await sleep(1000 * 2 ** (attempt - 1));
+      }
+    }
+
+    throw new Error(`OpenAI embeddings failed after 5 attempts: ${lastError?.message ?? 'unknown error'}`);
   }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

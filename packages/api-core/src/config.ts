@@ -11,6 +11,9 @@ export type GitcrawlConfig = {
   openaiApiKey?: string;
   summaryModel: string;
   embedModel: string;
+  embedBatchSize: number;
+  embedConcurrency: number;
+  embedMaxUnread: number;
   openSearchUrl?: string;
   openSearchIndex: string;
 };
@@ -40,6 +43,21 @@ export function loadConfig(options: { cwd?: string; env?: NodeJS.ProcessEnv } = 
   if (!Number.isSafeInteger(apiPort) || apiPort <= 0) {
     throw new Error(`Invalid GITCRAWL_API_PORT: ${apiPortRaw}`);
   }
+  const embedBatchSizeRaw = env.GITCRAWL_EMBED_BATCH_SIZE ?? '8';
+  const embedConcurrencyRaw = env.GITCRAWL_EMBED_CONCURRENCY ?? '10';
+  const embedMaxUnreadRaw = env.GITCRAWL_EMBED_MAX_UNREAD ?? '20';
+  const embedBatchSize = Number(embedBatchSizeRaw);
+  const embedConcurrency = Number(embedConcurrencyRaw);
+  const embedMaxUnread = Number(embedMaxUnreadRaw);
+  if (!Number.isSafeInteger(embedBatchSize) || embedBatchSize <= 0) {
+    throw new Error(`Invalid GITCRAWL_EMBED_BATCH_SIZE: ${embedBatchSizeRaw}`);
+  }
+  if (!Number.isSafeInteger(embedConcurrency) || embedConcurrency <= 0) {
+    throw new Error(`Invalid GITCRAWL_EMBED_CONCURRENCY: ${embedConcurrencyRaw}`);
+  }
+  if (!Number.isSafeInteger(embedMaxUnread) || embedMaxUnread <= 0) {
+    throw new Error(`Invalid GITCRAWL_EMBED_MAX_UNREAD: ${embedMaxUnreadRaw}`);
+  }
 
   return {
     workspaceRoot,
@@ -48,7 +66,10 @@ export function loadConfig(options: { cwd?: string; env?: NodeJS.ProcessEnv } = 
     githubToken: env.GITHUB_TOKEN,
     openaiApiKey: env.OPENAI_API_KEY,
     summaryModel: env.GITCRAWL_SUMMARY_MODEL ?? 'gpt-5-mini',
-    embedModel: env.GITCRAWL_EMBED_MODEL ?? 'text-embedding-3-small',
+    embedModel: env.GITCRAWL_EMBED_MODEL ?? 'text-embedding-3-large',
+    embedBatchSize,
+    embedConcurrency,
+    embedMaxUnread,
     openSearchUrl: env.GITCRAWL_OPENSEARCH_URL,
     openSearchIndex: env.GITCRAWL_OPENSEARCH_INDEX ?? 'gitcrawl-threads',
   };

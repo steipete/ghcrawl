@@ -1,6 +1,7 @@
 import http from 'node:http';
 import crypto from 'node:crypto';
 
+import { IterableMapper } from '@shutterstock/p-map-iterable';
 import {
   actionResponseSchema,
   clustersResponseSchema,
@@ -31,7 +32,7 @@ import { openDb, type SqliteDatabase } from './db/sqlite.js';
 import { buildCanonicalDocument, isBotLikeAuthor } from './documents/normalize.js';
 import { makeGitHubClient, type GitHubClient } from './github/client.js';
 import { OpenAiProvider, type AiProvider } from './openai/provider.js';
-import { rankNearestNeighbors } from './search/exact.js';
+import { cosineSimilarity, rankNearestNeighbors } from './search/exact.js';
 
 type RunTable = 'sync_runs' | 'summary_runs' | 'embedding_runs' | 'cluster_runs';
 
@@ -61,6 +62,21 @@ type CommentSeed = {
   rawJson: string;
   createdAtGh: string | null;
   updatedAtGh: string | null;
+};
+
+type EmbeddingSourceKind = 'title' | 'body' | 'dedupe_summary';
+
+type EmbeddingTask = {
+  threadId: number;
+  threadNumber: number;
+  sourceKind: EmbeddingSourceKind;
+  text: string;
+  contentHash: string;
+};
+
+type StoredEmbeddingRow = ThreadRow & {
+  source_kind: EmbeddingSourceKind;
+  embedding_json: string;
 };
 
 export type DoctorResult = {
@@ -486,43 +502,84 @@ export class GitcrawlService {
 
     try {
       let sql =
-        `select t.id, t.number, s.summary_text, s.content_hash
+        `select t.id, t.number, t.title, t.body
          from threads t
-         join document_summaries s on s.thread_id = t.id
-         where t.repo_id = ? and t.state = 'open' and s.summary_kind = ? and s.model = ?`;
-      const args: Array<string | number> = [repository.id, 'dedupe_summary', this.config.summaryModel];
+         where t.repo_id = ? and t.state = 'open'`;
+      const args: Array<string | number> = [repository.id];
       if (params.threadNumber) {
         sql += ' and t.number = ?';
         args.push(params.threadNumber);
       }
       sql += ' order by t.number asc';
-      const rows = this.db.prepare(sql).all(...args) as Array<{ id: number; number: number; summary_text: string; content_hash: string }>;
+      const rows = this.db.prepare(sql).all(...args) as Array<{
+        id: number;
+        number: number;
+        title: string;
+        body: string | null;
+      }>;
+      const summaryTexts = this.loadCombinedSummaryTextMap(repository.id, params.threadNumber);
 
-      params.onProgress?.(`[embed] loaded ${rows.length} summarized thread(s) for ${repository.fullName}`);
-
-      const pending = rows.filter((row) => {
-        const latest = this.db
-          .prepare('select content_hash from document_embeddings where thread_id = ? and source_kind = ? and model = ?')
-          .get(row.id, 'dedupe_summary', this.config.embedModel) as { content_hash: string } | undefined;
-        return latest?.content_hash !== row.content_hash;
-      });
+      const tasks = rows.flatMap((row) =>
+        this.buildEmbeddingTasks({
+          threadId: row.id,
+          threadNumber: row.number,
+          title: row.title,
+          body: row.body,
+          dedupeSummary: summaryTexts.get(row.id) ?? null,
+        }),
+      );
+      const existingRows = this.db
+        .prepare(
+          `select e.thread_id, e.source_kind, e.content_hash
+           from document_embeddings e
+           join threads t on t.id = e.thread_id
+           where t.repo_id = ? and e.model = ?`,
+        )
+        .all(repository.id, this.config.embedModel) as Array<{
+          thread_id: number;
+          source_kind: EmbeddingSourceKind;
+          content_hash: string;
+        }>;
+      const existing = new Map<string, string>();
+      for (const row of existingRows) {
+        existing.set(`${row.thread_id}:${row.source_kind}`, row.content_hash);
+      }
+      const pending = tasks.filter((task) => existing.get(`${task.threadId}:${task.sourceKind}`) !== task.contentHash);
+      const skipped = tasks.length - pending.length;
 
       params.onProgress?.(
-        `[embed] pending=${pending.length} skipped=${rows.length - pending.length} model=${this.config.embedModel}`,
+        `[embed] loaded ${rows.length} open thread(s) and ${tasks.length} embedding source(s) for ${repository.fullName}`,
+      );
+      params.onProgress?.(
+        `[embed] pending=${pending.length} skipped=${skipped} model=${this.config.embedModel} batch_size=${this.config.embedBatchSize} concurrency=${this.config.embedConcurrency} max_unread=${this.config.embedMaxUnread}`,
       );
 
       let embedded = 0;
-      for (let index = 0; index < pending.length; index += 32) {
-        const batch = pending.slice(index, index + 32);
+      const batches = this.chunkArray(pending, this.config.embedBatchSize);
+      const mapper = new IterableMapper(
+        batches,
+        async (batch: EmbeddingTask[]) => {
+          const embeddings = await ai.embedTexts({
+            model: this.config.embedModel,
+            texts: batch.map((task) => task.text),
+          });
+          return batch.map((task, index) => ({ task, embedding: embeddings[index] }));
+        },
+        {
+          concurrency: this.config.embedConcurrency,
+          maxUnread: this.config.embedMaxUnread,
+        },
+      );
+
+      let completedBatches = 0;
+      for await (const batchResult of mapper) {
+        completedBatches += 1;
+        const numbers = batchResult.map(({ task }) => `#${task.threadNumber}:${task.sourceKind}`);
         params.onProgress?.(
-          `[embed] batch ${Math.floor(index / 32) + 1}/${Math.max(Math.ceil(pending.length / 32), 1)} size=${batch.length} numbers=${batch.map((row) => row.number).join(',')}`,
+          `[embed] batch ${completedBatches}/${Math.max(batches.length, 1)} size=${batchResult.length} items=${numbers.join(',')}`,
         );
-        const embeddings = await ai.embedTexts({
-          model: this.config.embedModel,
-          texts: batch.map((row) => row.summary_text),
-        });
-        for (let batchIndex = 0; batchIndex < batch.length; batchIndex += 1) {
-          this.upsertEmbedding(batch[batchIndex].id, batch[batchIndex].content_hash, embeddings[batchIndex]);
+        for (const { task, embedding } of batchResult) {
+          this.upsertEmbedding(task.threadId, task.sourceKind, task.contentHash, embedding);
           embedded += 1;
         }
       }
@@ -548,68 +605,46 @@ export class GitcrawlService {
     const k = params.k ?? 6;
 
     try {
-      const rows = this.db
-        .prepare(
-          `select t.id, t.number, t.title, e.embedding_json
-           from threads t
-           join document_embeddings e on e.thread_id = t.id
-           where t.repo_id = ? and t.state = 'open' and e.source_kind = ? and e.model = ?
-           order by t.number asc`,
-        )
-        .all(repository.id, 'dedupe_summary', this.config.embedModel) as Array<{
-          id: number;
-          number: number;
-          title: string;
-          embedding_json: string;
-        }>;
-
-      const items = rows.map((row) => ({
-        id: row.id,
-        number: row.number,
-        title: row.title,
-        embedding: JSON.parse(row.embedding_json) as number[],
+      const rows = this.loadStoredEmbeddings(repository.id);
+      const threadMeta = new Map<number, { number: number; title: string }>();
+      for (const row of rows) {
+        threadMeta.set(row.id, { number: row.number, title: row.title });
+      }
+      const items = Array.from(threadMeta.entries()).map(([id, meta]) => ({
+        id,
+        number: meta.number,
+        title: meta.title,
       }));
 
       params.onProgress?.(
-        `[cluster] loaded ${items.length} embedded thread(s) for ${repository.fullName} k=${k} minScore=${minScore}`,
+        `[cluster] loaded ${items.length} embedded thread(s) across ${new Set(rows.map((row) => row.source_kind)).size} source kind(s) for ${repository.fullName} k=${k} minScore=${minScore}`,
       );
 
       this.db.prepare('delete from cluster_members where cluster_id in (select id from clusters where cluster_run_id = ?)').run(runId);
       this.db.prepare('delete from clusters where cluster_run_id = ?').run(runId);
       this.db.prepare('delete from similarity_edges where cluster_run_id = ?').run(runId);
 
-      const pairSeen = new Set<string>();
-      const edges: Array<{ leftThreadId: number; rightThreadId: number; score: number }> = [];
+      const aggregatedEdges = this.aggregateRepositoryEdges(rows, { limit: k, minScore });
+      const edges = Array.from(aggregatedEdges.values()).map((entry) => ({
+        leftThreadId: entry.leftThreadId,
+        rightThreadId: entry.rightThreadId,
+        score: entry.score,
+      }));
       const insertEdge = this.db.prepare(
         `insert into similarity_edges (repo_id, cluster_run_id, left_thread_id, right_thread_id, method, score, explanation_json, created_at)
          values (?, ?, ?, ?, ?, ?, ?, ?)`,
       );
-
-      for (const item of items) {
-        const neighbors = rankNearestNeighbors(items, {
-          targetEmbedding: item.embedding,
-          limit: k,
-          minScore,
-          skipId: item.id,
-        });
-        for (const neighbor of neighbors) {
-          const left = Math.min(item.id, neighbor.item.id);
-          const right = Math.max(item.id, neighbor.item.id);
-          const key = `${left}:${right}`;
-          if (pairSeen.has(key)) continue;
-          pairSeen.add(key);
-          edges.push({ leftThreadId: left, rightThreadId: right, score: neighbor.score });
-          insertEdge.run(
-            repository.id,
-            runId,
-            left,
-            right,
-            'exact_cosine',
-            neighbor.score,
-            asJson({ source: 'dedupe_summary', model: this.config.embedModel }),
-            nowIso(),
-          );
-        }
+      for (const edge of aggregatedEdges.values()) {
+        insertEdge.run(
+          repository.id,
+          runId,
+          edge.leftThreadId,
+          edge.rightThreadId,
+          'exact_cosine',
+          edge.score,
+          asJson({ sources: Array.from(edge.sourceKinds).sort(), model: this.config.embedModel }),
+          nowIso(),
+        );
       }
 
       params.onProgress?.(`[cluster] built ${edges.length} similarity edge(s)`);
@@ -635,17 +670,9 @@ export class GitcrawlService {
           nowIso(),
         );
         const clusterId = Number(clusterResult.lastInsertRowid);
-        const representative = items.find((item) => item.id === cluster.representativeThreadId);
         for (const memberId of cluster.members) {
-          const member = items.find((item) => item.id === memberId);
-          const score =
-            representative && member && representative.id !== member.id
-              ? rankNearestNeighbors([member], {
-                  targetEmbedding: representative.embedding,
-                  limit: 1,
-                  skipId: representative.id,
-                })[0]?.score ?? null
-              : null;
+          const key = this.edgeKey(cluster.representativeThreadId, memberId);
+          const score = memberId === cluster.representativeThreadId ? null : (aggregatedEdges.get(key)?.score ?? null);
           insertMember.run(clusterId, memberId, score, nowIso());
         }
       }
@@ -692,25 +719,11 @@ export class GitcrawlService {
 
     if (mode !== 'keyword' && this.ai) {
       const [queryEmbedding] = await this.ai.embedTexts({ model: this.config.embedModel, texts: [params.query] });
-      const rows = this.db
-        .prepare(
-          `select t.id, t.number, t.title, e.embedding_json
-           from threads t
-           join document_embeddings e on e.thread_id = t.id
-           where t.repo_id = ? and t.state = 'open' and e.source_kind = ? and e.model = ?`,
-        )
-        .all(repository.id, 'dedupe_summary', this.config.embedModel) as Array<{
-          id: number;
-          number: number;
-          title: string;
-          embedding_json: string;
-        }>;
-      const ranked = rankNearestNeighbors(
-        rows.map((row) => ({ id: row.id, embedding: JSON.parse(row.embedding_json) as number[] })),
-        { targetEmbedding: queryEmbedding, limit: limit * 2, minScore: 0.2 },
-      );
-      for (const row of ranked) {
-        semanticScores.set(row.item.id, row.score);
+      const rows = this.loadStoredEmbeddings(repository.id);
+      for (const row of rows) {
+        const score = cosineSimilarity(queryEmbedding, JSON.parse(row.embedding_json) as number[]);
+        if (score < 0.2) continue;
+        semanticScores.set(row.id, Math.max(semanticScores.get(row.id) ?? -1, score));
       }
     }
 
@@ -806,44 +819,42 @@ export class GitcrawlService {
     const limit = params.limit ?? 10;
     const minScore = params.minScore ?? 0.2;
 
-    const rows = this.db
-      .prepare(
-        `select t.id, t.repo_id, t.number, t.kind, t.state, t.title, t.body, t.author_login, t.html_url, t.labels_json, t.updated_at_gh, t.first_pulled_at, t.last_pulled_at, e.embedding_json
-         from threads t
-         join document_embeddings e on e.thread_id = t.id
-         where t.repo_id = ? and t.state = 'open' and e.source_kind = ? and e.model = ?
-         order by t.number asc`,
-      )
-      .all(repository.id, 'dedupe_summary', this.config.embedModel) as Array<ThreadRow & { embedding_json: string }>;
-
-    const targetRow = rows.find((row) => row.number === params.threadNumber);
-    if (!targetRow) {
+    const rows = this.loadStoredEmbeddings(repository.id);
+    const targetRows = rows.filter((row) => row.number === params.threadNumber);
+    if (targetRows.length === 0) {
       throw new Error(
-        `Thread #${params.threadNumber} for ${repository.fullName} was not found with an embedding. Run summarize and embed first.`,
+        `Thread #${params.threadNumber} for ${repository.fullName} was not found with an embedding. Run embed first.`,
       );
     }
+    const targetRow = targetRows[0];
+    const targetBySource = new Map<EmbeddingSourceKind, number[]>();
+    for (const row of targetRows) {
+      targetBySource.set(row.source_kind, JSON.parse(row.embedding_json) as number[]);
+    }
 
-    const items = rows.map((row) => ({
-      id: row.id,
-      number: row.number,
-      kind: row.kind,
-      title: row.title,
-      embedding: JSON.parse(row.embedding_json) as number[],
-    }));
-    const target = items.find((item) => item.id === targetRow.id) as (typeof items)[number];
+    const aggregated = new Map<number, { number: number; kind: 'issue' | 'pull_request'; title: string; score: number }>();
+    for (const row of rows) {
+      if (row.id === targetRow.id) continue;
+      const targetEmbedding = targetBySource.get(row.source_kind);
+      if (!targetEmbedding) continue;
+      const score = cosineSimilarity(targetEmbedding, JSON.parse(row.embedding_json) as number[]);
+      if (score < minScore) continue;
+      const previous = aggregated.get(row.id);
+      if (!previous || score > previous.score) {
+        aggregated.set(row.id, { number: row.number, kind: row.kind, title: row.title, score });
+      }
+    }
 
-    const neighbors = rankNearestNeighbors(items, {
-      targetEmbedding: target.embedding,
-      limit,
-      minScore,
-      skipId: target.id,
-    }).map((entry) => ({
-      threadId: entry.item.id,
-      number: entry.item.number,
-      kind: entry.item.kind,
-      title: entry.item.title,
-      score: entry.score,
-    }));
+    const neighbors = Array.from(aggregated.entries())
+      .map(([threadId, value]) => ({
+        threadId,
+        number: value.number,
+        kind: value.kind,
+        title: value.title,
+        score: value.score,
+      }))
+      .sort((left, right) => right.score - left.score)
+      .slice(0, limit);
 
     return neighborsResponseSchema.parse({
       repository,
@@ -928,7 +939,7 @@ export class GitcrawlService {
           ok: true,
           action: request.action,
           runId: result.runId,
-          message: `Embedded ${result.embedded} thread(s)`,
+          message: `Embedded ${result.embedded} source vector(s)`,
         });
       }
       case 'cluster': {
@@ -1291,6 +1302,159 @@ export class GitcrawlService {
     return { summaryInput, summaryContentHash };
   }
 
+  private buildEmbeddingTasks(params: {
+    threadId: number;
+    threadNumber: number;
+    title: string;
+    body: string | null;
+    dedupeSummary: string | null;
+  }): EmbeddingTask[] {
+    const tasks: EmbeddingTask[] = [];
+    const titleText = normalizeSummaryText(params.title);
+    if (titleText) {
+      tasks.push({
+        threadId: params.threadId,
+        threadNumber: params.threadNumber,
+        sourceKind: 'title',
+        text: titleText,
+        contentHash: stableContentHash(`embedding:title\n${titleText}`),
+      });
+    }
+
+    const bodyText = normalizeSummaryText(params.body ?? '');
+    if (bodyText) {
+      tasks.push({
+        threadId: params.threadId,
+        threadNumber: params.threadNumber,
+        sourceKind: 'body',
+        text: bodyText,
+        contentHash: stableContentHash(`embedding:body\n${bodyText}`),
+      });
+    }
+
+    const summaryText = normalizeSummaryText(params.dedupeSummary ?? '');
+    if (summaryText) {
+      tasks.push({
+        threadId: params.threadId,
+        threadNumber: params.threadNumber,
+        sourceKind: 'dedupe_summary',
+        text: summaryText,
+        contentHash: stableContentHash(`embedding:dedupe_summary\n${summaryText}`),
+      });
+    }
+
+    return tasks;
+  }
+
+  private chunkArray<T>(items: T[], size: number): T[][] {
+    const chunks: T[][] = [];
+    for (let index = 0; index < items.length; index += size) {
+      chunks.push(items.slice(index, index + size));
+    }
+    return chunks;
+  }
+
+  private loadStoredEmbeddings(repoId: number): StoredEmbeddingRow[] {
+    return this.db
+      .prepare(
+        `select t.id, t.repo_id, t.number, t.kind, t.state, t.title, t.body, t.author_login, t.html_url, t.labels_json,
+                t.updated_at_gh, t.first_pulled_at, t.last_pulled_at, e.source_kind, e.embedding_json
+         from threads t
+         join document_embeddings e on e.thread_id = t.id
+         where t.repo_id = ? and t.state = 'open' and e.model = ?
+         order by t.number asc, e.source_kind asc`,
+      )
+      .all(repoId, this.config.embedModel) as StoredEmbeddingRow[];
+  }
+
+  private loadCombinedSummaryTextMap(repoId: number, threadNumber?: number): Map<number, string> {
+    let sql =
+      `select s.thread_id, s.summary_kind, s.summary_text
+       from document_summaries s
+       join threads t on t.id = s.thread_id
+       where t.repo_id = ? and t.state = 'open' and s.model = ?`;
+    const args: Array<number | string> = [repoId, this.config.summaryModel];
+    if (threadNumber) {
+      sql += ' and t.number = ?';
+      args.push(threadNumber);
+    }
+    sql += ' order by t.number asc, s.summary_kind asc';
+
+    const rows = this.db.prepare(sql).all(...args) as Array<{
+      thread_id: number;
+      summary_kind: string;
+      summary_text: string;
+    }>;
+    const byThread = new Map<number, Map<string, string>>();
+    for (const row of rows) {
+      const entry = byThread.get(row.thread_id) ?? new Map<string, string>();
+      entry.set(row.summary_kind, normalizeSummaryText(row.summary_text));
+      byThread.set(row.thread_id, entry);
+    }
+
+    const combined = new Map<number, string>();
+    const order = ['problem_summary', 'solution_summary', 'maintainer_signal_summary', 'dedupe_summary'];
+    for (const [threadId, entry] of byThread.entries()) {
+      const parts = order
+        .map((summaryKind) => {
+          const text = entry.get(summaryKind);
+          return text ? `${summaryKind}: ${text}` : '';
+        })
+        .filter(Boolean);
+      if (parts.length > 0) {
+        combined.set(threadId, parts.join('\n\n'));
+      }
+    }
+    return combined;
+  }
+
+  private edgeKey(leftThreadId: number, rightThreadId: number): string {
+    const left = Math.min(leftThreadId, rightThreadId);
+    const right = Math.max(leftThreadId, rightThreadId);
+    return `${left}:${right}`;
+  }
+
+  private aggregateRepositoryEdges(
+    rows: StoredEmbeddingRow[],
+    params: { limit: number; minScore: number },
+  ): Map<string, { leftThreadId: number; rightThreadId: number; score: number; sourceKinds: Set<EmbeddingSourceKind> }> {
+    const bySource = new Map<EmbeddingSourceKind, Array<{ id: number; embedding: number[] }>>();
+    for (const row of rows) {
+      const list = bySource.get(row.source_kind) ?? [];
+      list.push({ id: row.id, embedding: JSON.parse(row.embedding_json) as number[] });
+      bySource.set(row.source_kind, list);
+    }
+
+    const aggregated = new Map<string, { leftThreadId: number; rightThreadId: number; score: number; sourceKinds: Set<EmbeddingSourceKind> }>();
+    for (const [sourceKind, items] of bySource.entries()) {
+      for (const item of items) {
+        const neighbors = rankNearestNeighbors(items, {
+          targetEmbedding: item.embedding,
+          limit: params.limit,
+          minScore: params.minScore,
+          skipId: item.id,
+        });
+        for (const neighbor of neighbors) {
+          const key = this.edgeKey(item.id, neighbor.item.id);
+          const existing = aggregated.get(key);
+          if (existing) {
+            existing.score = Math.max(existing.score, neighbor.score);
+            existing.sourceKinds.add(sourceKind);
+            continue;
+          }
+          aggregated.set(key, {
+            leftThreadId: Math.min(item.id, neighbor.item.id),
+            rightThreadId: Math.max(item.id, neighbor.item.id),
+            score: neighbor.score,
+            sourceKinds: new Set([sourceKind]),
+          });
+        }
+      }
+    }
+
+    return aggregated;
+  }
+
   private upsertSummary(threadId: number, contentHash: string, summaryKind: string, summaryText: string): void {
     this.db
       .prepare(
@@ -1304,7 +1468,7 @@ export class GitcrawlService {
       .run(threadId, summaryKind, this.config.summaryModel, contentHash, summaryText, nowIso(), nowIso());
   }
 
-  private upsertEmbedding(threadId: number, contentHash: string, embedding: number[]): void {
+  private upsertEmbedding(threadId: number, sourceKind: EmbeddingSourceKind, contentHash: string, embedding: number[]): void {
     this.db
       .prepare(
         `insert into document_embeddings (thread_id, source_kind, model, dimensions, content_hash, embedding_json, created_at, updated_at)
@@ -1317,7 +1481,7 @@ export class GitcrawlService {
       )
       .run(
         threadId,
-        'dedupe_summary',
+        sourceKind,
         this.config.embedModel,
         embedding.length,
         contentHash,

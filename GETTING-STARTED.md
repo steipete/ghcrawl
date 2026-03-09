@@ -10,6 +10,7 @@ This is the quickest way to run `gitcrawl` locally against `openclaw/openclaw`.
   - `GITHUB_TOKEN`
   - `OPENAI_API_KEY`
   - optional `GITCRAWL_SUMMARY_MODEL=gpt-5-mini`
+  - optional `GITCRAWL_EMBED_MODEL=text-embedding-3-large`
 
 ## Install
 
@@ -121,7 +122,11 @@ Notes:
 - `summarize` logs per-thread token usage when OpenAI reports it
 - `summarize`, `embed`, and `cluster` print timestamped progress to stderr during long runs
 - `purge-comments` is useful if you previously hydrated comments and want to get back to a lean metadata-only local corpus
-- `neighbors` only works after `embed` has populated dedupe-summary embeddings
+- `embed` defaults to `text-embedding-3-large`
+- `embed` creates separate vectors for `title` and `body`, plus a summary-derived vector when summaries exist
+- unchanged embedding inputs are skipped by stored hash, so reruns do not resubmit identical text
+- the embedding worker defaults are `batch_size=8`, `concurrency=10`, and `max_unread=20`; override them with `GITCRAWL_EMBED_BATCH_SIZE`, `GITCRAWL_EMBED_CONCURRENCY`, and `GITCRAWL_EMBED_MAX_UNREAD` if needed
+- `neighbors` only works after `embed` has populated at least one embedding source for the repo
 
 ## Search
 

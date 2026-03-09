@@ -15,6 +15,10 @@ test('loadConfig applies defaults', () => {
 
   assert.equal(config.apiPort, 6123);
   assert.equal(config.summaryModel, 'gpt-5-mini');
+  assert.equal(config.embedModel, 'text-embedding-3-large');
+  assert.equal(config.embedBatchSize, 8);
+  assert.equal(config.embedConcurrency, 10);
+  assert.equal(config.embedMaxUnread, 20);
   assert.match(config.dbPath, /data\/test\.db$/);
 });
 
@@ -23,6 +27,15 @@ test('loadConfig rejects invalid port', () => {
     loadConfig({
       cwd: process.cwd(),
       env: { ...process.env, GITCRAWL_API_PORT: 'abc' },
+    }),
+  );
+});
+
+test('loadConfig rejects invalid embed queue settings', () => {
+  assert.throws(() =>
+    loadConfig({
+      cwd: process.cwd(),
+      env: { ...process.env, GITCRAWL_EMBED_CONCURRENCY: '0' },
     }),
   );
 });

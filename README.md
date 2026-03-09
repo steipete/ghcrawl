@@ -53,6 +53,9 @@ Supported variables:
 - `GITCRAWL_API_PORT`
 - `GITCRAWL_SUMMARY_MODEL`
 - `GITCRAWL_EMBED_MODEL`
+- `GITCRAWL_EMBED_BATCH_SIZE`
+- `GITCRAWL_EMBED_CONCURRENCY`
+- `GITCRAWL_EMBED_MAX_UNREAD`
 - `GITCRAWL_OPENSEARCH_URL`
 - `GITCRAWL_OPENSEARCH_INDEX`
 
@@ -65,6 +68,10 @@ Supported variables:
 - `summarize` is metadata-only by default too. It summarizes title, body, and labels unless you pass `--include-comments`.
 - `summarize` now logs per-thread token usage when the OpenAI API reports it.
 - `purge-comments` removes hydrated comments from the local DB and refreshes canonical documents so older comment-heavy crawls can be cleaned up.
+- `embed` now defaults to `text-embedding-3-large`.
+- `embed` generates separate vectors for `title` and `body`, and also a summary-derived vector when summary fields exist.
+- `embed` stores an input hash per source kind and will not resubmit unchanged text for re-embedding.
+- semantic search, neighbors, and clustering now aggregate across the stored embedding sources instead of relying only on summary vectors.
 - `sync --since` accepts either an ISO timestamp or a relative duration like `15m`, `2h`, `7d`, or `1mo`.
 - `sync --limit <count>` and `sync --since <iso|duration>` are filtered crawls. They do not run stale-open reconciliation for items outside the filtered window.
 - `sync --limit <count>` is the best smoke-test path on a busy repository.

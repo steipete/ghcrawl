@@ -13,7 +13,10 @@ test('health endpoint returns contract payload', async () => {
       dbPath: ':memory:',
       apiPort: 5179,
       summaryModel: 'gpt-5-mini',
-      embedModel: 'text-embedding-3-small',
+      embedModel: 'text-embedding-3-large',
+      embedBatchSize: 8,
+      embedConcurrency: 10,
+      embedMaxUnread: 20,
       openSearchIndex: 'gitcrawl-threads',
     },
     github: {
@@ -52,7 +55,10 @@ test('neighbors endpoint returns contract payload', async () => {
       dbPath: ':memory:',
       apiPort: 5179,
       summaryModel: 'gpt-5-mini',
-      embedModel: 'text-embedding-3-small',
+      embedModel: 'text-embedding-3-large',
+      embedBatchSize: 8,
+      embedConcurrency: 10,
+      embedMaxUnread: 20,
       openSearchIndex: 'gitcrawl-threads',
     },
     github: {
@@ -97,13 +103,13 @@ test('neighbors endpoint returns contract payload', async () => {
       `insert into document_embeddings (thread_id, source_kind, model, dimensions, content_hash, embedding_json, created_at, updated_at)
        values (?, ?, ?, ?, ?, ?, ?, ?)`,
     )
-    .run(10, 'dedupe_summary', 'text-embedding-3-small', 2, 'hash-42', '[1,0]', now, now);
+    .run(10, 'dedupe_summary', 'text-embedding-3-large', 2, 'hash-42', '[1,0]', now, now);
   service.db
     .prepare(
       `insert into document_embeddings (thread_id, source_kind, model, dimensions, content_hash, embedding_json, created_at, updated_at)
        values (?, ?, ?, ?, ?, ?, ?, ?)`,
     )
-    .run(11, 'dedupe_summary', 'text-embedding-3-small', 2, 'hash-43', '[0.99,0.01]', now, now);
+    .run(11, 'dedupe_summary', 'text-embedding-3-large', 2, 'hash-43', '[0.99,0.01]', now, now);
 
   const server = createApiServer(service);
   try {

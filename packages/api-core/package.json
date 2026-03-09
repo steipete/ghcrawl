@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@gitcrawl/api-contract": "workspace:*",
+    "@shutterstock/p-map-iterable": "^1.1.2",
     "@octokit/plugin-retry": "^8.0.3",
     "@octokit/plugin-throttling": "^11.0.1",
     "octokit": "^5.0.3",
