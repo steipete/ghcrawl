@@ -111,6 +111,13 @@ test('parseRepoFlags accepts include-comments boolean flag', () => {
   assert.equal(parsed.values['include-comments'], true);
 });
 
+test('parseRepoFlags accepts full-reconcile boolean flag', () => {
+  const parsed = parseRepoFlags(['openclaw/openclaw', '--full-reconcile']);
+  assert.equal(parsed.owner, 'openclaw');
+  assert.equal(parsed.repo, 'openclaw');
+  assert.equal(parsed.values['full-reconcile'], true);
+});
+
 test('resolveSinceValue keeps ISO timestamps', () => {
   assert.equal(resolveSinceValue('2026-03-01T00:00:00Z'), '2026-03-01T00:00:00.000Z');
 });

@@ -1778,6 +1778,7 @@ test('syncRepository treats missing stale pull requests as closed and continues'
     const result = await service.syncRepository({
       owner: 'openclaw',
       repo: 'openclaw',
+      fullReconcile: true,
       onProgress: (message) => messages.push(message),
     });
     const after = service.db
@@ -1860,6 +1861,138 @@ test('syncRepository skips stale-open reconciliation for filtered crawls', async
     assert.equal(result.threadsClosed, 0);
     assert.equal(getIssueCalls, 0);
     assert.equal(after.state, 'open');
+  } finally {
+    service.close();
+  }
+});
+
+test('syncRepository leaves unseen stale open items alone by default when closed overlap does not match them', async () => {
+  let getIssueCalls = 0;
+
+  const service = makeTestService({
+    checkAuth: async () => undefined,
+    getRepo: async () => ({ id: 1, full_name: 'openclaw/openclaw' }),
+    listRepositoryIssues: async (_owner, _repo, _since, _limit, _reporter, state = 'open') => {
+      if (state === 'closed') {
+        return [];
+      }
+      return [
+        {
+          id: 100,
+          number: 42,
+          state: 'open',
+          title: 'Downloader hangs',
+          body: 'The transfer never finishes.',
+          html_url: 'https://github.com/openclaw/openclaw/issues/42',
+          labels: [{ name: 'bug' }],
+          assignees: [],
+          user: { login: 'alice', type: 'User' },
+          updated_at: '2026-03-09T00:00:00Z',
+        },
+      ];
+    },
+    getIssue: async (_owner, _repo, number) => {
+      getIssueCalls += 1;
+      return {
+        id: 100,
+        number,
+        state: 'closed',
+        title: 'Downloader hangs',
+        body: 'The transfer never finishes.',
+        html_url: `https://github.com/openclaw/openclaw/issues/${number}`,
+        labels: [{ name: 'bug' }],
+        assignees: [],
+        user: { login: 'alice', type: 'User' },
+        updated_at: '2026-03-10T00:00:00Z',
+        closed_at: '2026-03-10T00:00:00Z',
+      };
+    },
+    getPull: async () => {
+      throw new Error('not expected');
+    },
+    listIssueComments: async () => [],
+    listPullReviews: async () => [],
+    listPullReviewComments: async () => [],
+  });
+
+  try {
+    await service.syncRepository({ owner: 'openclaw', repo: 'openclaw' });
+    const result = await service.syncRepository({ owner: 'openclaw', repo: 'openclaw' });
+    const after = service.db
+      .prepare("select state from threads where number = 42 and kind = 'issue'")
+      .get() as { state: string };
+
+    assert.equal(result.threadsClosed, 0);
+    assert.equal(getIssueCalls, 0);
+    assert.equal(after.state, 'open');
+  } finally {
+    service.close();
+  }
+});
+
+test('syncRepository performs direct stale-open reconciliation when fullReconcile is requested', async () => {
+  let getIssueCalls = 0;
+  let openListCalls = 0;
+
+  const service = makeTestService({
+    checkAuth: async () => undefined,
+    getRepo: async () => ({ id: 1, full_name: 'openclaw/openclaw' }),
+    listRepositoryIssues: async (_owner, _repo, _since, _limit, _reporter, state = 'open') => {
+      if (state === 'closed') {
+        return [];
+      }
+      openListCalls += 1;
+      return openListCalls === 1
+        ? [
+            {
+              id: 100,
+              number: 42,
+              state: 'open',
+              title: 'Downloader hangs',
+              body: 'The transfer never finishes.',
+              html_url: 'https://github.com/openclaw/openclaw/issues/42',
+              labels: [{ name: 'bug' }],
+              assignees: [],
+              user: { login: 'alice', type: 'User' },
+              updated_at: '2026-03-09T00:00:00Z',
+            },
+          ]
+        : [];
+    },
+    getIssue: async (_owner, _repo, number) => {
+      getIssueCalls += 1;
+      return {
+        id: 100,
+        number,
+        state: 'closed',
+        title: 'Downloader hangs',
+        body: 'The transfer never finishes.',
+        html_url: `https://github.com/openclaw/openclaw/issues/${number}`,
+        labels: [{ name: 'bug' }],
+        assignees: [],
+        user: { login: 'alice', type: 'User' },
+        updated_at: '2026-03-10T00:00:00Z',
+        closed_at: '2026-03-10T00:00:00Z',
+      };
+    },
+    getPull: async () => {
+      throw new Error('not expected');
+    },
+    listIssueComments: async () => [],
+    listPullReviews: async () => [],
+    listPullReviewComments: async () => [],
+  });
+
+  try {
+    await service.syncRepository({ owner: 'openclaw', repo: 'openclaw' });
+    const result = await service.syncRepository({ owner: 'openclaw', repo: 'openclaw', fullReconcile: true });
+    const after = service.db
+      .prepare("select state from threads where number = 42 and kind = 'issue'")
+      .get() as { state: string };
+
+    assert.equal(result.threadsClosed, 1);
+    assert.equal(getIssueCalls, 1);
+    assert.equal(after.state, 'closed');
   } finally {
     service.close();
   }

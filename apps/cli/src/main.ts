@@ -31,7 +31,7 @@ function usage(devMode = false): string {
     'Commands:',
     '  init [--reconfigure]',
     '  doctor',
-    '  sync <owner/repo> [--since <iso|duration>] [--limit <count>] [--include-comments]',
+    '  sync <owner/repo> [--since <iso|duration>] [--limit <count>] [--include-comments] [--full-reconcile]',
     '  refresh <owner/repo> [--no-sync] [--no-embed] [--no-cluster]',
     '  embed <owner/repo> [--number <thread>]',
     '  cluster <owner/repo> [--k <count>] [--threshold <score>]',
@@ -80,6 +80,7 @@ export function parseRepoFlags(args: string[]): { owner: string; repo: string; v
       since: { type: 'string' },
       limit: { type: 'string' },
       'include-comments': { type: 'boolean' },
+      'full-reconcile': { type: 'boolean' },
       number: { type: 'string' },
       query: { type: 'string' },
       mode: { type: 'string' },
@@ -269,6 +270,7 @@ export async function run(argv: string[], stdout: NodeJS.WritableStream = proces
           since: typeof values.since === 'string' ? resolveSinceValue(values.since) : undefined,
           limit: typeof values.limit === 'string' ? Number(values.limit) : undefined,
           includeComments: values['include-comments'] === true,
+          fullReconcile: values['full-reconcile'] === true,
           onProgress: writeProgress,
         });
         stdout.write(`${JSON.stringify(result, null, 2)}\n`);

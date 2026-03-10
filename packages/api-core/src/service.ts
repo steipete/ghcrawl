@@ -129,11 +129,14 @@ type SyncRunStats = {
   threadsSynced: number;
   commentsSynced: number;
   threadsClosed: number;
+  threadsClosedFromClosedSweep?: number;
+  threadsClosedFromDirectReconcile?: number;
   crawlStartedAt: string;
   requestedSince: string | null;
   effectiveSince: string | null;
   limit: number | null;
   includeComments: boolean;
+  fullReconcile?: boolean;
   isFullOpenScan: boolean;
   isOverlappingOpenScan: boolean;
   overlapReferenceAt: string | null;
@@ -226,6 +229,7 @@ type SyncOptions = {
   since?: string;
   limit?: number;
   includeComments?: boolean;
+  fullReconcile?: boolean;
   onProgress?: (message: string) => void;
   startedAt?: string;
 };
@@ -585,12 +589,12 @@ export class GHCrawlService {
         }
       }
 
-      const shouldReconcileMissingOpenThreads = params.limit === undefined && (isFullOpenScan || isOverlappingOpenScan);
-      if (!shouldReconcileMissingOpenThreads) {
-        params.onProgress?.('[sync] skipping stale-open reconciliation because this scan did not overlap a confirmed full/overlap cursor');
+      const shouldSweepClosedOverlap = params.limit === undefined && effectiveSince !== undefined;
+      if (!shouldSweepClosedOverlap) {
+        params.onProgress?.('[sync] skipping closed overlap sweep because this scan has no overlap window');
       }
-      const threadsClosed = shouldReconcileMissingOpenThreads
-        ? await this.reconcileMissingOpenThreads({
+      const threadsClosedFromClosedSweep = shouldSweepClosedOverlap
+        ? await this.applyClosedOverlapSweep({
             repoId,
             owner: params.owner,
             repo: params.repo,
@@ -600,8 +604,26 @@ export class GHCrawlService {
             onProgress: params.onProgress,
           })
         : 0;
+      const shouldReconcileMissingOpenThreads =
+        params.fullReconcile === true && params.limit === undefined && (isFullOpenScan || isOverlappingOpenScan);
+      if (!shouldReconcileMissingOpenThreads && params.fullReconcile !== true) {
+        params.onProgress?.('[sync] skipping full stale-open reconciliation by default; use --full-reconcile to force direct checks of all unseen open items');
+      } else if (!shouldReconcileMissingOpenThreads) {
+        params.onProgress?.('[sync] skipping full stale-open reconciliation because this scan did not overlap a confirmed full/overlap cursor');
+      }
+      const threadsClosedFromDirectReconcile = shouldReconcileMissingOpenThreads
+        ? await this.reconcileMissingOpenThreads({
+            repoId,
+            owner: params.owner,
+            repo: params.repo,
+            crawlStartedAt,
+            reporter,
+            onProgress: params.onProgress,
+          })
+        : 0;
+      const threadsClosed = threadsClosedFromClosedSweep + threadsClosedFromDirectReconcile;
       const finishedAt = nowIso();
-      const reconciledOpenCloseAt = shouldReconcileMissingOpenThreads ? finishedAt : null;
+      const reconciledOpenCloseAt = shouldSweepClosedOverlap || shouldReconcileMissingOpenThreads ? finishedAt : null;
       const nextSyncCursor: SyncCursorState = {
         lastFullOpenScanStartedAt: isFullOpenScan ? crawlStartedAt : syncCursor.lastFullOpenScanStartedAt,
         lastOverlappingOpenScanCompletedAt: isOverlappingOpenScan ? finishedAt : syncCursor.lastOverlappingOpenScanCompletedAt,
@@ -620,9 +642,12 @@ export class GHCrawlService {
         effectiveSince: effectiveSince ?? null,
         limit: params.limit ?? null,
         includeComments,
+        fullReconcile: params.fullReconcile ?? false,
         isFullOpenScan,
         isOverlappingOpenScan,
         overlapReferenceAt,
+        threadsClosedFromClosedSweep,
+        threadsClosedFromDirectReconcile,
         reconciledOpenCloseAt,
       } satisfies SyncRunStats, undefined, finishedAt);
       return syncResultSchema.parse({ runId, threadsSynced, commentsSynced, threadsClosed });
@@ -1858,12 +1883,93 @@ export class GHCrawlService {
     return row.id;
   }
 
+  private async applyClosedOverlapSweep(params: {
+    repoId: number;
+    owner: string;
+    repo: string;
+    crawlStartedAt: string;
+    closedSweepSince: string;
+    reporter?: (message: string) => void;
+    onProgress?: (message: string) => void;
+  }): Promise<number> {
+    const staleRows = this.db
+      .prepare(
+        `select id, number, kind
+         from threads
+         where repo_id = ?
+           and state = 'open'
+           and (last_pulled_at is null or last_pulled_at < ?)
+         order by number asc`,
+      )
+      .all(params.repoId, params.crawlStartedAt) as Array<{ id: number; number: number; kind: 'issue' | 'pull_request' }>;
+
+    if (staleRows.length === 0) {
+      return 0;
+    }
+
+    params.onProgress?.(
+      `[sync] scanning ${staleRows.length} unseen previously-open thread(s) against recently-updated closed items since ${params.closedSweepSince}`,
+    );
+
+    const github = this.requireGithub();
+    const staleByNumber = new Map<number, { id: number; number: number; kind: 'issue' | 'pull_request' }>(
+      staleRows.map((row) => [row.number, row]),
+    );
+    const recentlyClosed = await github.listRepositoryIssues(
+      params.owner,
+      params.repo,
+      params.closedSweepSince,
+      STALE_CLOSED_SWEEP_LIMIT,
+      params.reporter,
+      'closed',
+    );
+
+    let threadsClosed = 0;
+    for (const payload of recentlyClosed) {
+      const number = Number(payload.number);
+      const staleRow = staleByNumber.get(number);
+      if (!staleRow) continue;
+      const state = String(payload.state ?? 'closed');
+      if (state === 'open') continue;
+      const pulledAt = nowIso();
+      this.db
+        .prepare(
+          `update threads
+           set state = ?,
+               raw_json = ?,
+               updated_at_gh = ?,
+               closed_at_gh = ?,
+               merged_at_gh = ?,
+               last_pulled_at = ?,
+               updated_at = ?
+           where id = ?`,
+        )
+        .run(
+          state,
+          asJson(payload),
+          typeof payload.updated_at === 'string' ? payload.updated_at : null,
+          typeof payload.closed_at === 'string' ? payload.closed_at : null,
+          typeof payload.merged_at === 'string' ? payload.merged_at : null,
+          pulledAt,
+          pulledAt,
+          staleRow.id,
+        );
+      staleByNumber.delete(number);
+      threadsClosed += 1;
+    }
+
+    params.onProgress?.(
+      `[sync] recent closed sweep matched ${threadsClosed} stale thread(s); ${staleByNumber.size} remain open locally`,
+    );
+
+    return threadsClosed;
+  }
+
   private async reconcileMissingOpenThreads(params: {
     repoId: number;
     owner: string;
     repo: string;
     crawlStartedAt: string;
-    closedSweepSince?: string;
     reporter?: (message: string) => void;
     onProgress?: (message: string) => void;
   }): Promise<number> {
@@ -1884,69 +1990,11 @@ export class GHCrawlService {
     }
 
     params.onProgress?.(
-      `[sync] reconciling ${staleRows.length} previously-open thread(s) not seen in the open crawl`,
+      `[sync] full reconciliation requested; directly checking ${staleRows.length} previously-open thread(s) not seen in the open crawl`,
     );
 
     let threadsClosed = 0;
-    const staleByNumber = new Map<number, { id: number; number: number; kind: 'issue' | 'pull_request' }>(
-      staleRows.map((row) => [row.number, row]),
-    );
-
-    if (params.closedSweepSince) {
-      params.onProgress?.(
-        `[sync] scanning recently-updated closed issues and pull requests since ${params.closedSweepSince} before direct stale checks`,
-      );
-      const recentlyClosed = await github.listRepositoryIssues(
-        params.owner,
-        params.repo,
-        params.closedSweepSince,
-        STALE_CLOSED_SWEEP_LIMIT,
-        params.reporter,
-        'closed',
-      );
-
-      let matchedClosed = 0;
-      for (const payload of recentlyClosed) {
-        const number = Number(payload.number);
-        const staleRow = staleByNumber.get(number);
-        if (!staleRow) continue;
-        const state = String(payload.state ?? 'closed');
-        if (state === 'open') continue;
-        const pulledAt = nowIso();
-        this.db
-          .prepare(
-            `update threads
-             set state = ?,
-                 raw_json = ?,
-                 updated_at_gh = ?,
-                 closed_at_gh = ?,
-                 merged_at_gh = ?,
-                 last_pulled_at = ?,
-                 updated_at = ?
-             where id = ?`,
-          )
-          .run(
-            state,
-            asJson(payload),
-            typeof payload.updated_at === 'string' ? payload.updated_at : null,
-            typeof payload.closed_at === 'string' ? payload.closed_at : null,
-            typeof payload.merged_at === 'string' ? payload.merged_at : null,
-            pulledAt,
-            pulledAt,
-            staleRow.id,
-          );
-        staleByNumber.delete(number);
-        matchedClosed += 1;
-        threadsClosed += 1;
-      }
-
-      params.onProgress?.(
-        `[sync] recent closed sweep matched ${matchedClosed} stale thread(s); ${staleByNumber.size} still require direct GitHub checks`,
-      );
-    }
-
-    const rowsToCheck = staleRows.filter((row) => staleByNumber.has(row.number));
-    for (const [index, row] of rowsToCheck.entries()) {
+    for (const [index, row] of staleRows.entries()) {
       if (index > 0 && index % SYNC_BATCH_SIZE === 0) {
         params.onProgress?.(`[sync] stale reconciliation batch boundary reached at ${index} threads; sleeping 5s before continuing`);
         await new Promise((resolve) => setTimeout(resolve, SYNC_BATCH_DELAY_MS));
