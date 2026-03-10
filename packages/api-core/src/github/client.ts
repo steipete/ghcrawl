@@ -11,6 +11,7 @@ export type GitHubClient = {
     since?: string,
     limit?: number,
     reporter?: GitHubReporter,
+    state?: 'open' | 'closed',
   ) => Promise<Array<Record<string, unknown>>>;
   getIssue: (owner: string, repo: string, number: number, reporter?: GitHubReporter) => Promise<Record<string, unknown>>;
   getPull: (owner: string, repo: string, number: number, reporter?: GitHubReporter) => Promise<Record<string, unknown>>;
@@ -166,16 +167,16 @@ export function makeGitHubClient(options: RequestOptions): GitHubClient {
         return response.data as Record<string, unknown>;
       });
     },
-    async listRepositoryIssues(owner, repo, since, limit, reporter) {
+    async listRepositoryIssues(owner, repo, since, limit, reporter, state = 'open') {
       return paginate(
-        `GET /repos/${owner}/${repo}/issues state=open per_page=100`,
+        `GET /repos/${owner}/${repo}/issues state=${state} per_page=100`,
         limit,
         reporter,
         (octokit) =>
           octokit.paginate.iterator(octokit.rest.issues.listForRepo, {
             owner,
             repo,
-            state: 'open',
+            state,
             sort: 'updated',
             direction: 'desc',
             per_page: 100,

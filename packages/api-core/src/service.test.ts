@@ -1609,14 +1609,33 @@ test('getTuiThreadDetail can skip neighbor loading for fast browse paths', () =>
 test('syncRepository reconciles stale open threads and marks confirmed closures without re-fetching comments', async () => {
   let listIssueCommentCalls = 0;
   let getIssueCalls = 0;
-  let listRepositoryIssuesCalls = 0;
+  let openListCalls = 0;
+  let closedListCalls = 0;
 
   const service = makeTestService({
     checkAuth: async () => undefined,
     getRepo: async () => ({ id: 1, full_name: 'openclaw/openclaw' }),
-    listRepositoryIssues: async () => {
-      listRepositoryIssuesCalls += 1;
-      return listRepositoryIssuesCalls === 1
+    listRepositoryIssues: async (_owner, _repo, _since, _limit, _reporter, state = 'open') => {
+      if (state === 'closed') {
+        closedListCalls += 1;
+        return [
+          {
+            id: 100,
+            number: 42,
+            state: 'closed',
+            title: 'Downloader hangs',
+            body: 'The transfer never finishes.',
+            html_url: 'https://github.com/openclaw/openclaw/issues/42',
+            labels: [{ name: 'bug' }],
+            assignees: [],
+            user: { login: 'alice', type: 'User' },
+            updated_at: '2026-03-10T00:00:00Z',
+            closed_at: '2026-03-10T00:00:00Z',
+          },
+        ];
+      }
+      openListCalls += 1;
+      return openListCalls === 1
         ? [
             {
               id: 100,
@@ -1686,7 +1705,8 @@ test('syncRepository reconciles stale open threads and marks confirmed closures 
     assert.equal(after.closed_at_gh, '2026-03-10T00:00:00Z');
     assert.equal(after.first_pulled_at, before.first_pulled_at);
     assert.notEqual(after.last_pulled_at, before.last_pulled_at);
-    assert.equal(getIssueCalls, 1);
+    assert.equal(getIssueCalls, 0);
+    assert.equal(closedListCalls, 1);
     assert.equal(listIssueCommentCalls, 0);
     assert.equal(service.listThreads({ owner: 'openclaw', repo: 'openclaw' }).threads.length, 0);
   } finally {
@@ -1846,13 +1866,18 @@ test('syncRepository skips stale-open reconciliation for filtered crawls', async
 });
 
 test('syncRepository derives the default overlapping since window from the last completed full scan', async () => {
-  const sinceValues: Array<string | undefined> = [];
+  const openSinceValues: Array<string | undefined> = [];
+  const closedSinceValues: Array<string | undefined> = [];
 
   const service = makeTestService({
     checkAuth: async () => undefined,
     getRepo: async () => ({ id: 1, full_name: 'openclaw/openclaw' }),
-    listRepositoryIssues: async (_owner, _repo, since) => {
-      sinceValues.push(since);
+    listRepositoryIssues: async (_owner, _repo, since, _limit, _reporter, state = 'open') => {
+      if (state === 'closed') {
+        closedSinceValues.push(since);
+        return [];
+      }
+      openSinceValues.push(since);
       return [
         {
           id: 100,
@@ -1900,8 +1925,9 @@ test('syncRepository derives the default overlapping since window from the last 
       startedAt: '2026-03-09T14:13:01.000Z',
     });
 
-    assert.equal(sinceValues[0], undefined);
-    assert.equal(sinceValues[1], '2026-03-09T12:13:01.000Z');
+    assert.equal(openSinceValues[0], undefined);
+    assert.equal(openSinceValues[1], '2026-03-09T12:13:01.000Z');
+    assert.deepEqual(closedSinceValues, []);
 
     const syncState = service.db
       .prepare(

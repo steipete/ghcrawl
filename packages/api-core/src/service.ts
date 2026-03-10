@@ -235,6 +235,7 @@ type NeighborsResultInternal = NeighborsResponse;
 
 const SYNC_BATCH_SIZE = 100;
 const SYNC_BATCH_DELAY_MS = 5000;
+const STALE_CLOSED_SWEEP_LIMIT = 1000;
 const EMBED_ESTIMATED_CHARS_PER_TOKEN = 3;
 const EMBED_MAX_ITEM_TOKENS = 7000;
 const EMBED_MAX_BATCH_TOKENS = 250000;
@@ -594,6 +595,7 @@ export class GHCrawlService {
             owner: params.owner,
             repo: params.repo,
             crawlStartedAt,
+            closedSweepSince: effectiveSince,
             reporter,
             onProgress: params.onProgress,
           })
@@ -1861,6 +1863,7 @@ export class GHCrawlService {
     owner: string;
     repo: string;
     crawlStartedAt: string;
+    closedSweepSince?: string;
     reporter?: (message: string) => void;
     onProgress?: (message: string) => void;
   }): Promise<number> {
@@ -1885,7 +1888,65 @@ export class GHCrawlService {
     );
 
     let threadsClosed = 0;
-    for (const [index, row] of staleRows.entries()) {
+    const staleByNumber = new Map<number, { id: number; number: number; kind: 'issue' | 'pull_request' }>(
+      staleRows.map((row) => [row.number, row]),
+    );
+
+    if (params.closedSweepSince) {
+      params.onProgress?.(
+        `[sync] scanning recently-updated closed issues and pull requests since ${params.closedSweepSince} before direct stale checks`,
+      );
+      const recentlyClosed = await github.listRepositoryIssues(
+        params.owner,
+        params.repo,
+        params.closedSweepSince,
+        STALE_CLOSED_SWEEP_LIMIT,
+        params.reporter,
+        'closed',
+      );
+
+      let matchedClosed = 0;
+      for (const payload of recentlyClosed) {
+        const number = Number(payload.number);
+        const staleRow = staleByNumber.get(number);
+        if (!staleRow) continue;
+        const state = String(payload.state ?? 'closed');
+        if (state === 'open') continue;
+        const pulledAt = nowIso();
+        this.db
+          .prepare(
+            `update threads
+             set state = ?,
+                 raw_json = ?,
+                 updated_at_gh = ?,
+                 closed_at_gh = ?,
+                 merged_at_gh = ?,
+                 last_pulled_at = ?,
+                 updated_at = ?
+             where id = ?`,
+          )
+          .run(
+            state,
+            asJson(payload),
+            typeof payload.updated_at === 'string' ? payload.updated_at : null,
+            typeof payload.closed_at === 'string' ? payload.closed_at : null,
+            typeof payload.merged_at === 'string' ? payload.merged_at : null,
+            pulledAt,
+            pulledAt,
+            staleRow.id,
+          );
+        staleByNumber.delete(number);
+        matchedClosed += 1;
+        threadsClosed += 1;
+      }
+
+      params.onProgress?.(
+        `[sync] recent closed sweep matched ${matchedClosed} stale thread(s); ${staleByNumber.size} still require direct GitHub checks`,
+      );
+    }
+
+    const rowsToCheck = staleRows.filter((row) => staleByNumber.has(row.number));
+    for (const [index, row] of rowsToCheck.entries()) {
       if (index > 0 && index % SYNC_BATCH_SIZE === 0) {
         params.onProgress?.(`[sync] stale reconciliation batch boundary reached at ${index} threads; sleeping 5s before continuing`);
         await new Promise((resolve) => setTimeout(resolve, SYNC_BATCH_DELAY_MS));
