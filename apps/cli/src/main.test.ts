@@ -20,6 +20,7 @@ test('run prints usage with no command', async () => {
   assert.match(output, /\n  version\n/);
   assert.match(output, /refresh <owner\/repo>/);
   assert.match(output, /threads <owner\/repo>/);
+  assert.match(output, /author <owner\/repo> --login <user>/);
   assert.match(output, /clusters <owner\/repo>/);
   assert.match(output, /cluster-detail <owner\/repo>/);
   assert.match(output, /tui \[owner\/repo\]/);
@@ -40,6 +41,7 @@ test('run prints usage for help flag', async () => {
   assert.match(output, /\n  version\n/);
   assert.match(output, /refresh <owner\/repo>/);
   assert.match(output, /threads <owner\/repo>/);
+  assert.match(output, /author <owner\/repo> --login <user>/);
   assert.match(output, /tui \[owner\/repo\]/);
   assert.doesNotMatch(output, /summarize <owner\/repo>/);
 });

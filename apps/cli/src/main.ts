@@ -16,6 +16,7 @@ type CommandName =
   | 'sync'
   | 'refresh'
   | 'threads'
+  | 'author'
   | 'summarize'
   | 'purge-comments'
   | 'embed'
@@ -42,6 +43,7 @@ function usage(devMode = false): string {
     '  sync <owner/repo> [--since <iso|duration>] [--limit <count>] [--include-comments] [--full-reconcile]',
     '  refresh <owner/repo> [--no-sync] [--no-embed] [--no-cluster]',
     '  threads <owner/repo> [--numbers <n,n,...>] [--kind issue|pull_request]',
+    '  author <owner/repo> --login <user>',
     '  embed <owner/repo> [--number <thread>]',
     '  cluster <owner/repo> [--k <count>] [--threshold <score>]',
     '  clusters <owner/repo> [--min-size <count>] [--limit <count>] [--sort recent|size] [--search <text>]',
@@ -97,6 +99,7 @@ export function parseRepoFlags(args: string[]): { owner: string; repo: string; v
       'full-reconcile': { type: 'boolean' },
       number: { type: 'string' },
       numbers: { type: 'string' },
+      login: { type: 'string' },
       query: { type: 'string' },
       mode: { type: 'string' },
       k: { type: 'string' },
@@ -335,6 +338,19 @@ export async function run(argv: string[], stdout: NodeJS.WritableStream = proces
           repo,
           kind,
           numbers: typeof values.numbers === 'string' ? parsePositiveIntegerList('numbers', values.numbers) : undefined,
+        });
+        stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+        return;
+      }
+      case 'author': {
+        const { owner, repo, values } = parseRepoFlags(rest);
+        if (typeof values.login !== 'string' || values.login.trim().length === 0) {
+          throw new Error('Missing --login');
+        }
+        const result = getService().listAuthorThreads({
+          owner,
+          repo,
+          login: values.login,
         });
         stdout.write(`${JSON.stringify(result, null, 2)}\n`);
         return;

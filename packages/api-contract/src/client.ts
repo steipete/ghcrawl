@@ -1,6 +1,7 @@
 import {
   actionRequestSchema,
   actionResponseSchema,
+  authorThreadsResponseSchema,
   clusterDetailResponseSchema,
   clusterSummariesResponseSchema,
   clustersResponseSchema,
@@ -12,6 +13,7 @@ import {
   threadsResponseSchema,
   type ActionRequest,
   type ActionResponse,
+  type AuthorThreadsResponse,
   type ClusterDetailResponse,
   type ClusterSummariesResponse,
   type ClustersResponse,
@@ -28,6 +30,7 @@ export type GitcrawlClient = {
   health: () => Promise<HealthResponse>;
   listRepositories: () => Promise<RepositoriesResponse>;
   listThreads: (params: { owner: string; repo: string; kind?: 'issue' | 'pull_request'; numbers?: number[] }) => Promise<ThreadsResponse>;
+  listAuthorThreads: (params: { owner: string; repo: string; login: string }) => Promise<AuthorThreadsResponse>;
   search: (params: { owner: string; repo: string; query: string; mode?: SearchMode }) => Promise<SearchResponse>;
   listClusters: (params: { owner: string; repo: string }) => Promise<ClustersResponse>;
   listClusterSummaries: (params: {
@@ -78,6 +81,11 @@ export function createGitcrawlClient(baseUrl: string, fetchImpl: FetchLike = fet
       if (params.numbers && params.numbers.length > 0) search.set('numbers', params.numbers.join(','));
       const res = await fetchImpl(`${normalized}/threads?${search.toString()}`);
       return readJson(res, threadsResponseSchema);
+    },
+    async listAuthorThreads(params) {
+      const search = new URLSearchParams({ owner: params.owner, repo: params.repo, login: params.login });
+      const res = await fetchImpl(`${normalized}/author-threads?${search.toString()}`);
+      return readJson(res, authorThreadsResponseSchema);
     },
     async search(params) {
       const search = new URLSearchParams({

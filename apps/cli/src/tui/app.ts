@@ -48,6 +48,12 @@ type RepositoryChoice =
       label: string;
     };
 
+type AuthorThreadChoice = {
+  threadId: number;
+  clusterId: number | null | undefined;
+  label: string;
+};
+
 type Widgets = {
   screen: blessed.Widgets.Screen;
   header: blessed.Widgets.BoxElement;
@@ -163,6 +169,46 @@ export async function startTui(params: StartTuiParams): Promise<void> {
     threadDetail = selectedMemberThreadId !== null ? loadThreadDetail(selectedMemberThreadId, includeNeighbors) : null;
   };
 
+  const jumpToThread = (threadId: number, clusterId: number | null | undefined): boolean => {
+    if (clusterId == null) {
+      status = 'Selected thread is not assigned to a cluster';
+      render();
+      return false;
+    }
+
+    const selectFromSnapshot = (): boolean => {
+      const cluster = snapshot?.clusters.find((item) => item.clusterId === clusterId) ?? null;
+      if (!cluster) {
+        return false;
+      }
+      selectedClusterId = cluster.clusterId;
+      clusterDetail = loadClusterDetail(cluster.clusterId);
+      memberRows = buildMemberRows(clusterDetail);
+      selectedMemberThreadId = threadId;
+      memberIndex = findSelectableIndex(memberRows, selectedMemberThreadId);
+      loadSelectedThreadDetail(false);
+      resetDetailScroll();
+      status = `Cluster ${cluster.clusterId} / #${threadDetail?.thread.number ?? '?'}`;
+      render();
+      return true;
+    };
+
+    if (selectFromSnapshot()) {
+      return true;
+    }
+
+    if (minSize !== 0 || search) {
+      minSize = 0;
+      search = '';
+      refreshAll(false);
+      return selectFromSnapshot();
+    }
+
+    status = `Cluster ${clusterId} is not available in the current view`;
+    render();
+    return false;
+  };
+
   const refreshAll = (preserveSelection: boolean): void => {
     const previousClusterId = preserveSelection ? selectedClusterId : null;
     const previousMemberId = preserveSelection ? selectedMemberThreadId : null;
@@ -261,7 +307,7 @@ export async function startTui(params: StartTuiParams): Promise<void> {
       footerLines.unshift('');
     }
     footerLines.push(
-      `${status}  |  jobs:${activeJobs}  |  Tab focus  j/k move-or-scroll  PgUp/PgDn scroll  p repos  g update  s sort  f min  / filter  r refresh  o open  q quit`,
+      `${status}  |  jobs:${activeJobs}  |  Tab focus  j/k move-or-scroll  PgUp/PgDn scroll  p repos  u author  g update  s sort  f min  / filter  r refresh  o open  q quit`,
     );
     widgets.footer.setContent(footerLines.join('\n'));
     widgets.screen.render();
@@ -423,6 +469,36 @@ export async function startTui(params: StartTuiParams): Promise<void> {
     openUrl(url);
     status = `Opened ${url}`;
     render();
+  };
+
+  const promptAuthorThreads = (): void => {
+    if (modalOpen) return;
+    const authorLogin = threadDetail?.thread.authorLogin?.trim() ?? '';
+    if (!authorLogin) {
+      status = 'Selected thread has no author login';
+      render();
+      return;
+    }
+
+    void (async () => {
+      modalOpen = true;
+      try {
+        const response = params.service.listAuthorThreads({
+          owner: currentRepository.owner,
+          repo: currentRepository.repo,
+          login: authorLogin,
+        });
+        const choice = await promptAuthorThreadChoice(widgets.screen, response.authorLogin, response.threads);
+        if (!choice) {
+          render();
+          return;
+        }
+        jumpToThread(choice.threadId, choice.clusterId);
+        updateFocus('members');
+      } finally {
+        modalOpen = false;
+      }
+    })();
   };
 
   const promptUpdatePipeline = (): void => {
@@ -705,6 +781,10 @@ export async function startTui(params: StartTuiParams): Promise<void> {
   widgets.screen.key(['o'], () => {
     if (modalOpen) return;
     openSelectedThread();
+  });
+  widgets.screen.key(['u'], () => {
+    if (modalOpen) return;
+    promptAuthorThreads();
   });
   widgets.screen.on('resize', () => render());
 
@@ -1020,6 +1100,76 @@ export function getRepositoryChoices(service: Pick<GHCrawlService, 'listReposito
     })),
     { kind: 'new' as const, label: '+ Sync a new repository' },
   ];
+}
+
+async function promptAuthorThreadChoice(
+  screen: blessed.Widgets.Screen,
+  authorLogin: string,
+  threads: ReturnType<GHCrawlService['listAuthorThreads']>['threads'],
+): Promise<AuthorThreadChoice | null> {
+  const choices: AuthorThreadChoice[] = threads.map((item) => {
+    const match = item.strongestSameAuthorMatch;
+    const matchLabel = match ? `  sim:${(match.score * 100).toFixed(1)}% -> #${match.number}` : '  sim:none';
+    const clusterLabel = item.thread.clusterId ? `C${item.thread.clusterId}` : 'C-';
+    return {
+      threadId: item.thread.id,
+      clusterId: item.thread.clusterId,
+      label: `#${item.thread.number} ${item.thread.kind === 'pull_request' ? 'pr' : 'issue'} ${clusterLabel}${matchLabel}  ${item.thread.title}`,
+    };
+  });
+
+  const box = blessed.list({
+    parent: screen,
+    border: 'line',
+    label: ` @${authorLogin} Threads `,
+    keys: true,
+    vi: true,
+    mouse: false,
+    top: 'center',
+    left: 'center',
+    width: '80%',
+    height: '70%',
+    style: {
+      border: { fg: '#fde74c' },
+      item: { fg: 'white' },
+      selected: { bg: '#fde74c', fg: 'black', bold: true },
+    },
+    items: choices.length > 0 ? choices.map((choice) => choice.label) : ['No open threads for this author'],
+  });
+  const help = blessed.box({
+    parent: screen,
+    bottom: 0,
+    left: 0,
+    width: '100%',
+    height: 1,
+    content: 'Enter jumps to the selected thread. Esc cancels.',
+    style: { fg: 'black', bg: '#fde74c' },
+  });
+
+  box.focus();
+  box.select(0);
+  screen.render();
+
+  return await new Promise<AuthorThreadChoice | null>((resolve) => {
+    const teardown = (): void => {
+      screen.off('keypress', handleKeypress);
+      box.destroy();
+      help.destroy();
+      screen.render();
+    };
+    const finish = (value: AuthorThreadChoice | null): void => {
+      teardown();
+      resolve(value);
+    };
+    const handleKeypress = (_char: string, key: blessed.Widgets.Events.IKeyEventArg): void => {
+      if (key.name === 'escape') {
+        finish(null);
+      }
+    };
+
+    screen.on('keypress', handleKeypress);
+    box.on('select', (_item, index) => finish(choices[index] ?? null));
+  });
 }
 
 async function promptRepositoryChoice(

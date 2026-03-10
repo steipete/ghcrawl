@@ -55,6 +55,17 @@ export function createApiServer(service: GHCrawlService): http.Server {
         return;
       }
 
+      if (req.method === 'GET' && url.pathname === '/author-threads') {
+        const params = parseRepoParams(url);
+        const login = (url.searchParams.get('login') ?? '').trim();
+        if (!login) {
+          sendJson(res, 400, { error: 'Missing login parameter' });
+          return;
+        }
+        sendJson(res, 200, service.listAuthorThreads({ ...params, login }));
+        return;
+      }
+
       if (req.method === 'GET' && url.pathname === '/search') {
         const params = parseRepoParams(url);
         const query = url.searchParams.get('query');

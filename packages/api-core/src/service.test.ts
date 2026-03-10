@@ -240,6 +240,9 @@ test('syncRepository defaults to metadata-only mode, preserves thread kind, and 
       service.listThreads({ owner: 'openclaw', repo: 'openclaw', numbers: [43, 42, 999] }).threads.map((thread) => thread.number),
       [43, 42],
     );
+    const authorThreads = service.listAuthorThreads({ owner: 'openclaw', repo: 'openclaw', login: 'alice' });
+    assert.equal(authorThreads.authorLogin, 'alice');
+    assert.deepEqual(authorThreads.threads.map((item) => item.thread.number), [43, 42]);
     assert.equal(listIssueCommentCalls, 0);
     assert.equal(listPullReviewCalls, 0);
     assert.equal(listPullReviewCommentCalls, 0);
@@ -1109,6 +1112,71 @@ test('listNeighbors returns exact nearest neighbors for an embedded thread', () 
     assert.equal(result.neighbors.length, 1);
     assert.equal(result.neighbors[0].number, 43);
     assert.ok(result.neighbors[0].score > 0.9);
+  } finally {
+    service.close();
+  }
+});
+
+test('listAuthorThreads returns one author view with strongest same-author match from stored cluster edges', () => {
+  const service = makeTestService({
+    checkAuth: async () => undefined,
+    getRepo: async () => ({}),
+    listRepositoryIssues: async () => [],
+    getIssue: async () => ({}),
+    getPull: async () => ({}),
+    listIssueComments: async () => [],
+    listPullReviews: async () => [],
+    listPullReviewComments: async () => [],
+  });
+
+  try {
+    const now = '2026-03-09T00:00:00Z';
+    service.db
+      .prepare(
+        `insert into repositories (id, owner, name, full_name, github_repo_id, raw_json, updated_at)
+         values (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(1, 'openclaw', 'openclaw', 'openclaw/openclaw', '1', '{}', now);
+
+    const insertThread = service.db.prepare(
+      `insert into threads (
+        id, repo_id, github_id, number, kind, state, title, body, author_login, author_type, html_url,
+        labels_json, assignees_json, raw_json, content_hash, is_draft, created_at_gh, updated_at_gh, closed_at_gh,
+        merged_at_gh, first_pulled_at, last_pulled_at, updated_at
+      ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    insertThread.run(10, 1, '100', 42, 'issue', 'open', 'Downloader hangs', 'The transfer never finishes.', 'lqquan', 'User', 'https://github.com/openclaw/openclaw/issues/42', '[]', '[]', '{}', 'hash-42', 0, now, now, null, null, now, now, now);
+    insertThread.run(11, 1, '101', 43, 'pull_request', 'open', 'Fix downloader hang', 'Implements a fix.', 'lqquan', 'User', 'https://github.com/openclaw/openclaw/pull/43', '[]', '[]', '{}', 'hash-43', 0, now, now, null, null, now, now, now);
+    insertThread.run(12, 1, '102', 44, 'issue', 'open', 'Retry issue', 'Retries are broken.', 'other', 'User', 'https://github.com/openclaw/openclaw/issues/44', '[]', '[]', '{}', 'hash-44', 0, now, now, null, null, now, now, now);
+
+    service.db
+      .prepare(`insert into cluster_runs (id, repo_id, scope, status, started_at, finished_at) values (?, ?, ?, ?, ?, ?)`)
+      .run(1, 1, 'openclaw/openclaw', 'completed', now, now);
+    service.db
+      .prepare(
+        `insert into clusters (id, repo_id, cluster_run_id, representative_thread_id, member_count, created_at)
+         values (?, ?, ?, ?, ?, ?)`,
+      )
+      .run(100, 1, 1, 10, 2, now);
+    service.db
+      .prepare(`insert into cluster_members (cluster_id, thread_id, score_to_representative, created_at) values (?, ?, ?, ?)`)
+      .run(100, 10, null, now);
+    service.db
+      .prepare(`insert into cluster_members (cluster_id, thread_id, score_to_representative, created_at) values (?, ?, ?, ?)`)
+      .run(100, 11, 0.91, now);
+    service.db
+      .prepare(
+        `insert into similarity_edges (repo_id, cluster_run_id, left_thread_id, right_thread_id, method, score, explanation_json, created_at)
+         values (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(1, 1, 10, 11, 'exact_cosine', 0.91, '{}', now);
+
+    const result = service.listAuthorThreads({ owner: 'openclaw', repo: 'openclaw', login: 'lqquan' });
+
+    assert.deepEqual(result.threads.map((item) => item.thread.number), [43, 42]);
+    assert.equal(result.threads[0]?.strongestSameAuthorMatch?.number, 42);
+    assert.equal(result.threads[0]?.strongestSameAuthorMatch?.score, 0.91);
+    assert.equal(result.threads[1]?.strongestSameAuthorMatch?.number, 43);
   } finally {
     service.close();
   }

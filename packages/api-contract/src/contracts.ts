@@ -63,6 +63,19 @@ export const neighborSchema = z.object({
 });
 export type NeighborDto = z.infer<typeof neighborSchema>;
 
+export const authorThreadSchema = z.object({
+  thread: threadSchema,
+  strongestSameAuthorMatch: neighborSchema.nullable(),
+});
+export type AuthorThreadDto = z.infer<typeof authorThreadSchema>;
+
+export const authorThreadsResponseSchema = z.object({
+  repository: repositorySchema,
+  authorLogin: z.string(),
+  threads: z.array(authorThreadSchema),
+});
+export type AuthorThreadsResponse = z.infer<typeof authorThreadsResponseSchema>;
+
 export const searchHitSchema = z.object({
   thread: threadSchema,
   keywordScore: z.number().nullable(),

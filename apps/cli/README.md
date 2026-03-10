@@ -151,6 +151,7 @@ These commands are intended more for scripts, bots, and agent integrations than 
 
 ```bash
 ghcrawl threads owner/repo --numbers 42,43,44
+ghcrawl author owner/repo --login lqquan
 ghcrawl cluster owner/repo
 ghcrawl clusters owner/repo --min-size 10 --limit 20
 ghcrawl cluster-detail owner/repo --id 123
@@ -159,11 +160,13 @@ ghcrawl search owner/repo --query "download stalls"
 
 Use `threads --numbers ...` when you want several specific issue or PR records in one CLI call instead of paying process startup overhead repeatedly.
 
+Use `author --login ...` when you want all currently open issue/PR records from one user plus the strongest stored same-author similarity match for each item.
+
 ## Cost To Operate
 
-The main variable cost is OpenAI embeddings.
+The main variable cost is OpenAI embeddings. Current model pricing is published by OpenAI here: [OpenAI API pricing](https://developers.openai.com/api/docs/pricing).
 
-On a real local run against roughly `12k` issues plus about `1.2x` related PR and issue inputs, `text-embedding-3-large` came out to about **$0.65 USD** total to embed the repo. Treat that as an approximate data point for something like `~14k` issue and PR inputs, not a hard guarantee.
+On a real local run against roughly `12k` issues plus about `1.2x` related PR and issue inputs, [`text-embedding-3-large`](https://developers.openai.com/api/docs/pricing) came out to about **$0.65 USD** total to embed the repo. Treat that as an approximate data point for something like `~14k` issue and PR inputs, not a hard guarantee.
 
 This screenshot is the reference point for that estimate:
 

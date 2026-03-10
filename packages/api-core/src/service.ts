@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 import { IterableMapper } from '@shutterstock/p-map-iterable';
 import {
   actionResponseSchema,
+  authorThreadsResponseSchema,
   clusterDetailResponseSchema,
   clusterResultSchema,
   clusterSummariesResponseSchema,
@@ -18,6 +19,7 @@ import {
   threadsResponseSchema,
   type ActionRequest,
   type ActionResponse,
+  type AuthorThreadsResponse,
   type ClusterDetailResponse,
   type ClusterDto,
   type ClusterResultDto,
@@ -537,6 +539,114 @@ export class GHCrawlService {
     return threadsResponseSchema.parse({
       repository,
       threads: orderedRows.map((row) => threadToDto(row, clusterIds.get(row.id) ?? null)),
+    });
+  }
+
+  listAuthorThreads(params: { owner: string; repo: string; login: string }): AuthorThreadsResponse {
+    const repository = this.requireRepository(params.owner, params.repo);
+    const normalizedLogin = params.login.trim();
+    if (!normalizedLogin) {
+      return authorThreadsResponseSchema.parse({
+        repository,
+        authorLogin: '',
+        threads: [],
+      });
+    }
+
+    const clusterIds = new Map<number, number>();
+    const clusterRows = this.db
+      .prepare(
+        `select cm.thread_id, cm.cluster_id
+         from cluster_members cm
+         join clusters c on c.id = cm.cluster_id
+         where c.repo_id = ? and c.cluster_run_id = (
+           select id from cluster_runs where repo_id = ? and status = 'completed' order by id desc limit 1
+         )`,
+      )
+      .all(repository.id, repository.id) as Array<{ thread_id: number; cluster_id: number }>;
+    for (const row of clusterRows) clusterIds.set(row.thread_id, row.cluster_id);
+
+    const rows = this.db
+      .prepare(
+        `select *
+         from threads
+         where repo_id = ? and state = 'open' and lower(author_login) = lower(?)
+         order by updated_at_gh desc, number desc`,
+      )
+      .all(repository.id, normalizedLogin) as ThreadRow[];
+
+    const latestRun = this.getLatestClusterRun(repository.id);
+    const strongestByThread = new Map<number, NonNullable<ReturnType<typeof authorThreadsResponseSchema.parse>['threads'][number]['strongestSameAuthorMatch']>>();
+    if (latestRun && rows.length > 1) {
+      const edges = this.db
+        .prepare(
+          `select
+              se.left_thread_id,
+              se.right_thread_id,
+              se.score,
+              t1.number as left_number,
+              t1.kind as left_kind,
+              t1.title as left_title,
+              t2.number as right_number,
+              t2.kind as right_kind,
+              t2.title as right_title
+           from similarity_edges se
+           join threads t1 on t1.id = se.left_thread_id
+           join threads t2 on t2.id = se.right_thread_id
+           where se.repo_id = ?
+             and se.cluster_run_id = ?
+             and lower(t1.author_login) = lower(?)
+             and lower(t2.author_login) = lower(?)
+             and t1.state = 'open'
+             and t2.state = 'open'`,
+        )
+        .all(repository.id, latestRun.id, normalizedLogin, normalizedLogin) as Array<{
+        left_thread_id: number;
+        right_thread_id: number;
+        score: number;
+        left_number: number;
+        left_kind: 'issue' | 'pull_request';
+        left_title: string;
+        right_number: number;
+        right_kind: 'issue' | 'pull_request';
+        right_title: string;
+      }>;
+
+      const updateStrongest = (
+        sourceThreadId: number,
+        match: { threadId: number; number: number; kind: 'issue' | 'pull_request'; title: string; score: number },
+      ): void => {
+        const previous = strongestByThread.get(sourceThreadId);
+        if (!previous || match.score > previous.score) {
+          strongestByThread.set(sourceThreadId, match);
+        }
+      };
+
+      for (const edge of edges) {
+        updateStrongest(edge.left_thread_id, {
+          threadId: edge.right_thread_id,
+          number: edge.right_number,
+          kind: edge.right_kind,
+          title: edge.right_title,
+          score: edge.score,
+        });
+        updateStrongest(edge.right_thread_id, {
+          threadId: edge.left_thread_id,
+          number: edge.left_number,
+          kind: edge.left_kind,
+          title: edge.left_title,
+          score: edge.score,
+        });
+      }
+    }
+
+    return authorThreadsResponseSchema.parse({
+      repository,
+      authorLogin: normalizedLogin,
+      threads: rows.map((row) => ({
+        thread: threadToDto(row, clusterIds.get(row.id) ?? null),
+        strongestSameAuthorMatch: strongestByThread.get(row.id) ?? null,
+      })),
     });
   }
 

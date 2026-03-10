@@ -29,6 +29,12 @@ Useful flags:
 - `--numbers 42,43,44`
 - `--kind issue|pull_request`
 
+### `ghcrawl author owner/repo --login <user>`
+
+Bulk read path for all open issue/PR records from one author in the local DB.
+
+Use this when you want to inspect a user's open items together and see the strongest stored same-author similarity match for each item.
+
 ### `ghcrawl refresh owner/repo`
 
 Runs the staged pipeline in fixed order:
@@ -125,6 +131,7 @@ If `ghcrawl` is not installed globally:
 ```bash
 pnpm --filter ghcrawl cli doctor --json
 pnpm --filter ghcrawl cli threads owner/repo --numbers 42,43,44
+pnpm --filter ghcrawl cli author owner/repo --login lqquan
 pnpm --filter ghcrawl cli refresh owner/repo
 pnpm --filter ghcrawl cli clusters owner/repo --min-size 10 --limit 20 --sort recent
 pnpm --filter ghcrawl cli cluster-detail owner/repo --id 123 --member-limit 20 --body-chars 280
@@ -132,10 +139,10 @@ pnpm --filter ghcrawl cli cluster-detail owner/repo --id 123 --member-limit 20 -
 
 ## Suggested analysis flow
 
-1. Start read-only with `clusters`, `cluster-detail`, `threads`, `search`, or `neighbors`
+1. Start read-only with `clusters`, `cluster-detail`, `threads`, `author`, `search`, or `neighbors`
 2. Only if API-backed work is needed or a read-only request failed, run `ghcrawl doctor --json`
 3. If auth is unavailable, stay read-only
 4. Only if doctor is healthy and the user explicitly asked, run `ghcrawl refresh owner/repo`
 5. `ghcrawl clusters owner/repo --min-size 10 --limit 20 --sort recent`
 6. `ghcrawl cluster-detail owner/repo --id <cluster-id>`
-7. optionally `threads`, `search`, or `neighbors`
+7. optionally `threads`, `author`, `search`, or `neighbors`

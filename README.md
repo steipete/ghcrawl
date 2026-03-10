@@ -149,6 +149,7 @@ These commands are intended more for scripts, bots, and agent integrations than 
 
 ```bash
 ghcrawl threads owner/repo --numbers 42,43,44
+ghcrawl author owner/repo --login lqquan
 ghcrawl cluster owner/repo
 ghcrawl clusters owner/repo --min-size 10 --limit 20
 ghcrawl cluster-detail owner/repo --id 123
@@ -156,6 +157,8 @@ ghcrawl search owner/repo --query "download stalls"
 ```
 
 Use `threads --numbers ...` when you want several specific issue or PR records in one CLI call instead of paying process startup overhead repeatedly.
+
+Use `author --login ...` when you want all currently open issue/PR records from one user plus the strongest stored same-author similarity match for each item.
 
 ## Cost To Operate
 

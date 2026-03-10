@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { clusterDetailResponseSchema, clusterSummariesResponseSchema, healthResponseSchema, neighborsResponseSchema, threadsResponseSchema } from '@ghcrawl/api-contract';
+import { authorThreadsResponseSchema, clusterDetailResponseSchema, clusterSummariesResponseSchema, healthResponseSchema, neighborsResponseSchema, threadsResponseSchema } from '@ghcrawl/api-contract';
 
 import { createApiServer } from './server.js';
 import { GHCrawlService } from '../service.js';
@@ -211,6 +211,85 @@ test('threads endpoint can filter by a bulk number list', async () => {
     assert.equal(response.status, 200);
     const payload = threadsResponseSchema.parse((await response.json()) as unknown);
     assert.deepEqual(payload.threads.map((thread) => thread.number), [44, 42]);
+  } finally {
+    await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+    service.close();
+  }
+});
+
+test('author-threads endpoint returns one author with strongest same-author matches', async () => {
+  const service = new GHCrawlService({
+    config: {
+      workspaceRoot: process.cwd(),
+      configDir: '/tmp/ghcrawl-test',
+      configPath: '/tmp/ghcrawl-test/config.json',
+      configFileExists: true,
+      dbPath: ':memory:',
+      dbPathSource: 'config',
+      apiPort: 5179,
+      secretProvider: 'plaintext',
+      githubTokenSource: 'none',
+      openaiApiKeySource: 'none',
+      summaryModel: 'gpt-5-mini',
+      embedModel: 'text-embedding-3-large',
+      embedBatchSize: 8,
+      embedConcurrency: 10,
+      embedMaxUnread: 20,
+      openSearchIndex: 'ghcrawl-threads',
+      tuiPreferences: {},
+    },
+    github: {
+      checkAuth: async () => undefined,
+      getRepo: async () => ({}),
+      listRepositoryIssues: async () => [],
+      getIssue: async () => ({}),
+      getPull: async () => ({}),
+      listIssueComments: async () => [],
+      listPullReviews: async () => [],
+      listPullReviewComments: async () => [],
+    },
+  });
+
+  const now = '2026-03-09T00:00:00Z';
+  service.db
+    .prepare(
+      `insert into repositories (id, owner, name, full_name, github_repo_id, raw_json, updated_at)
+       values (?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(1, 'openclaw', 'openclaw', 'openclaw/openclaw', '1', '{}', now);
+  const insertThread = service.db.prepare(
+    `insert into threads (
+      id, repo_id, github_id, number, kind, state, title, body, author_login, author_type, html_url,
+      labels_json, assignees_json, raw_json, content_hash, is_draft, created_at_gh, updated_at_gh, closed_at_gh,
+      merged_at_gh, first_pulled_at, last_pulled_at, updated_at
+    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  );
+  insertThread.run(10, 1, '100', 42, 'issue', 'open', 'Downloader hangs', 'The transfer never finishes.', 'lqquan', 'User', 'https://github.com/openclaw/openclaw/issues/42', '[]', '[]', '{}', 'hash-42', 0, now, now, null, null, now, now, now);
+  insertThread.run(11, 1, '101', 43, 'pull_request', 'open', 'Fix downloader hang', 'Implements a fix.', 'lqquan', 'User', 'https://github.com/openclaw/openclaw/pull/43', '[]', '[]', '{}', 'hash-43', 0, now, now, null, null, now, now, now);
+  service.db
+    .prepare(`insert into cluster_runs (id, repo_id, scope, status, started_at, finished_at) values (?, ?, ?, ?, ?, ?)`)
+    .run(1, 1, 'openclaw/openclaw', 'completed', now, now);
+  service.db
+    .prepare(
+      `insert into similarity_edges (repo_id, cluster_run_id, left_thread_id, right_thread_id, method, score, explanation_json, created_at)
+       values (?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(1, 1, 10, 11, 'exact_cosine', 0.91, '{}', now);
+
+  const server = createApiServer(service);
+  try {
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    assert(address && typeof address === 'object');
+
+    const response = await fetch(
+      `http://127.0.0.1:${address.port}/author-threads?owner=openclaw&repo=openclaw&login=lqquan`,
+    );
+    assert.equal(response.status, 200);
+    const payload = authorThreadsResponseSchema.parse((await response.json()) as unknown);
+    assert.equal(payload.authorLogin, 'lqquan');
+    assert.deepEqual(payload.threads.map((item) => item.thread.number), [43, 42]);
+    assert.equal(payload.threads[0]?.strongestSameAuthorMatch?.number, 42);
   } finally {
     await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
     service.close();

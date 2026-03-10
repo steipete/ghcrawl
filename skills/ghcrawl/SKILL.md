@@ -47,6 +47,7 @@ Without explicit user direction to refresh data, prefer these local-only command
 ghcrawl clusters owner/repo --min-size 10 --limit 20 --sort recent
 ghcrawl cluster-detail owner/repo --id 123 --member-limit 20 --body-chars 280
 ghcrawl threads owner/repo --numbers 42,43,44
+ghcrawl author owner/repo --login lqquan
 ghcrawl search owner/repo --query "download stalls" --mode hybrid
 ghcrawl neighbors owner/repo --number 42 --limit 10
 ```
@@ -54,6 +55,8 @@ ghcrawl neighbors owner/repo --number 42 --limit 10
 These operate on the existing local SQLite dataset.
 
 Use `threads --numbers ...` when you need a batch of specific issue/PR records. Do not pay the CLI startup cost 10 times for 10 separate single-thread lookups.
+
+Use `author --login ...` when you need one author's open threads and their strongest stored same-author similarity matches in one call.
 
 ### 2. Check local health only when needed
 
