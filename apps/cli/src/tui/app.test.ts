@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import type { TuiClusterDetail, TuiRepoStats, TuiThreadDetail } from '@ghcrawl/api-core';
 
 import {
+  buildHelpContent,
   buildUpdatePipelineLabels,
   describeUpdateTask,
   escapeBlessedText,
@@ -177,4 +178,18 @@ test('buildUpdatePipelineLabels marks the selected tasks and includes task guida
   assert.match(labels[0] ?? '', /^\[x\] GitHub sync\/reconcile  up to date, last 2h ago$/);
   assert.match(labels[1] ?? '', /^\[x\] Embed refresh  outdated: 2 stale, last 1h ago$/);
   assert.match(labels[2] ?? '', /^\[ \] Cluster rebuild  outdated: embeddings are newer by 3h$/);
+});
+
+test('buildHelpContent includes the full key command list', () => {
+  const content = buildHelpContent();
+
+  assert.match(content, /Tab \/ Shift-Tab/);
+  assert.match(content, /g\s+open the staged update pipeline/);
+  assert.match(content, /p\s+open the repository browser/);
+  assert.match(content, /u\s+show all open threads for the selected author/);
+  assert.match(content, /l\s+toggle wide layout/);
+  assert.match(content, /x\s+show or hide locally closed clusters and members/);
+  assert.match(content, /h or \?\s+open this help popup/);
+  assert.match(content, /q\s+quit the TUI/);
+  assert.match(content, /This popup scrolls\./);
 });

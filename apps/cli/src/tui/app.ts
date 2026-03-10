@@ -312,7 +312,7 @@ export async function startTui(params: StartTuiParams): Promise<void> {
       footerLines.unshift('');
     }
     footerLines.push(
-      `${status}  |  jobs:${activeJobs}  |  Tab focus  j/k move-or-scroll  PgUp/PgDn scroll  p repos  u author  g update  s sort  f min  l layout  x closed  / filter  r refresh  o open  q quit`,
+      `${status}  |  jobs:${activeJobs}  |  Tab focus  j/k move-or-scroll  PgUp/PgDn scroll  p repos  u author  g update  s sort  f min  l layout  x closed  / filter  h/? help  r refresh  o open  q quit`,
     );
     widgets.footer.setContent(footerLines.join('\n'));
     widgets.screen.render();
@@ -500,6 +500,19 @@ export async function startTui(params: StartTuiParams): Promise<void> {
         }
         jumpToThread(choice.threadId, choice.clusterId);
         updateFocus('members');
+      } finally {
+        modalOpen = false;
+      }
+    })();
+  };
+
+  const openHelp = (): void => {
+    if (modalOpen) return;
+    void (async () => {
+      modalOpen = true;
+      try {
+        await promptHelp(widgets.screen);
+        render();
       } finally {
         modalOpen = false;
       }
@@ -788,6 +801,10 @@ export async function startTui(params: StartTuiParams): Promise<void> {
     if (modalOpen) return;
     promptFilter();
   });
+  widgets.screen.key(['h', '?'], () => {
+    if (modalOpen) return;
+    openHelp();
+  });
   widgets.screen.key(['p'], () => browseRepositories());
   widgets.screen.key(['g'], () => {
     if (modalOpen) return;
@@ -1028,6 +1045,128 @@ export function buildUpdatePipelineLabels(
     const mark = selection[task] ? '[x]' : '[ ]';
     const title = task === 'sync' ? 'GitHub sync/reconcile' : task === 'embed' ? 'Embed refresh' : 'Cluster rebuild';
     return `${mark} ${title}  ${describeUpdateTask(task, stats, now)}`;
+  });
+}
+
+export function buildHelpContent(): string {
+  return [
+    '{bold}ghcrawl TUI Help{/bold}',
+    '',
+    '{bold}Navigation{/bold}',
+    'Tab / Shift-Tab  cycle focus across clusters, members, and detail',
+    'j / k             move selection, or scroll detail when detail is focused',
+    'Up / Down         same as j / k',
+    'Enter             clusters -> members, members -> detail',
+    'PgUp / PgDn       scroll detail or this help popup faster',
+    'Home / End        jump to the top or bottom of detail or help',
+    '',
+    '{bold}Views And Filters{/bold}',
+    's                 cycle cluster sort mode',
+    'f                 cycle minimum cluster size filter',
+    'l                 toggle wide layout: columns vs. wide-left stacked-right',
+    'x                 show or hide locally closed clusters and members',
+    '/                 filter clusters by title/member text',
+    'r                 refresh the current local view from SQLite',
+    '',
+    '{bold}Actions{/bold}',
+    'g                 open the staged update pipeline (GitHub, embeddings, clusters)',
+    'p                 open the repository browser / sync a new repository',
+    'u                 show all open threads for the selected author',
+    'o                 open the selected thread URL in your browser',
+    '',
+    '{bold}Help And Exit{/bold}',
+    'h or ?            open this help popup',
+    'q                 quit the TUI (or close this popup)',
+    'Esc               close this popup',
+    '',
+    '{bold}Notes{/bold}',
+    'Clusters show C<clusterId> so the cluster id is easy to copy into CLI or skill flows.',
+    'The footer only shows the short command list. Open help to see the full list.',
+    'This popup scrolls. Use j/k, arrows, PgUp/PgDn, Home, and End if it does not fit.',
+  ].join('\n');
+}
+
+async function promptHelp(screen: blessed.Widgets.Screen): Promise<void> {
+  const modalWidth = '86%';
+  const box = blessed.box({
+    parent: screen,
+    border: 'line',
+    label: ' Help ',
+    tags: true,
+    scrollable: true,
+    alwaysScroll: true,
+    keys: true,
+    vi: true,
+    mouse: false,
+    top: 'center',
+    left: 'center',
+    width: modalWidth,
+    height: '80%',
+    padding: {
+      left: 1,
+      right: 1,
+    },
+    scrollbar: {
+      ch: ' ',
+    },
+    style: {
+      border: { fg: '#5bc0eb' },
+      fg: 'white',
+      bg: '#101522',
+      scrollbar: { bg: '#5bc0eb' },
+    },
+    content: buildHelpContent(),
+  });
+  const help = blessed.box({
+    parent: screen,
+    width: modalWidth,
+    height: 1,
+    bottom: 1,
+    left: 'center',
+    tags: false,
+    content: 'Scroll with j/k, arrows, PgUp/PgDn, Home, End. Press Esc, q, h, ?, or Enter to close.',
+    style: { fg: 'black', bg: '#5bc0eb' },
+  });
+
+  box.focus();
+  box.setScroll(0);
+  screen.render();
+
+  return await new Promise<void>((resolve) => {
+    const finish = (): void => {
+      screen.off('keypress', handleKeypress);
+      box.destroy();
+      help.destroy();
+      screen.render();
+      resolve();
+    };
+    const handleKeypress = (char: string, key: blessed.Widgets.Events.IKeyEventArg): void => {
+      if (key.name === 'escape' || key.name === 'enter' || key.name === 'q' || key.name === 'h' || char === '?') {
+        finish();
+        return;
+      }
+      if (key.name === 'pageup') {
+        box.scroll(-12);
+        screen.render();
+        return;
+      }
+      if (key.name === 'pagedown') {
+        box.scroll(12);
+        screen.render();
+        return;
+      }
+      if (key.name === 'home') {
+        box.setScroll(0);
+        screen.render();
+        return;
+      }
+      if (key.name === 'end') {
+        box.setScrollPerc(100);
+        screen.render();
+      }
+    };
+
+    screen.on('keypress', handleKeypress);
   });
 }
 
