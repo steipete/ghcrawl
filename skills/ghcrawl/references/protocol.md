@@ -72,6 +72,15 @@ Each cluster includes:
 - `representativeNumber`
 - `representativeKind`
 
+When reporting a cluster to the user, do not mention only the cluster id. Use:
+
+- `Cluster <clusterId> (#<representativeNumber> representative <issue|pr>)`
+
+Examples:
+
+- `Cluster 23945 (#42035 representative issue)`
+- `Cluster 104 (#38112 representative pr)`
+
 This is the normal read-only exploration command for existing local data.
 
 ### `ghcrawl cluster-detail owner/repo --id <cluster-id>`

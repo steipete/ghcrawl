@@ -145,11 +145,15 @@ ghcrawl neighbors owner/repo --number 42 --limit 10
 - Report the repo name and whether you refreshed data in this run.
 - When listing clusters, include:
   - cluster id
+  - representative number and kind
   - display title
   - total size
   - PR count
   - issue count
   - latest updated time
+- When naming a cluster in prose, use this shape:
+  - `Cluster <clusterId> (#<representativeNumber> representative <issue|pr>)`
+  - example: `Cluster 23945 (#42035 representative issue)`
 - When drilling into a cluster, include clickable GitHub links for each issue/PR if you mention them.
 - Prefer concise summaries over dumping raw JSON.
 - If freshness is stale, say that explicitly:
