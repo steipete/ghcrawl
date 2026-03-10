@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { GitcrawlService } from './service.js';
+import { GHCrawlService } from './service.js';
 
-function makeTestConfig(overrides: Partial<GitcrawlService['config']> = {}): GitcrawlService['config'] {
+function makeTestConfig(overrides: Partial<GHCrawlService['config']> = {}): GHCrawlService['config'] {
   return {
     workspaceRoot: process.cwd(),
     configDir: '/tmp/ghcrawl-test',
@@ -28,10 +28,10 @@ function makeTestConfig(overrides: Partial<GitcrawlService['config']> = {}): Git
 }
 
 function makeTestService(
-  github: GitcrawlService['github'],
-  ai?: GitcrawlService['ai'],
-): GitcrawlService {
-  return new GitcrawlService({
+  github: GHCrawlService['github'],
+  ai?: GHCrawlService['ai'],
+): GHCrawlService {
+  return new GHCrawlService({
     config: makeTestConfig(),
     github,
     ai,
@@ -41,7 +41,7 @@ function makeTestService(
 test('doctor reports config path and successful auth smoke checks', async () => {
   let githubChecked = 0;
   let openAiChecked = 0;
-  const service = new GitcrawlService({
+  const service = new GHCrawlService({
     config: makeTestConfig({
       openaiApiKey: 'sk-proj-testkey1234567890',
       openaiApiKeySource: 'config',
@@ -85,7 +85,7 @@ test('doctor reports config path and successful auth smoke checks', async () => 
 
 test('doctor reports invalid token format without attempting auth', async () => {
   let githubChecked = 0;
-  const service = new GitcrawlService({
+  const service = new GHCrawlService({
     config: makeTestConfig({
       githubToken: 'not-a-token',
     }),
@@ -115,7 +115,7 @@ test('doctor reports invalid token format without attempting auth', async () => 
 });
 
 test('doctor explains when secrets are expected from 1Password CLI env injection', async () => {
-  const service = new GitcrawlService({
+  const service = new GHCrawlService({
     config: makeTestConfig({
       githubToken: undefined,
       githubTokenSource: 'none',
@@ -778,7 +778,7 @@ test('embedRepository batches multi-source embeddings and skips unchanged inputs
 
 test('embedRepository truncates oversized inputs before submission', async () => {
   const embedCalls: string[][] = [];
-  const service = new GitcrawlService({
+  const service = new GHCrawlService({
     config: makeTestConfig({
       embedBatchSize: 8,
       embedConcurrency: 1,
@@ -902,7 +902,7 @@ test('embedRepository truncates oversized inputs before submission', async () =>
 
 test('embedRepository isolates a failing oversized item from a mixed batch and retries it shortened', async () => {
   const embedCalls: string[][] = [];
-  const service = new GitcrawlService({
+  const service = new GHCrawlService({
     config: makeTestConfig({
       embedBatchSize: 8,
       embedConcurrency: 1,

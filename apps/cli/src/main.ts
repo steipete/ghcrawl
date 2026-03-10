@@ -2,7 +2,7 @@
 import { once } from 'node:events';
 import { parseArgs } from 'node:util';
 
-import { createApiServer, GitcrawlService } from '@ghcrawl/api-core';
+import { createApiServer, GHCrawlService } from '@ghcrawl/api-core';
 import { runInitWizard } from './init-wizard.js';
 import { startTui } from './tui/app.js';
 
@@ -22,7 +22,7 @@ type CommandName =
   | 'tui'
   | 'serve';
 
-type DoctorResult = Awaited<ReturnType<GitcrawlService['doctor']>>;
+type DoctorResult = Awaited<ReturnType<GHCrawlService['doctor']>>;
 
 function usage(devMode = false): string {
   const lines = [
@@ -49,7 +49,7 @@ function usage(devMode = false): string {
 }
 
 function parseGlobalFlags(argv: string[], env: NodeJS.ProcessEnv = process.env): { argv: string[]; devMode: boolean } {
-  let devMode = env.GHCRAWL_DEV_MODE === '1' || env.GITCRAWL_DEV_MODE === '1';
+  let devMode = env.GHCRAWL_DEV_MODE === '1' || env.GHCRAWL_DEV_MODE === '1';
   const filtered: string[] = [];
   for (const arg of argv) {
     if (arg === '--dev') {
@@ -216,7 +216,7 @@ export function formatDoctorReport(result: DoctorResult): string {
   return `${lines.join('\n')}\n`;
 }
 
-function closeService(service: GitcrawlService | null): void {
+function closeService(service: GHCrawlService | null): void {
   if (service) {
     service.close();
   }
@@ -231,9 +231,9 @@ export async function run(argv: string[], stdout: NodeJS.WritableStream = proces
     return;
   }
 
-  let service: GitcrawlService | null = null;
-  const getService = (): GitcrawlService => {
-    service ??= new GitcrawlService();
+  let service: GHCrawlService | null = null;
+  const getService = (): GHCrawlService => {
+    service ??= new GHCrawlService();
     return service;
   };
   try {

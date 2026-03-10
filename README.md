@@ -14,7 +14,7 @@ Install the published CLI package:
 npm install -g ghcrawl
 ```
 
-That package exposes the `ghcrawl` command directly. The old `gitcrawl` command remains as a compatibility alias for now.
+That package exposes the `ghcrawl` command directly.
 
 If you are working from source or maintaining the repo, use [CONTRIBUTING.md](./CONTRIBUTING.md).
 

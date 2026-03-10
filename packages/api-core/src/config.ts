@@ -269,9 +269,9 @@ export function loadConfig(options: LoadConfigOptions = {}): GitcrawlConfig {
     { source: 'dotenv', value: getString(dotenvValues.OPENAI_API_KEY) },
   );
   const configuredDbPath = pickDefined<string>(
-    { source: 'env', value: getEnvString(env, 'GHCRAWL_DB_PATH', 'GITCRAWL_DB_PATH') },
+    { source: 'env', value: getEnvString(env, 'GHCRAWL_DB_PATH', 'GHCRAWL_DB_PATH') },
     { source: 'config', value: stored.data.dbPath },
-    { source: 'dotenv', value: getDotenvString(dotenvValues, 'GHCRAWL_DB_PATH', 'GITCRAWL_DB_PATH') },
+    { source: 'dotenv', value: getDotenvString(dotenvValues, 'GHCRAWL_DB_PATH', 'GHCRAWL_DB_PATH') },
   );
   const workspaceDbPath = configuredDbPath.value === undefined ? getWorkspaceDbPath(workspaceRoot) : null;
   const dbPathValue =
@@ -279,50 +279,50 @@ export function loadConfig(options: LoadConfigOptions = {}): GitcrawlConfig {
       ? { source: 'default' as const, value: workspaceDbPath }
       : pickDefined<string>(configuredDbPath, { source: 'default', value: 'ghcrawl.db' });
   const apiPortValue = pickDefined<string | number>(
-    { source: 'env', value: getEnvString(env, 'GHCRAWL_API_PORT', 'GITCRAWL_API_PORT') },
+    { source: 'env', value: getEnvString(env, 'GHCRAWL_API_PORT', 'GHCRAWL_API_PORT') },
     { source: 'config', value: stored.data.apiPort },
-    { source: 'dotenv', value: getDotenvString(dotenvValues, 'GHCRAWL_API_PORT', 'GITCRAWL_API_PORT') },
+    { source: 'dotenv', value: getDotenvString(dotenvValues, 'GHCRAWL_API_PORT', 'GHCRAWL_API_PORT') },
     { source: 'default', value: '5179' },
   );
   const embedBatchSizeValue = pickDefined<string | number>(
-    { source: 'env', value: getEnvString(env, 'GHCRAWL_EMBED_BATCH_SIZE', 'GITCRAWL_EMBED_BATCH_SIZE') },
+    { source: 'env', value: getEnvString(env, 'GHCRAWL_EMBED_BATCH_SIZE', 'GHCRAWL_EMBED_BATCH_SIZE') },
     { source: 'config', value: stored.data.embedBatchSize },
-    { source: 'dotenv', value: getDotenvString(dotenvValues, 'GHCRAWL_EMBED_BATCH_SIZE', 'GITCRAWL_EMBED_BATCH_SIZE') },
+    { source: 'dotenv', value: getDotenvString(dotenvValues, 'GHCRAWL_EMBED_BATCH_SIZE', 'GHCRAWL_EMBED_BATCH_SIZE') },
     { source: 'default', value: '8' },
   );
   const embedConcurrencyValue = pickDefined<string | number>(
-    { source: 'env', value: getEnvString(env, 'GHCRAWL_EMBED_CONCURRENCY', 'GITCRAWL_EMBED_CONCURRENCY') },
+    { source: 'env', value: getEnvString(env, 'GHCRAWL_EMBED_CONCURRENCY', 'GHCRAWL_EMBED_CONCURRENCY') },
     { source: 'config', value: stored.data.embedConcurrency },
-    { source: 'dotenv', value: getDotenvString(dotenvValues, 'GHCRAWL_EMBED_CONCURRENCY', 'GITCRAWL_EMBED_CONCURRENCY') },
+    { source: 'dotenv', value: getDotenvString(dotenvValues, 'GHCRAWL_EMBED_CONCURRENCY', 'GHCRAWL_EMBED_CONCURRENCY') },
     { source: 'default', value: '10' },
   );
   const embedMaxUnreadValue = pickDefined<string | number>(
-    { source: 'env', value: getEnvString(env, 'GHCRAWL_EMBED_MAX_UNREAD', 'GITCRAWL_EMBED_MAX_UNREAD') },
+    { source: 'env', value: getEnvString(env, 'GHCRAWL_EMBED_MAX_UNREAD', 'GHCRAWL_EMBED_MAX_UNREAD') },
     { source: 'config', value: stored.data.embedMaxUnread },
-    { source: 'dotenv', value: getDotenvString(dotenvValues, 'GHCRAWL_EMBED_MAX_UNREAD', 'GITCRAWL_EMBED_MAX_UNREAD') },
+    { source: 'dotenv', value: getDotenvString(dotenvValues, 'GHCRAWL_EMBED_MAX_UNREAD', 'GHCRAWL_EMBED_MAX_UNREAD') },
     { source: 'default', value: '20' },
   );
   const summaryModel = pickDefined<string>(
-    { source: 'env', value: getEnvString(env, 'GHCRAWL_SUMMARY_MODEL', 'GITCRAWL_SUMMARY_MODEL') },
+    { source: 'env', value: getEnvString(env, 'GHCRAWL_SUMMARY_MODEL', 'GHCRAWL_SUMMARY_MODEL') },
     { source: 'config', value: stored.data.summaryModel },
-    { source: 'dotenv', value: getDotenvString(dotenvValues, 'GHCRAWL_SUMMARY_MODEL', 'GITCRAWL_SUMMARY_MODEL') },
+    { source: 'dotenv', value: getDotenvString(dotenvValues, 'GHCRAWL_SUMMARY_MODEL', 'GHCRAWL_SUMMARY_MODEL') },
     { source: 'default', value: 'gpt-5-mini' },
   );
   const embedModel = pickDefined<string>(
-    { source: 'env', value: getEnvString(env, 'GHCRAWL_EMBED_MODEL', 'GITCRAWL_EMBED_MODEL') },
+    { source: 'env', value: getEnvString(env, 'GHCRAWL_EMBED_MODEL', 'GHCRAWL_EMBED_MODEL') },
     { source: 'config', value: stored.data.embedModel },
-    { source: 'dotenv', value: getDotenvString(dotenvValues, 'GHCRAWL_EMBED_MODEL', 'GITCRAWL_EMBED_MODEL') },
+    { source: 'dotenv', value: getDotenvString(dotenvValues, 'GHCRAWL_EMBED_MODEL', 'GHCRAWL_EMBED_MODEL') },
     { source: 'default', value: 'text-embedding-3-large' },
   );
   const openSearchUrl = pickDefined<string>(
-    { source: 'env', value: getEnvString(env, 'GHCRAWL_OPENSEARCH_URL', 'GITCRAWL_OPENSEARCH_URL') },
+    { source: 'env', value: getEnvString(env, 'GHCRAWL_OPENSEARCH_URL', 'GHCRAWL_OPENSEARCH_URL') },
     { source: 'config', value: stored.data.openSearchUrl },
-    { source: 'dotenv', value: getDotenvString(dotenvValues, 'GHCRAWL_OPENSEARCH_URL', 'GITCRAWL_OPENSEARCH_URL') },
+    { source: 'dotenv', value: getDotenvString(dotenvValues, 'GHCRAWL_OPENSEARCH_URL', 'GHCRAWL_OPENSEARCH_URL') },
   );
   const openSearchIndex = pickDefined<string>(
-    { source: 'env', value: getEnvString(env, 'GHCRAWL_OPENSEARCH_INDEX', 'GITCRAWL_OPENSEARCH_INDEX') },
+    { source: 'env', value: getEnvString(env, 'GHCRAWL_OPENSEARCH_INDEX', 'GHCRAWL_OPENSEARCH_INDEX') },
     { source: 'config', value: stored.data.openSearchIndex },
-    { source: 'dotenv', value: getDotenvString(dotenvValues, 'GHCRAWL_OPENSEARCH_INDEX', 'GITCRAWL_OPENSEARCH_INDEX') },
+    { source: 'dotenv', value: getDotenvString(dotenvValues, 'GHCRAWL_OPENSEARCH_INDEX', 'GHCRAWL_OPENSEARCH_INDEX') },
     { source: 'default', value: 'ghcrawl-threads' },
   );
 

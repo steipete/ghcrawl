@@ -389,7 +389,7 @@ function threadToDto(row: ThreadRow, clusterId?: number | null): ThreadDto {
   };
 }
 
-export class GitcrawlService {
+export class GHCrawlService {
   readonly config: GitcrawlConfig;
   readonly db: SqliteDatabase;
   readonly github?: GitHubClient;

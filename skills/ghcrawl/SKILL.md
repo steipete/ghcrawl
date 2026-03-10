@@ -1,7 +1,7 @@
 ---
 name: ghcrawl
 description: "Use a local ghcrawl install to refresh GitHub repo data, inspect duplicate clusters, and dump issue/PR summaries from the local SQLite dataset. Use when a user wants to triage related issues or PRs, inspect semantic clusters, or refresh one repo through ghcrawl's staged pipeline."
-allowed-tools: Bash(ghcrawl:*), Bash(gitcrawl:*), Bash(pnpm:*), Read(*)
+allowed-tools: Bash(ghcrawl:*), Bash(pnpm:*), Read(*)
 ---
 
 # ghcrawl
@@ -20,10 +20,10 @@ Do not scrape the TUI. Prefer JSON CLI output.
 
 Prefer the installed `ghcrawl` bin.
 
-If `ghcrawl` is not on `PATH`, try `gitcrawl`. If neither is on `PATH`, use:
+If `ghcrawl` is not on `PATH`, use:
 
 ```bash
-pnpm --filter ghcrawl cli ...
+npx ghcrawl cli ...
 ```
 
 ## Core workflow

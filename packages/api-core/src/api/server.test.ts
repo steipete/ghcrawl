@@ -4,10 +4,10 @@ import assert from 'node:assert/strict';
 import { clusterDetailResponseSchema, clusterSummariesResponseSchema, healthResponseSchema, neighborsResponseSchema } from '@ghcrawl/api-contract';
 
 import { createApiServer } from './server.js';
-import { GitcrawlService } from '../service.js';
+import { GHCrawlService } from '../service.js';
 
 test('health endpoint returns contract payload', async () => {
-  const service = new GitcrawlService({
+  const service = new GHCrawlService({
     config: {
       workspaceRoot: process.cwd(),
       configDir: '/tmp/ghcrawl-test',
@@ -57,7 +57,7 @@ test('health endpoint returns contract payload', async () => {
 });
 
 test('neighbors endpoint returns contract payload', async () => {
-  const service = new GitcrawlService({
+  const service = new GHCrawlService({
     config: {
       workspaceRoot: process.cwd(),
       configDir: '/tmp/ghcrawl-test',
@@ -149,7 +149,7 @@ test('neighbors endpoint returns contract payload', async () => {
 });
 
 test('server returns 400 for malformed request inputs', async () => {
-  const service = new GitcrawlService({
+  const service = new GHCrawlService({
     config: {
       workspaceRoot: process.cwd(),
       configDir: '/tmp/ghcrawl-test',
@@ -203,7 +203,7 @@ test('server returns 400 for malformed request inputs', async () => {
 });
 
 test('cluster summary and detail endpoints return contract payloads', async () => {
-  const service = new GitcrawlService({
+  const service = new GHCrawlService({
     config: {
       workspaceRoot: process.cwd(),
       configDir: '/tmp/ghcrawl-test',

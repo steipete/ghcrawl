@@ -3,7 +3,7 @@ import http from 'node:http';
 import { actionRequestSchema, refreshRequestSchema } from '@ghcrawl/api-contract';
 import { ZodError } from 'zod';
 
-import { GitcrawlService, parseRepoParams } from '../service.js';
+import { GHCrawlService, parseRepoParams } from '../service.js';
 
 function sendJson(res: http.ServerResponse, status: number, payload: unknown): void {
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8' });
@@ -19,7 +19,7 @@ async function readBody(req: http.IncomingMessage): Promise<unknown> {
   return JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown;
 }
 
-export function createApiServer(service: GitcrawlService): http.Server {
+export function createApiServer(service: GHCrawlService): http.Server {
   return http.createServer(async (req, res) => {
     try {
       if (!req.url || !req.method) {

@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process';
 import blessed from 'neo-blessed';
 
 import type {
-  GitcrawlService,
+  GHCrawlService,
   TuiClusterDetail,
   TuiClusterSortMode,
   TuiRepoStats,
@@ -27,7 +27,7 @@ import {
 import { computeTuiLayout } from './layout.js';
 
 type StartTuiParams = {
-  service: GitcrawlService;
+  service: GHCrawlService;
   owner?: string;
   repo?: string;
 };
@@ -997,7 +997,7 @@ async function promptUpdatePipelineSelection(
   });
 }
 
-export function getRepositoryChoices(service: Pick<GitcrawlService, 'listRepositories'>, now: Date = new Date()): RepositoryChoice[] {
+export function getRepositoryChoices(service: Pick<GHCrawlService, 'listRepositories'>, now: Date = new Date()): RepositoryChoice[] {
   const repositories = service.listRepositories().repositories
     .slice()
     .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt) || left.fullName.localeCompare(right.fullName));
@@ -1014,7 +1014,7 @@ export function getRepositoryChoices(service: Pick<GitcrawlService, 'listReposit
 
 async function promptRepositoryChoice(
   screen: blessed.Widgets.Screen,
-  service: GitcrawlService,
+  service: GHCrawlService,
 ): Promise<RepositoryChoice | null> {
   const choices = getRepositoryChoices(service);
   const box = blessed.list({
@@ -1107,7 +1107,7 @@ async function promptRepositoryInput(screen: blessed.Widgets.Screen): Promise<Re
 }
 
 async function runColdStartSetup(
-  service: GitcrawlService,
+  service: GHCrawlService,
   screen: blessed.Widgets.Screen,
   target: RepositoryTarget,
   log?: blessed.Widgets.Log,
