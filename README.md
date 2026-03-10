@@ -68,6 +68,16 @@ pnpm health
 pnpm serve
 ```
 
+### Embed command example
+
+```bash
+pnpm embed openclaw/openclaw
+```
+
+<video src="./docs/images/gitcrawl-embed.mp4" controls muted playsinline></video>
+
+If your Markdown renderer does not show the video inline, open [gitcrawl-embed.mp4](./docs/images/gitcrawl-embed.mp4) directly.
+
 ## Installed CLI
 
 The CLI package exposes a real `gitcrawl` bin entrypoint for installed use:
