@@ -44,30 +44,37 @@ ghcrawl tui owner/repo
 - save plaintext keys in `~/.config/ghcrawl/config.json`
 - or guide you through a 1Password CLI (`op`) setup that keeps keys out of the config file
 
+`ghcrawl refresh owner/repo` is the main pipeline command. It pulls the latest open GitHub issues and pull requests, refreshes embeddings for changed items, and rebuilds the clusters you browse in the TUI.
+
 ## Typical Commands
 
 ```bash
 ghcrawl doctor
-ghcrawl sync owner/repo --since 7d
 ghcrawl refresh owner/repo
-ghcrawl embed owner/repo
-ghcrawl cluster owner/repo
-ghcrawl clusters owner/repo --min-size 10 --limit 20
-ghcrawl cluster-detail owner/repo --id 123
-ghcrawl search owner/repo --query "download stalls"
 ghcrawl tui owner/repo
-ghcrawl serve
 ```
 
-### Embed Command Example
+### Refresh Command Example
 
 ```bash
-ghcrawl embed owner/repo
+ghcrawl refresh owner/repo
 ```
 
-<video src="./docs/images/ghcrawl-embed.mp4" controls muted playsinline></video>
+![ghcrawl refresh demo](./docs/images/ghcrawl-refresh-demo.gif)
 
-If your Markdown renderer does not show the video inline, open [ghcrawl-embed.mp4](./docs/images/ghcrawl-embed.mp4) directly.
+## Controlling The Refresh Flow More Intentionally
+
+Most users should run `ghcrawl refresh owner/repo` and let it do the full pipeline in the right order.
+
+If you need tighter control, you can run the three stages yourself:
+
+```bash
+ghcrawl sync owner/repo     # pull the latest open issues and pull requests from GitHub
+ghcrawl embed owner/repo    # generate or refresh OpenAI embeddings for changed items
+ghcrawl cluster owner/repo  # rebuild local related-work clusters from the current vectors
+```
+
+Run them in that order. `refresh` is just the safe convenience command that performs the same sequence for you.
 
 ## Init And Doctor
 
@@ -107,7 +114,12 @@ GitHub token guidance:
 
 ### 1Password CLI Example
 
-If you choose 1Password CLI mode, init shows a `~/.zshrc` helper like this:
+If you choose 1Password CLI mode, create a 1Password Secure Note with concealed fields named exactly:
+
+- `GITHUB_TOKEN`
+- `OPENAI_API_KEY`
+
+Then add this wrapper to `~/.zshrc`:
 
 ```bash
 ghcrawl-op() {
@@ -121,8 +133,19 @@ Then use:
 
 ```bash
 ghcrawl-op doctor
-ghcrawl-op tui
-ghcrawl-op sync owner/repo
+ghcrawl-op refresh owner/repo
+ghcrawl-op tui owner/repo
+```
+
+## Using The CLI To Extract JSON Data
+
+These commands are intended more for scripts, bots, and agent integrations than for normal day-to-day terminal browsing:
+
+```bash
+ghcrawl cluster owner/repo
+ghcrawl clusters owner/repo --min-size 10 --limit 20
+ghcrawl cluster-detail owner/repo --id 123
+ghcrawl search owner/repo --query "download stalls"
 ```
 
 ## Cost To Operate
