@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/pwrdrvr/ghcrawl/actions/workflows/ci.yml/badge.svg)](https://github.com/pwrdrvr/ghcrawl/actions/workflows/ci.yml)
 [![npm version](https://img.shields.io/npm/v/ghcrawl)](https://www.npmjs.com/package/ghcrawl)
+[![npm downloads](https://img.shields.io/npm/dm/ghcrawl)](https://www.npmjs.com/package/ghcrawl)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 
 `ghcrawl` is a local-first GitHub issue and pull request crawler for maintainers.
