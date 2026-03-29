@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.7.1 - 2026-03-28
+
+### Fixes
+
+- Stream neighbor embeddings during clustering work so memory usage stays bounded on larger runs. Thanks @obviyus (#36)
+
 ## v0.7.0 - 2026-03-24
 
 ### Highlights
