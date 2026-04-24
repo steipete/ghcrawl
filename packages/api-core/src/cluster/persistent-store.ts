@@ -50,7 +50,7 @@ export function upsertSimilarityEdgeEvidence(
     score: number;
     tier: Exclude<EvidenceTier, 'none'>;
     state?: 'active' | 'stale' | 'rejected';
-    breakdown: SimilarityEvidenceBreakdown;
+    breakdown: SimilarityEvidenceBreakdown | unknown;
     runId: number;
   },
 ): void {

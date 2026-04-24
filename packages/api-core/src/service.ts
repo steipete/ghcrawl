@@ -51,6 +51,15 @@ import {
 import { buildClusters, buildRefinedClusters, buildSizeBoundedClusters } from './cluster/build.js';
 import { buildDeterministicClusterGraph } from './cluster/deterministic-engine.js';
 import { buildSourceKindEdges } from './cluster/exact-edges.js';
+import { humanKeyForValue } from './cluster/human-key.js';
+import {
+  createPipelineRun,
+  finishPipelineRun,
+  recordClusterEvent,
+  upsertClusterGroup,
+  upsertClusterMembership,
+  upsertSimilarityEdgeEvidence,
+} from './cluster/persistent-store.js';
 import {
   ensureRuntimeDirs,
   isLikelyGitHubToken,
@@ -1295,6 +1304,19 @@ export class GHCrawlService {
   }): Promise<ClusterResultDto> {
     const repository = this.requireRepository(params.owner, params.repo);
     const runId = this.startRun('cluster_runs', repository.id, repository.fullName);
+    const pipelineRunId = createPipelineRun(this.db, {
+      repoId: repository.id,
+      runKind: 'cluster',
+      algorithmVersion: 'persistent-cluster-v1',
+      configHash: stableContentHash(
+        JSON.stringify({
+          minScore: params.minScore ?? DEFAULT_CLUSTER_MIN_SCORE,
+          k: params.k ?? 6,
+          embedModel: this.config.embedModel,
+          embeddingBasis: this.config.embeddingBasis,
+        }),
+      ),
+    });
     const minScore = params.minScore ?? DEFAULT_CLUSTER_MIN_SCORE;
     const k = params.k ?? 6;
 
@@ -1388,6 +1410,7 @@ export class GHCrawlService {
         edges,
       );
       this.persistClusterRun(repository.id, runId, aggregatedEdges, clusters);
+      this.persistDurableClusterState(repository.id, pipelineRunId, aggregatedEdges, clusters);
       this.pruneOldClusterRuns(repository.id, runId);
       if (this.isRepoVectorStateCurrent(repository.id)) {
         this.markRepoClustersCurrent(repository.id);
@@ -1397,9 +1420,11 @@ export class GHCrawlService {
       params.onProgress?.(`[cluster] persisted ${clusters.length} cluster(s) and pruned older cluster runs`);
 
       this.finishRun('cluster_runs', runId, 'completed', { edges: edges.length, clusters: clusters.length });
+      finishPipelineRun(this.db, pipelineRunId, { status: 'completed', stats: { edges: edges.length, clusters: clusters.length } });
       return clusterResultSchema.parse({ runId, edges: edges.length, clusters: clusters.length });
     } catch (error) {
       this.finishRun('cluster_runs', runId, 'failed', null, error);
+      finishPipelineRun(this.db, pipelineRunId, { status: 'failed', errorText: error instanceof Error ? error.message : String(error) });
       throw error;
     }
   }
@@ -4460,6 +4485,74 @@ export class GHCrawlService {
           const key = this.edgeKey(cluster.representativeThreadId, memberId);
           const score = memberId === cluster.representativeThreadId ? null : (aggregatedEdges.get(key)?.score ?? null);
           insertMember.run(clusterId, memberId, score, createdAt);
+        }
+      }
+    })();
+  }
+
+  private persistDurableClusterState(
+    repoId: number,
+    pipelineRunId: number,
+    aggregatedEdges: Map<string, { leftThreadId: number; rightThreadId: number; score: number; sourceKinds: Set<SimilaritySourceKind> }>,
+    clusters: Array<{ representativeThreadId: number; members: number[] }>,
+  ): void {
+    this.db.transaction(() => {
+      for (const edge of aggregatedEdges.values()) {
+        upsertSimilarityEdgeEvidence(this.db, {
+          repoId,
+          leftThreadId: edge.leftThreadId,
+          rightThreadId: edge.rightThreadId,
+          algorithmVersion: 'persistent-cluster-v1',
+          configHash: stableContentHash(JSON.stringify({ sources: Array.from(edge.sourceKinds).sort(), model: this.config.embedModel })),
+          score: edge.score,
+          tier: edge.score >= DEFAULT_CLUSTER_MIN_SCORE ? 'strong' : 'weak',
+          state: 'active',
+          breakdown: {
+            sources: Array.from(edge.sourceKinds).sort(),
+            score: edge.score,
+          },
+          runId: pipelineRunId,
+        });
+      }
+
+      for (const cluster of clusters) {
+        const identity = humanKeyForValue(`repo:${repoId}:cluster-representative:${cluster.representativeThreadId}`);
+        const clusterId = upsertClusterGroup(this.db, {
+          repoId,
+          stableKey: identity.hash,
+          stableSlug: identity.slug,
+          status: 'active',
+          clusterType: cluster.members.length > 1 ? 'duplicate_candidate' : 'singleton_orphan',
+          representativeThreadId: cluster.representativeThreadId,
+          title: `Cluster ${identity.slug}`,
+        });
+        for (const memberId of cluster.members) {
+          const scoreKey = this.edgeKey(cluster.representativeThreadId, memberId);
+          const score = memberId === cluster.representativeThreadId ? 1 : (aggregatedEdges.get(scoreKey)?.score ?? null);
+          upsertClusterMembership(this.db, {
+            clusterId,
+            threadId: memberId,
+            role: memberId === cluster.representativeThreadId ? 'canonical' : 'related',
+            state: 'active',
+            scoreToRepresentative: score,
+            runId: pipelineRunId,
+            addedBy: 'algo',
+            addedReason: {
+              source: 'clusterRepository',
+              representativeThreadId: cluster.representativeThreadId,
+            },
+          });
+          recordClusterEvent(this.db, {
+            clusterId,
+            runId: pipelineRunId,
+            eventType: memberId === cluster.representativeThreadId ? 'keep_canonical' : 'upsert_member',
+            actorKind: 'algo',
+            payload: {
+              threadId: memberId,
+              representativeThreadId: cluster.representativeThreadId,
+              scoreToRepresentative: score,
+            },
+          });
         }
       }
     })();

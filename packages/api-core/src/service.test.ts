@@ -1915,6 +1915,12 @@ test('clusterRepository rebuilds a corrupted active vector store and retries', a
     assert.equal(resetCalls, 2);
     assert.equal(result.edges, 1);
     assert.equal(result.clusters, 1);
+    const durableClusters = service.db.prepare('select count(*) as count from cluster_groups').get() as { count: number };
+    const durableMemberships = service.db.prepare('select count(*) as count from cluster_memberships').get() as { count: number };
+    const durableEdges = service.db.prepare('select count(*) as count from similarity_edge_evidence').get() as { count: number };
+    assert.equal(durableClusters.count, 1);
+    assert.equal(durableMemberships.count, 2);
+    assert.equal(durableEdges.count, 1);
   } finally {
     service.close();
   }
