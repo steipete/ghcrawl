@@ -72,3 +72,31 @@ test('compareDeterministicFingerprints scores deterministic overlap features', (
   assert.ok(Math.abs(breakdown.structure - 1) < 1e-9);
   assert.equal(breakdown.lineage, 1);
 });
+
+test('compareDeterministicFingerprints dampens broad file overlap', () => {
+  const shared = 'packages/api-core/src/service.ts';
+  const first = buildDeterministicThreadFingerprint({
+    threadId: 1,
+    number: 42,
+    kind: 'pull_request',
+    title: 'Fix cron missing job state',
+    body: '',
+    labels: [],
+    changedFiles: [shared, ...Array.from({ length: 60 }, (_, index) => `packages/api-core/src/a-${index}.ts`)],
+  });
+  const second = buildDeterministicThreadFingerprint({
+    threadId: 2,
+    number: 43,
+    kind: 'pull_request',
+    title: 'Fix session model override',
+    body: '',
+    labels: [],
+    changedFiles: [shared, ...Array.from({ length: 60 }, (_, index) => `packages/api-core/src/b-${index}.ts`)],
+  });
+
+  const breakdown = compareDeterministicFingerprints(first, second);
+
+  assert.ok(breakdown.fileOverlap < 0.01);
+  assert.ok(breakdown.moduleOverlap < 1);
+  assert.ok(breakdown.structure < 0.3);
+});

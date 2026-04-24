@@ -184,8 +184,11 @@ export function compareDeterministicFingerprints(
     overlapMin(new Set(left.linkedRefs), new Set(right.linkedRefs)),
   );
   const titleOverlap = jaccard(new Set(left.salientTitleTokens), new Set(right.salientTitleTokens));
-  const fileOverlap = jaccard(new Set(left.changedFiles), new Set(right.changedFiles));
-  const moduleOverlap = jaccard(new Set(left.moduleBuckets), new Set(right.moduleBuckets));
+  const maxChangedFiles = Math.max(left.changedFiles.length, right.changedFiles.length);
+  const fileBreadthPenalty = breadthPenalty(maxChangedFiles, 40);
+  const moduleBreadthPenalty = breadthPenalty(maxChangedFiles, 12);
+  const fileOverlap = jaccard(new Set(left.changedFiles), new Set(right.changedFiles)) * fileBreadthPenalty;
+  const moduleOverlap = jaccard(new Set(left.moduleBuckets), new Set(right.moduleBuckets)) * moduleBreadthPenalty;
   const hunkOverlap = jaccard(new Set(left.hunkSignatures), new Set(right.hunkSignatures));
   const patchOverlap = overlapMin(new Set(left.patchIds), new Set(right.patchIds));
   return {
@@ -198,9 +201,14 @@ export function compareDeterministicFingerprints(
     moduleOverlap,
     hunkOverlap,
     patchOverlap,
-    structure: Math.max(hunkOverlap, patchOverlap, fileOverlap, 0.65 * moduleOverlap),
+    structure: Math.max(hunkOverlap, patchOverlap, fileOverlap, 0.25 * moduleOverlap),
     lineage: patchOverlap,
   };
+}
+
+function breadthPenalty(count: number, freeCount: number): number {
+  if (count <= freeCount) return 1;
+  return freeCount / count;
 }
 
 export function tokenShinglesForDebug(tokens: string[], size = 3): string[] {

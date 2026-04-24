@@ -79,7 +79,7 @@ export function scoreSimilarityEvidence(
   } else if (
     score >= config.minScore ||
     base.fileOverlap >= 0.4 ||
-    (base.moduleOverlap >= 0.5 && base.titleOverlap >= 0.15) ||
+    (base.moduleOverlap >= 0.5 && base.titleOverlap >= 0.25 && base.tokenSimhash >= 0.55) ||
     (base.titleOverlap >= 0.25 && base.tokenSimhash >= 0.55) ||
     (base.structure >= 0.5 && base.tokenSimhash >= 0.55) ||
     (base.linkedRefOverlap >= 0.5 && base.tokenMinhash >= 0.25)

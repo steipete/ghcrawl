@@ -81,3 +81,20 @@ test('scoreSimilarityEvidence rejects unrelated deterministic fingerprints', () 
 
   assert.equal(evidence.tier, 'none');
 });
+
+test('scoreSimilarityEvidence rejects broad same-module maintenance without close title evidence', () => {
+  const left = fp({
+    id: 1,
+    title: 'Fix cron missing job state',
+    files: Array.from({ length: 30 }, (_, index) => `packages/api-core/src/cron-${index}.ts`),
+  });
+  const right = fp({
+    id: 2,
+    title: 'Clear session model override',
+    files: Array.from({ length: 30 }, (_, index) => `packages/api-core/src/session-${index}.ts`),
+  });
+
+  const evidence = scoreSimilarityEvidence(left, right);
+
+  assert.equal(evidence.tier, 'none');
+});
