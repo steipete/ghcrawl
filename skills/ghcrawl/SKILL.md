@@ -60,6 +60,7 @@ Start with local read-only commands:
 Without explicit user direction to refresh data, prefer these local-only commands:
 
 ```bash
+ghcrawl runs owner/repo --limit 20 --json
 ghcrawl threads owner/repo --numbers 12345 --json
 ghcrawl clusters owner/repo --min-size 10 --limit 20 --sort recent --json
 ghcrawl durable-clusters owner/repo --member-limit 10 --json
@@ -86,6 +87,8 @@ If the user explicitly wants to inspect those records, add `--include-closed`.
 Use `threads --numbers 12345` when you need to find the cluster for one specific issue/PR number. The returned thread record includes `clusterId`. If it is non-null, follow with `cluster-detail --id <clusterId>` for snapshot details or `cluster-explain --id <clusterId>` for durable evidence and governance.
 
 Use `author --login <user>` when the user asks about a contributor or maintainer. It returns actor identity, repo-local activity stats, authored threads, and the strongest same-author similarity match for each thread.
+
+Use `runs` when freshness, repeated failures, or background pipeline status matters. It returns recent sync, summary, embedding, and cluster runs with status, timestamps, stats, and errors.
 
 Use `configure --json` when you need to confirm the currently selected summary model or embedding basis before suggesting an expensive refresh.
 

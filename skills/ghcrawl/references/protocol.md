@@ -92,6 +92,31 @@ Optional skips:
 
 Do not run this unless the user explicitly asked for a refresh/rebuild.
 
+### `ghcrawl runs owner/repo --json`
+
+Read-only run history for one repo.
+
+Use this when sync freshness, repeated failures, or pipeline status matters.
+
+Useful flags:
+
+- `--kind sync|summary|embedding|cluster`
+- `--limit <count>`
+
+Returns:
+
+- `repository`
+- `runs[]`
+
+Each run includes:
+
+- `runKind`
+- `status`
+- `startedAt`
+- `finishedAt`
+- `stats`
+- `errorText`
+
 ### `ghcrawl clusters owner/repo --json`
 
 Useful flags:
@@ -237,6 +262,7 @@ If `ghcrawl` is not installed globally:
 ```bash
 pnpm --filter ghcrawl cli doctor --json
 pnpm --filter ghcrawl cli configure --json
+pnpm --filter ghcrawl cli runs owner/repo --limit 20 --json
 pnpm --filter ghcrawl cli threads owner/repo --numbers 12345 --json
 pnpm --filter ghcrawl cli threads owner/repo --numbers 42,43,44 --json
 pnpm --filter ghcrawl cli threads owner/repo --numbers 42,43,44 --include-closed --json
@@ -256,11 +282,12 @@ If the supported CLI path still fails, hangs, or returns unusable output, stop a
 
 ## Suggested analysis flow
 
-1. Start read-only with `clusters`, `cluster-detail`, `threads`, `author`, `search`, or `neighbors`
+1. Start read-only with `clusters`, `cluster-detail`, `threads`, `author`, `runs`, `search`, or `neighbors`
 2. Only if API-backed work is needed or a read-only request failed, run `ghcrawl doctor --json`
 3. If auth is unavailable, stay read-only
 4. Only if doctor is healthy and the user explicitly asked, run `ghcrawl refresh owner/repo`
-5. `ghcrawl clusters owner/repo --min-size 10 --limit 20 --sort recent --json`
-6. `ghcrawl cluster-detail owner/repo --id <cluster-id> --json`
-7. `ghcrawl cluster-explain owner/repo --id <cluster-id> --json` when evidence or governance matters
-8. optionally `threads`, `author`, `search`, or `neighbors` with `--json`
+5. `ghcrawl runs owner/repo --limit 20 --json` when freshness or failures matter
+6. `ghcrawl clusters owner/repo --min-size 10 --limit 20 --sort recent --json`
+7. `ghcrawl cluster-detail owner/repo --id <cluster-id> --json`
+8. `ghcrawl cluster-explain owner/repo --id <cluster-id> --json` when evidence or governance matters
+9. optionally `threads`, `author`, `search`, or `neighbors` with `--json`

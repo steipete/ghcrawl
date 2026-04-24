@@ -124,7 +124,7 @@ Decision note:
 - [x] Preserve package boundaries so future web code stays HTTP-only and does not import `api-core`.
 - [ ] Add any missing read endpoints we want before UI work:
   - neighbors
-  - run history
+  - [x] run history
   - thread detail with summaries and optional hydrated comments
 - [ ] Build the deferred Vite web app only after the API shape settles.
 - [ ] Use `shadcn/ui` primitives with a custom visual system rather than stock styling.

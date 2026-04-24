@@ -319,6 +319,7 @@ The skill is built around the stable JSON CLI surface and is intentionally conse
 ```bash
 ghcrawl doctor --json
 ghcrawl refresh owner/repo
+ghcrawl runs owner/repo --limit 20 --json
 ghcrawl threads owner/repo --numbers 42,43,44 --json
 ghcrawl author owner/repo --login lqquan --json
 ghcrawl clusters owner/repo --min-size 10 --limit 20 --sort recent --json
