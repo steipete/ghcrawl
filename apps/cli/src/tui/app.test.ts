@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import type { TuiClusterDetail, TuiThreadDetail } from '@ghcrawl/api-core';
 
 import {
+  buildThreadContextMenuItems,
   buildHelpContent,
   escapeBlessedText,
   formatClusterDateColumn,
@@ -146,6 +147,40 @@ test('renderMarkdownForTerminal formats common markdown without exposing blessed
   assert.match(rendered, /\x1B\]8;;https:\/\/example\.com\/raw/);
 });
 
+test('buildThreadContextMenuItems exposes thread actions for right-click menus', () => {
+  const items = buildThreadContextMenuItems({
+    thread: {
+      id: 1,
+      repoId: 1,
+      number: 42,
+      kind: 'issue',
+      state: 'open',
+      isClosed: false,
+      closedAtGh: null,
+      closedAtLocal: null,
+      closeReasonLocal: null,
+      title: 'Example',
+      body: null,
+      authorLogin: 'dev',
+      htmlUrl: 'https://example.com/42',
+      labels: [],
+      updatedAtGh: '2026-03-09T00:00:00Z',
+      clusterId: 1,
+    },
+    summaries: {},
+    neighbors: [],
+  });
+
+  assert.deepEqual(
+    items.map((item) => item.action),
+    ['open', 'copy-url', 'copy-title', 'copy-markdown-link', 'load-neighbors', 'close'],
+  );
+});
+
+test('buildThreadContextMenuItems only closes when no thread is selected', () => {
+  assert.deepEqual(buildThreadContextMenuItems(null), [{ label: 'Close', action: 'close' }]);
+});
+
 test('getRepositoryChoices sorts by most recent update and includes the new-repo action', () => {
   const service = {
     listRepositories() {
@@ -189,7 +224,7 @@ test('buildHelpContent includes the full key command list', () => {
   assert.match(content, /TUI only reads local SQLite/);
   assert.match(content, /default cluster filter is 1\+/);
   assert.match(content, /default sort is size/);
-  assert.match(content, /Mouse clicks focus panes/);
+  assert.match(content, /right-click threads for actions/);
   assert.match(content, /p\s+open the repository browser/);
   assert.match(content, /l\s+toggle wide layout/);
   assert.match(content, /x\s+show or hide locally closed clusters and members/);

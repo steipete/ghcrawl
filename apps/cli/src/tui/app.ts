@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 
 import blessed from 'neo-blessed';
 
@@ -61,6 +61,17 @@ type Widgets = {
 type ThreadDetailCacheEntry = {
   detail: TuiThreadDetail;
   hasNeighbors: boolean;
+};
+
+type MouseEventArg = blessed.Widgets.Events.IMouseEventArg & {
+  button?: 'left' | 'middle' | 'right' | 'unknown';
+};
+
+export type ThreadContextAction = 'open' | 'copy-url' | 'copy-title' | 'copy-markdown-link' | 'load-neighbors' | 'close';
+
+export type ThreadContextMenuItem = {
+  label: string;
+  action: ThreadContextAction;
 };
 
 export function resolveBlessedTerminal(env: NodeJS.ProcessEnv = process.env): string | undefined {
@@ -524,6 +535,73 @@ export async function startTui(params: StartTuiParams): Promise<void> {
     render();
   };
 
+  const openThreadContextMenu = (event?: MouseEventArg): void => {
+    if (modalOpen || !threadDetail) {
+      return;
+    }
+    modalOpen = true;
+    const items = buildThreadContextMenuItems(threadDetail);
+    const width = 30;
+    const height = items.length + 2;
+    const screenWidth = Number(widgets.screen.width);
+    const screenHeight = Number(widgets.screen.height);
+    const left = Math.max(0, Math.min((event?.x ?? Math.floor(screenWidth * 0.72)) - 1, screenWidth - width));
+    const top = Math.max(0, Math.min((event?.y ?? Math.floor(screenHeight * 0.35)) - 1, screenHeight - height));
+    const menu = blessed.list({
+      parent: widgets.screen,
+      border: 'line',
+      label: ' Thread ',
+      top,
+      left,
+      width,
+      height,
+      tags: true,
+      keys: true,
+      mouse: true,
+      items: items.map((item) => item.label),
+      style: {
+        border: { fg: '#fde74c' },
+        selected: { bg: '#f7f7ff', fg: 'black', bold: true },
+        item: { fg: 'white' },
+        bg: '#101522',
+      },
+    });
+
+    const closeMenu = (): void => {
+      menu.destroy();
+      modalOpen = false;
+      render();
+    };
+    const runAction = (action: ThreadContextAction): void => {
+      const selectedThread = threadDetail?.thread;
+      if (!selectedThread) {
+        closeMenu();
+        return;
+      }
+      if (action === 'open') {
+        openUrl(selectedThread.htmlUrl);
+        status = `Opened ${selectedThread.htmlUrl}`;
+      } else if (action === 'copy-url') {
+        status = copyTextToClipboard(selectedThread.htmlUrl) ? 'Copied URL' : 'Clipboard copy failed';
+      } else if (action === 'copy-title') {
+        status = copyTextToClipboard(`#${selectedThread.number} ${selectedThread.title}`) ? 'Copied title' : 'Clipboard copy failed';
+      } else if (action === 'copy-markdown-link') {
+        const markdownLink = `[#${selectedThread.number} ${selectedThread.title}](${selectedThread.htmlUrl})`;
+        status = copyTextToClipboard(markdownLink) ? 'Copied markdown link' : 'Clipboard copy failed';
+      } else if (action === 'load-neighbors') {
+        loadSelectedThreadDetail(true);
+        status = `Loaded neighbors for #${threadDetail?.thread.number ?? selectedThread.number}`;
+        focusPane = 'detail';
+      }
+      closeMenu();
+    };
+
+    menu.key(['escape', 'q'], closeMenu);
+    menu.on('select', (_item, index) => runAction(items[Number(index)]?.action ?? 'close'));
+    menu.focus();
+    widgets.screen.render();
+  };
+
   const openHelp = (): void => {
     if (modalOpen) return;
     void (async () => {
@@ -835,9 +913,30 @@ export async function startTui(params: StartTuiParams): Promise<void> {
     status = selectedMemberThreadId !== null ? `Loaded neighbors for #${threadDetail?.thread.number ?? '?'}` : status;
     updateFocus('detail');
   });
+  widgets.members.on('mousedown', (event: MouseEventArg) => {
+    if (isRendering || modalOpen || event.button !== 'right') return;
+    focusPane = 'members';
+    widgets.members.focus();
+    const itemIndex = Number(event.y) - Number(widgets.members.atop) - 2 + Number(widgets.members.getScroll());
+    const row = Number.isInteger(itemIndex) && itemIndex >= 0 && itemIndex < memberRows.length ? memberRows[itemIndex] : null;
+    if (!row?.selectable) {
+      status = 'Right-click a thread row';
+      render();
+      return;
+    }
+    if (row.threadId !== selectedMemberThreadId) {
+      selectMemberIndex(itemIndex);
+    }
+    openThreadContextMenu(event);
+  });
   widgets.detail.on('click', () => {
     if (modalOpen) return;
     updateFocus('detail');
+  });
+  widgets.detail.on('mousedown', (event: MouseEventArg) => {
+    if (modalOpen || event.button !== 'right') return;
+    updateFocus('detail');
+    openThreadContextMenu(event);
   });
   widgets.screen.on('resize', () => render());
 
@@ -1099,6 +1198,20 @@ function formatTerminalLink(url: string, label: string): string {
   return `\u001b]8;;${escapedUrl}\u0007${escapeBlessedText(label)}\u001b]8;;\u0007`;
 }
 
+export function buildThreadContextMenuItems(threadDetail: TuiThreadDetail | null): ThreadContextMenuItem[] {
+  if (!threadDetail) {
+    return [{ label: 'Close', action: 'close' }];
+  }
+  return [
+    { label: 'Open in browser', action: 'open' },
+    { label: 'Copy URL', action: 'copy-url' },
+    { label: 'Copy title', action: 'copy-title' },
+    { label: 'Copy Markdown link', action: 'copy-markdown-link' },
+    { label: 'Load neighbors', action: 'load-neighbors' },
+    { label: 'Close', action: 'close' },
+  ];
+}
+
 function applyRect(element: blessed.Widgets.BoxElement | blessed.Widgets.ListElement, rect: { top: number; left: number; width: number; height: number }): void {
   element.top = rect.top;
   element.left = rect.left;
@@ -1121,6 +1234,20 @@ function openUrl(url: string): void {
   child.unref();
 }
 
+function copyTextToClipboard(value: string): boolean {
+  const copyCommand =
+    process.platform === 'darwin'
+      ? { command: 'pbcopy', args: [] }
+      : process.platform === 'win32'
+        ? { command: 'clip', args: [] }
+        : { command: 'xclip', args: ['-selection', 'clipboard'] };
+  const result = spawnSync(copyCommand.command, copyCommand.args, {
+    input: value,
+    stdio: ['pipe', 'ignore', 'ignore'],
+  });
+  return result.status === 0;
+}
+
 export function buildHelpContent(): string {
   return [
     '{bold}ghcrawl TUI Help{/bold}',
@@ -1130,7 +1257,7 @@ export function buildHelpContent(): string {
     'Left / Right      cycle focus backward or forward across panes',
     'Up / Down         move selection, or scroll detail when detail is focused',
     'Enter             clusters -> members, members -> detail',
-    'Mouse             click a pane or row to focus/select; wheel scrolls lists and detail',
+    'Mouse             click to focus/select; right-click threads for actions; wheel scrolls lists and detail',
     'PgUp / PgDn       page through the focused pane or this help popup faster',
     'Home / End        jump to the top or bottom of detail or help',
     '',
