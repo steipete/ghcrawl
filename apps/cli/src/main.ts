@@ -22,6 +22,7 @@ type CommandName =
   | 'close-thread'
   | 'close-cluster'
   | 'exclude-cluster-member'
+  | 'set-cluster-canonical'
   | 'summarize'
   | 'key-summaries'
   | 'purge-comments'
@@ -207,6 +208,19 @@ const COMMAND_SPECS: readonly CommandSpec[] = [
       '--json  Emit machine-readable JSON output explicitly',
     ],
     examples: ['ghcrawl exclude-cluster-member openclaw/openclaw --id 123 --number 42 --reason "false positive" --json'],
+    agentJson: true,
+  },
+  {
+    name: 'set-cluster-canonical',
+    synopsis: 'set-cluster-canonical <owner/repo> --id <cluster-id> --number <thread> [--reason <text>] [--json]',
+    description: 'Pin one durable cluster member as the canonical representative.',
+    options: [
+      '--id <cluster-id>  Durable cluster id',
+      '--number <thread>  Issue or PR number to mark canonical',
+      '--reason <text>  Optional maintainer reason',
+      '--json  Emit machine-readable JSON output explicitly',
+    ],
+    examples: ['ghcrawl set-cluster-canonical openclaw/openclaw --id 123 --number 42 --reason "best root issue" --json'],
     agentJson: true,
   },
   {
@@ -1070,6 +1084,24 @@ export async function run(
           repo,
           clusterId: parsePositiveInteger('id', values.id, 'exclude-cluster-member'),
           threadNumber: parsePositiveInteger('number', values.number, 'exclude-cluster-member'),
+          reason: typeof values.reason === 'string' ? values.reason : undefined,
+        });
+        writeJson(stdout, result);
+        return;
+      }
+      case 'set-cluster-canonical': {
+        const { owner, repo, values } = parseRepoFlags('set-cluster-canonical', rest);
+        if (typeof values.id !== 'string') {
+          throw new CliUsageError('Missing --id', 'set-cluster-canonical');
+        }
+        if (typeof values.number !== 'string') {
+          throw new CliUsageError('Missing --number', 'set-cluster-canonical');
+        }
+        const result = getService().setClusterCanonicalThread({
+          owner,
+          repo,
+          clusterId: parsePositiveInteger('id', values.id, 'set-cluster-canonical'),
+          threadNumber: parsePositiveInteger('number', values.number, 'set-cluster-canonical'),
           reason: typeof values.reason === 'string' ? values.reason : undefined,
         });
         writeJson(stdout, result);

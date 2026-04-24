@@ -6,6 +6,7 @@ import {
   closeThreadRequestSchema,
   excludeClusterMemberRequestSchema,
   refreshRequestSchema,
+  setClusterCanonicalRequestSchema,
 } from '@ghcrawl/api-contract';
 import { ZodError } from 'zod';
 
@@ -216,6 +217,12 @@ export function createApiServer(service: GHCrawlService): http.Server {
       if (req.method === 'POST' && url.pathname === '/actions/exclude-cluster-member') {
         const body = excludeClusterMemberRequestSchema.parse(await readBody(req));
         sendJson(res, 200, service.excludeThreadFromCluster(body));
+        return;
+      }
+
+      if (req.method === 'POST' && url.pathname === '/actions/set-cluster-canonical') {
+        const body = setClusterCanonicalRequestSchema.parse(await readBody(req));
+        sendJson(res, 200, service.setClusterCanonicalThread(body));
         return;
       }
 

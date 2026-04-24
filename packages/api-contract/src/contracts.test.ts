@@ -9,6 +9,7 @@ import {
   healthResponseSchema,
   neighborsResponseSchema,
   searchResponseSchema,
+  setClusterCanonicalRequestSchema,
 } from './contracts.js';
 
 test('health schema accepts configured status payload', () => {
@@ -66,6 +67,18 @@ test('exclude cluster member request trims optional reason', () => {
   assert.equal(parsed.reason, 'confirmed separate bug');
 });
 
+test('set cluster canonical request trims optional reason', () => {
+  const parsed = setClusterCanonicalRequestSchema.parse({
+    owner: 'openclaw',
+    repo: 'openclaw',
+    clusterId: 7,
+    threadNumber: 42,
+    reason: '  best root issue  ',
+  });
+
+  assert.equal(parsed.reason, 'best root issue');
+});
+
 test('cluster override response accepts durable removal state', () => {
   const parsed = clusterOverrideResponseSchema.parse({
     ok: true,
@@ -102,6 +115,44 @@ test('cluster override response accepts durable removal state', () => {
   });
 
   assert.equal(parsed.state, 'removed_by_user');
+});
+
+test('cluster override response accepts force canonical action', () => {
+  const parsed = clusterOverrideResponseSchema.parse({
+    ok: true,
+    repository: {
+      id: 1,
+      owner: 'openclaw',
+      name: 'openclaw',
+      fullName: 'openclaw/openclaw',
+      githubRepoId: null,
+      updatedAt: new Date().toISOString(),
+    },
+    clusterId: 7,
+    thread: {
+      id: 10,
+      repoId: 1,
+      number: 42,
+      kind: 'issue',
+      state: 'open',
+      isClosed: false,
+      closedAtGh: null,
+      closedAtLocal: null,
+      closeReasonLocal: null,
+      title: 'Downloader hangs',
+      body: 'The transfer never finishes.',
+      authorLogin: 'alice',
+      htmlUrl: 'https://github.com/openclaw/openclaw/issues/42',
+      labels: ['bug'],
+      updatedAtGh: new Date().toISOString(),
+      clusterId: null,
+    },
+    action: 'force_canonical',
+    state: 'active',
+    message: 'Set issue #42 as canonical for cluster 7.',
+  });
+
+  assert.equal(parsed.action, 'force_canonical');
 });
 
 test('durable clusters response accepts stable slugs and governed member states', () => {

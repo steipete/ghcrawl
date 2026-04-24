@@ -48,6 +48,7 @@ import {
   type SearchHitDto,
   type SearchMode,
   type SearchResponse,
+  type SetClusterCanonicalRequest,
   type SyncResultDto,
   type ThreadDto,
   type ThreadsResponse,
@@ -991,6 +992,93 @@ export class GHCrawlService {
       action: 'exclude',
       state: 'removed_by_user',
       message: `Removed ${thread.kind} #${thread.number} from durable cluster ${cluster.id}.`,
+    });
+  }
+
+  setClusterCanonicalThread(params: SetClusterCanonicalRequest): ClusterOverrideResponse {
+    const repository = this.requireRepository(params.owner, params.repo);
+    const cluster = this.db
+      .prepare('select id from cluster_groups where repo_id = ? and id = ? limit 1')
+      .get(repository.id, params.clusterId) as { id: number } | undefined;
+    if (!cluster) {
+      throw new Error(`Durable cluster ${params.clusterId} was not found for ${repository.fullName}.`);
+    }
+
+    const thread = this.db
+      .prepare('select * from threads where repo_id = ? and number = ? limit 1')
+      .get(repository.id, params.threadNumber) as ThreadRow | undefined;
+    if (!thread) {
+      throw new Error(`Thread #${params.threadNumber} was not found for ${repository.fullName}.`);
+    }
+
+    const membership = this.db
+      .prepare('select score_to_representative from cluster_memberships where cluster_id = ? and thread_id = ? limit 1')
+      .get(cluster.id, thread.id) as { score_to_representative: number | null } | undefined;
+    if (!membership) {
+      throw new Error(`Thread #${params.threadNumber} is not a member of durable cluster ${cluster.id}.`);
+    }
+
+    const timestamp = nowIso();
+    this.db.transaction(() => {
+      this.db
+        .prepare(
+          `delete from cluster_overrides
+           where cluster_id = ?
+             and action = 'force_canonical'
+             and thread_id <> ?`,
+        )
+        .run(cluster.id, thread.id);
+      this.db
+        .prepare(
+          `insert into cluster_overrides (repo_id, cluster_id, thread_id, action, reason, created_at, expires_at)
+           values (?, ?, ?, 'force_canonical', ?, ?, null)
+           on conflict(cluster_id, thread_id, action) do update set
+             reason = excluded.reason,
+             created_at = excluded.created_at,
+             expires_at = null`,
+        )
+        .run(repository.id, cluster.id, thread.id, params.reason ?? null, timestamp);
+      this.db
+        .prepare("update cluster_groups set representative_thread_id = ?, updated_at = ? where id = ?")
+        .run(thread.id, timestamp, cluster.id);
+      this.db
+        .prepare("update cluster_memberships set role = 'related', updated_at = ? where cluster_id = ? and role = 'canonical'")
+        .run(timestamp, cluster.id);
+      upsertClusterMembership(this.db, {
+        clusterId: cluster.id,
+        threadId: thread.id,
+        role: 'canonical',
+        state: 'active',
+        scoreToRepresentative: 1,
+        addedBy: 'user',
+        addedReason: {
+          source: 'setClusterCanonicalThread',
+          reason: params.reason ?? null,
+        },
+      });
+      this.db
+        .prepare("update cluster_memberships set added_by = 'user', updated_at = ? where cluster_id = ? and thread_id = ?")
+        .run(timestamp, cluster.id, thread.id);
+      recordClusterEvent(this.db, {
+        clusterId: cluster.id,
+        eventType: 'manual_force_canonical',
+        actorKind: 'user',
+        payload: {
+          threadId: thread.id,
+          threadNumber: thread.number,
+          reason: params.reason ?? null,
+        },
+      });
+    })();
+
+    return clusterOverrideResponseSchema.parse({
+      ok: true,
+      repository,
+      clusterId: cluster.id,
+      thread: threadToDto(thread),
+      action: 'force_canonical',
+      state: 'active',
+      message: `Set ${thread.kind} #${thread.number} as canonical for durable cluster ${cluster.id}.`,
     });
   }
 
@@ -5183,9 +5271,29 @@ export class GHCrawlService {
           representativeThreadId: cluster.representativeThreadId,
           title: `Cluster ${identity.slug}`,
         });
+        const forcedCanonical = this.db
+          .prepare(
+            `select thread_id
+             from cluster_overrides
+             where cluster_id = ?
+               and action = 'force_canonical'
+               and (expires_at is null or expires_at > ?)
+             order by created_at desc, id desc
+             limit 1`,
+          )
+          .get(clusterId, nowIso()) as { thread_id: number } | undefined;
+        const representativeThreadId =
+          forcedCanonical && cluster.members.includes(forcedCanonical.thread_id)
+            ? forcedCanonical.thread_id
+            : cluster.representativeThreadId;
+        if (representativeThreadId !== cluster.representativeThreadId) {
+          this.db
+            .prepare('update cluster_groups set representative_thread_id = ?, updated_at = ? where id = ?')
+            .run(representativeThreadId, nowIso(), clusterId);
+        }
         for (const memberId of cluster.members) {
-          const scoreKey = this.edgeKey(cluster.representativeThreadId, memberId);
-          const score = memberId === cluster.representativeThreadId ? 1 : (aggregatedEdges.get(scoreKey)?.score ?? null);
+          const scoreKey = this.edgeKey(representativeThreadId, memberId);
+          const score = memberId === representativeThreadId ? 1 : (aggregatedEdges.get(scoreKey)?.score ?? null);
           const excluded = this.db
             .prepare(
               `select 1
@@ -5209,7 +5317,7 @@ export class GHCrawlService {
               removedBy: 'user',
               addedReason: {
                 source: 'clusterRepository',
-                representativeThreadId: cluster.representativeThreadId,
+                representativeThreadId,
               },
               removedReason: {
                 source: 'cluster_overrides',
@@ -5223,7 +5331,7 @@ export class GHCrawlService {
               actorKind: 'algo',
               payload: {
                 threadId: memberId,
-                representativeThreadId: cluster.representativeThreadId,
+                representativeThreadId,
                 scoreToRepresentative: score,
                 reason: 'manual_exclusion',
               },
@@ -5233,25 +5341,26 @@ export class GHCrawlService {
           upsertClusterMembership(this.db, {
             clusterId,
             threadId: memberId,
-            role: memberId === cluster.representativeThreadId ? 'canonical' : 'related',
+            role: memberId === representativeThreadId ? 'canonical' : 'related',
             state: 'active',
-            scoreToRepresentative: score,
+            scoreToRepresentative: memberId === representativeThreadId ? 1 : score,
             runId: pipelineRunId,
-            addedBy: 'algo',
+            addedBy: memberId === representativeThreadId && forcedCanonical?.thread_id === memberId ? 'user' : 'algo',
             addedReason: {
               source: 'clusterRepository',
-              representativeThreadId: cluster.representativeThreadId,
+              representativeThreadId,
+              forceCanonical: forcedCanonical?.thread_id === memberId,
             },
           });
           recordClusterEvent(this.db, {
             clusterId,
             runId: pipelineRunId,
-            eventType: memberId === cluster.representativeThreadId ? 'keep_canonical' : 'upsert_member',
+            eventType: memberId === representativeThreadId ? 'keep_canonical' : 'upsert_member',
             actorKind: 'algo',
             payload: {
               threadId: memberId,
-              representativeThreadId: cluster.representativeThreadId,
-              scoreToRepresentative: score,
+              representativeThreadId,
+              scoreToRepresentative: memberId === representativeThreadId ? 1 : score,
             },
           });
         }

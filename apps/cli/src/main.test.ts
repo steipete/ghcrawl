@@ -354,6 +354,44 @@ test('exclude-cluster-member command forwards durable override inputs', async ()
   assert.match(stdout.read(), /"state": "removed_by_user"/);
 });
 
+test('set-cluster-canonical command forwards durable override inputs', async () => {
+  const stdout = createWritableCapture();
+  const context = makeRunContext();
+  const original = GHCrawlService.prototype.setClusterCanonicalThread;
+  let received: unknown;
+
+  GHCrawlService.prototype.setClusterCanonicalThread = function setClusterCanonicalThreadStub(params: unknown) {
+    received = params;
+    return {
+      ok: true,
+      clusterId: 7,
+      thread: { number: 42 },
+      action: 'force_canonical',
+      state: 'active',
+      message: 'set',
+    } as never;
+  };
+
+  try {
+    await run(['set-cluster-canonical', 'openclaw/openclaw', '--id', '7', '--number', '42', '--reason', 'best root issue'], stdout.stream, {
+      env: context.env,
+      cwd: context.cwd,
+    });
+  } finally {
+    GHCrawlService.prototype.setClusterCanonicalThread = original;
+    context.cleanup();
+  }
+
+  assert.deepEqual(received, {
+    owner: 'openclaw',
+    repo: 'openclaw',
+    clusterId: 7,
+    threadNumber: 42,
+    reason: 'best root issue',
+  });
+  assert.match(stdout.read(), /"action": "force_canonical"/);
+});
+
 test('durable-clusters command forwards stable cluster list options', async () => {
   const stdout = createWritableCapture();
   const context = makeRunContext();

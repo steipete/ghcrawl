@@ -6,17 +6,21 @@ import {
   closeThreadRequestSchema,
   authorThreadsResponseSchema,
   clusterDetailResponseSchema,
+  clusterOverrideResponseSchema,
   clusterSummariesResponseSchema,
   clustersResponseSchema,
+  excludeClusterMemberRequestSchema,
   healthResponseSchema,
   refreshRequestSchema,
   refreshResponseSchema,
   repositoriesResponseSchema,
   searchResponseSchema,
+  setClusterCanonicalRequestSchema,
   threadsResponseSchema,
   type ActionRequest,
   type ActionResponse,
   type CloseResponse,
+  type ClusterOverrideResponse,
   type AuthorThreadsResponse,
   type ClusterDetailResponse,
   type ClusterSummariesResponse,
@@ -58,6 +62,8 @@ export type GitcrawlClient = {
   rerun: (request: ActionRequest) => Promise<ActionResponse>;
   closeThread: (request: { owner: string; repo: string; threadNumber: number }) => Promise<CloseResponse>;
   closeCluster: (request: { owner: string; repo: string; clusterId: number }) => Promise<CloseResponse>;
+  excludeClusterMember: (request: { owner: string; repo: string; clusterId: number; threadNumber: number; reason?: string }) => Promise<ClusterOverrideResponse>;
+  setClusterCanonical: (request: { owner: string; repo: string; clusterId: number; threadNumber: number; reason?: string }) => Promise<ClusterOverrideResponse>;
 };
 
 type FetchLike = typeof fetch;
@@ -170,6 +176,24 @@ export function createGitcrawlClient(baseUrl: string, fetchImpl: FetchLike = fet
         body: JSON.stringify(body),
       });
       return readJson(res, closeResponseSchema);
+    },
+    async excludeClusterMember(request) {
+      const body = excludeClusterMemberRequestSchema.parse(request);
+      const res = await fetchImpl(`${normalized}/actions/exclude-cluster-member`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      return readJson(res, clusterOverrideResponseSchema);
+    },
+    async setClusterCanonical(request) {
+      const body = setClusterCanonicalRequestSchema.parse(request);
+      const res = await fetchImpl(`${normalized}/actions/set-cluster-canonical`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      return readJson(res, clusterOverrideResponseSchema);
     },
   };
 }

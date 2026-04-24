@@ -496,6 +496,110 @@ test('exclude cluster member action records a durable override', async () => {
   }
 });
 
+test('set cluster canonical action records a durable override', async () => {
+  const service = new GHCrawlService({
+    config: {
+      workspaceRoot: process.cwd(),
+      configDir: '/tmp/ghcrawl-test',
+      configPath: '/tmp/ghcrawl-test/config.json',
+      configFileExists: true,
+      dbPath: ':memory:',
+      dbPathSource: 'config',
+      apiPort: 5179,
+      secretProvider: 'plaintext',
+      githubTokenSource: 'none',
+      openaiApiKeySource: 'none',
+      summaryModel: 'gpt-5-mini',
+      embedModel: 'text-embedding-3-large',
+      embeddingBasis: 'title_original',
+      vectorBackend: 'vectorlite',
+      embedBatchSize: 8,
+      embedConcurrency: 10,
+      embedMaxUnread: 20,
+      openSearchIndex: 'ghcrawl-threads',
+      tuiPreferences: {},
+    },
+    github: {
+      checkAuth: async () => undefined,
+      getRepo: async () => ({}),
+      listRepositoryIssues: async () => [],
+      getIssue: async () => ({}),
+      getPull: async () => ({}),
+      listIssueComments: async () => [],
+      listPullReviews: async () => [],
+      listPullReviewComments: async () => [],
+      listPullFiles: async () => [],
+    },
+  });
+
+  const now = '2026-03-09T00:00:00Z';
+  service.db
+    .prepare(
+      `insert into repositories (id, owner, name, full_name, github_repo_id, raw_json, updated_at)
+       values (?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(1, 'openclaw', 'openclaw', 'openclaw/openclaw', '1', '{}', now);
+  const insertThread = service.db.prepare(
+    `insert into threads (
+      id, repo_id, github_id, number, kind, state, title, body, author_login, author_type, html_url,
+      labels_json, assignees_json, raw_json, content_hash, is_draft, created_at_gh, updated_at_gh, closed_at_gh,
+      merged_at_gh, first_pulled_at, last_pulled_at, updated_at
+    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  );
+  insertThread.run(10, 1, '100', 42, 'issue', 'open', 'Downloader hangs', 'The transfer never finishes.', 'alice', 'User', 'https://github.com/openclaw/openclaw/issues/42', '[]', '[]', '{}', 'hash-42', 0, now, now, null, null, now, now, now);
+  insertThread.run(11, 1, '101', 43, 'issue', 'open', 'Downloader retry loop', 'Retries forever.', 'bob', 'User', 'https://github.com/openclaw/openclaw/issues/43', '[]', '[]', '{}', 'hash-43', 0, now, now, null, null, now, now, now);
+  service.db
+    .prepare(
+      `insert into cluster_groups (
+        id, repo_id, stable_key, stable_slug, status, cluster_type, representative_thread_id, title, created_at, updated_at
+      ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(7, 1, 'stable-key', 'trace-alpha-river', 'active', 'duplicate_candidate', 10, 'Cluster trace-alpha-river', now, now);
+  service.db
+    .prepare(
+      `insert into cluster_memberships (
+        cluster_id, thread_id, role, state, score_to_representative, first_seen_run_id, last_seen_run_id,
+        added_by, removed_by, added_reason_json, removed_reason_json, created_at, updated_at, removed_at
+      ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(7, 11, 'related', 'active', 0.8, null, null, 'algo', null, '{}', '{}', now, now, null);
+
+  const server = createApiServer(service);
+  try {
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    assert(address && typeof address === 'object');
+
+    const response = await fetch(`http://127.0.0.1:${address.port}/actions/set-cluster-canonical`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        owner: 'openclaw',
+        repo: 'openclaw',
+        clusterId: 7,
+        threadNumber: 43,
+        reason: 'best root issue',
+      }),
+    });
+    assert.equal(response.status, 200);
+    const payload = clusterOverrideResponseSchema.parse((await response.json()) as unknown);
+    assert.equal(payload.action, 'force_canonical');
+
+    const override = service.db.prepare('select action, reason from cluster_overrides where cluster_id = ? and thread_id = ?').get(7, 11) as {
+      action: string;
+      reason: string;
+    };
+    const group = service.db.prepare('select representative_thread_id from cluster_groups where id = ?').get(7) as {
+      representative_thread_id: number;
+    };
+    assert.deepEqual(override, { action: 'force_canonical', reason: 'best root issue' });
+    assert.equal(group.representative_thread_id, 11);
+  } finally {
+    await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+    service.close();
+  }
+});
+
 test('durable clusters endpoint returns stable cluster state', async () => {
   const service = new GHCrawlService({
     config: {
