@@ -58,6 +58,7 @@ import { buildCodeSnapshotSignature } from './cluster/code-signature.js';
 import { buildDeterministicClusterGraph } from './cluster/deterministic-engine.js';
 import { buildSourceKindEdges } from './cluster/exact-edges.js';
 import { humanKeyForValue } from './cluster/human-key.js';
+import { LLM_KEY_SUMMARY_PROMPT_VERSION, llmKeyInputHash } from './cluster/llm-key-summary.js';
 import {
   createPipelineRun,
   finishPipelineRun,
@@ -70,6 +71,7 @@ import {
   upsertThreadFingerprint,
   upsertThreadRevision,
   upsertThreadCodeSnapshot,
+  upsertThreadKeySummary,
 } from './cluster/persistent-store.js';
 import type { DeterministicThreadFingerprint } from './cluster/thread-fingerprint.js';
 import {
@@ -1275,6 +1277,117 @@ export class GHCrawlService {
 
       this.finishRun('summary_runs', runId, 'completed', { summarized, inputTokens, outputTokens, totalTokens });
       return { runId, summarized, inputTokens, outputTokens, totalTokens };
+    } catch (error) {
+      this.finishRun('summary_runs', runId, 'failed', null, error);
+      throw error;
+    }
+  }
+
+  async generateKeySummaries(params: {
+    owner: string;
+    repo: string;
+    threadNumber?: number;
+    limit?: number;
+    onProgress?: (message: string) => void;
+  }): Promise<{ runId: number; generated: number; skipped: number; inputTokens: number; outputTokens: number; totalTokens: number }> {
+    const ai = this.requireAi();
+    if (!ai.generateKeySummary) {
+      throw new Error('Configured AI provider does not support key summary generation.');
+    }
+    const repository = this.requireRepository(params.owner, params.repo);
+    const runId = this.startRun('summary_runs', repository.id, params.threadNumber ? `key-summary:${params.threadNumber}` : `key-summary:${repository.fullName}`);
+
+    try {
+      let sql =
+        `select id, number, title, body, labels_json, raw_json, updated_at_gh
+         from threads
+         where repo_id = ? and state = 'open'`;
+      const args: number[] = [repository.id];
+      if (params.threadNumber) {
+        sql += ' and number = ?';
+        args.push(params.threadNumber);
+      }
+      sql += ' order by number asc';
+      if (params.limit) {
+        sql += ' limit ?';
+        args.push(params.limit);
+      }
+
+      const rows = this.db.prepare(sql).all(...args) as Array<{
+        id: number;
+        number: number;
+        title: string;
+        body: string | null;
+        labels_json: string;
+        raw_json: string;
+        updated_at_gh: string | null;
+      }>;
+      params.onProgress?.(`[key-summary] loaded ${rows.length} candidate thread(s) for ${repository.fullName}`);
+
+      let generated = 0;
+      let skipped = 0;
+      let inputTokens = 0;
+      let outputTokens = 0;
+      let totalTokens = 0;
+
+      for (const row of rows) {
+        const labels = parseArray(row.labels_json);
+        const inputHash = llmKeyInputHash({
+          title: row.title,
+          body: row.body,
+          commentsText: null,
+          diffText: null,
+        });
+        const revisionId = upsertThreadRevision(this.db, {
+          threadId: row.id,
+          sourceUpdatedAt: row.updated_at_gh,
+          title: row.title,
+          body: row.body,
+          labels,
+          rawJson: row.raw_json,
+        });
+        const existing = this.db
+          .prepare(
+            `select input_hash
+             from thread_key_summaries
+             where thread_revision_id = ?
+               and summary_kind = 'llm_key_3line'
+               and prompt_version = ?
+               and provider = 'openai'
+               and model = ?
+             limit 1`,
+          )
+          .get(revisionId, LLM_KEY_SUMMARY_PROMPT_VERSION, this.config.summaryModel) as { input_hash: string } | undefined;
+        if (existing?.input_hash === inputHash) {
+          skipped += 1;
+          continue;
+        }
+
+        const result = await ai.generateKeySummary({
+          model: this.config.summaryModel,
+          text: [`title: ${row.title}`, `labels: ${labels.join(', ')}`, `body: ${row.body ?? ''}`].join('\n'),
+        });
+        upsertThreadKeySummary(this.db, {
+          threadRevisionId: revisionId,
+          summaryKind: 'llm_key_3line',
+          promptVersion: LLM_KEY_SUMMARY_PROMPT_VERSION,
+          provider: 'openai',
+          model: this.config.summaryModel,
+          inputHash,
+          summary: result.summary,
+        });
+        generated += 1;
+        if (result.usage) {
+          inputTokens += result.usage.inputTokens;
+          outputTokens += result.usage.outputTokens;
+          totalTokens += result.usage.totalTokens;
+        }
+        params.onProgress?.(`[key-summary] generated ${generated}/${rows.length} thread #${row.number}`);
+      }
+
+      const payload = { runId, generated, skipped, inputTokens, outputTokens, totalTokens };
+      this.finishRun('summary_runs', runId, 'completed', payload);
+      return payload;
     } catch (error) {
       this.finishRun('summary_runs', runId, 'failed', null, error);
       throw error;

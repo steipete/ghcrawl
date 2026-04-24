@@ -118,7 +118,7 @@ test('doctor reports invalid token format without attempting auth', async () => 
       listIssueComments: async () => [],
       listPullReviews: async () => [],
       listPullReviewComments: async () => [],
-    listPullFiles: async () => [],
+      listPullFiles: async () => [],
     },
   });
 
@@ -780,6 +780,78 @@ test('summarizeRepository prices progress output using the configured summary mo
     });
 
     assert.ok(progress.some((message) => message.includes('cost=$0.25') && message.includes('est_total=$0.25')));
+  } finally {
+    service.close();
+  }
+});
+
+test('generateKeySummaries stores cached 3-line key summaries', async () => {
+  let calls = 0;
+  const service = makeTestService(
+    {
+      checkAuth: async () => undefined,
+      getRepo: async () => ({}),
+      listRepositoryIssues: async () => [],
+      getIssue: async () => ({}),
+      getPull: async () => ({}),
+      listIssueComments: async () => [],
+      listPullReviews: async () => [],
+      listPullReviewComments: async () => [],
+      listPullFiles: async () => [],
+    },
+    {
+      checkAuth: async () => undefined,
+      summarizeThread: async () => {
+        throw new Error('not expected');
+      },
+      generateKeySummary: async () => {
+        calls += 1;
+        return {
+          summary: {
+            intent: 'Fix retry loop.',
+            surface: 'Downloader.',
+            mechanism: 'Changes timeout handling.',
+          },
+          usage: {
+            inputTokens: 10,
+            outputTokens: 5,
+            totalTokens: 15,
+            cachedInputTokens: 0,
+            reasoningTokens: 0,
+          },
+        };
+      },
+      embedTexts: async () => [],
+    },
+  );
+
+  try {
+    const now = '2026-03-09T00:00:00Z';
+    service.db
+      .prepare(
+        `insert into repositories (id, owner, name, full_name, github_repo_id, raw_json, updated_at)
+         values (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(1, 'openclaw', 'openclaw', 'openclaw/openclaw', '1', '{}', now);
+    service.db
+      .prepare(
+        `insert into threads (
+          id, repo_id, github_id, number, kind, state, title, body, author_login, author_type, html_url,
+          labels_json, assignees_json, raw_json, content_hash, is_draft, created_at_gh, updated_at_gh, closed_at_gh,
+          merged_at_gh, first_pulled_at, last_pulled_at, updated_at
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(10, 1, '100', 42, 'issue', 'open', 'Downloader hangs', 'The transfer never finishes.', 'alice', 'User', 'https://github.com/openclaw/openclaw/issues/42', '[]', '[]', '{}', 'hash-42', 0, now, now, null, null, now, now, now);
+
+    const first = await service.generateKeySummaries({ owner: 'openclaw', repo: 'openclaw' });
+    const second = await service.generateKeySummaries({ owner: 'openclaw', repo: 'openclaw' });
+
+    assert.equal(first.generated, 1);
+    assert.equal(first.totalTokens, 15);
+    assert.equal(second.skipped, 1);
+    assert.equal(calls, 1);
+    const row = service.db.prepare('select key_text from thread_key_summaries').get() as { key_text: string };
+    assert.match(row.key_text, /intent: Fix retry loop\./);
   } finally {
     service.close();
   }
