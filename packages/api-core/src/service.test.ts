@@ -1921,6 +1921,27 @@ test('clusterRepository rebuilds a corrupted active vector store and retries', a
     assert.equal(durableClusters.count, 1);
     assert.equal(durableMemberships.count, 2);
     assert.equal(durableEdges.count, 1);
+
+    const cluster = service.db.prepare('select id from cluster_groups limit 1').get() as { id: number };
+    service.db
+      .prepare(
+        `insert into cluster_overrides (repo_id, cluster_id, thread_id, action, reason, created_at)
+         values (?, ?, ?, 'exclude', ?, ?)`,
+      )
+      .run(1, cluster.id, 11, 'maintainer removed from cluster', now);
+
+    await service.clusterRepository({
+      owner: 'openclaw',
+      repo: 'openclaw',
+      k: 1,
+      minScore: 0.1,
+    });
+
+    const blocked = service.db
+      .prepare('select state, removed_by from cluster_memberships where cluster_id = ? and thread_id = ?')
+      .get(cluster.id, 11) as { state: string; removed_by: string | null };
+    assert.equal(blocked.state, 'blocked_by_override');
+    assert.equal(blocked.removed_by, 'user');
   } finally {
     service.close();
   }

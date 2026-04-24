@@ -4529,6 +4529,50 @@ export class GHCrawlService {
         for (const memberId of cluster.members) {
           const scoreKey = this.edgeKey(cluster.representativeThreadId, memberId);
           const score = memberId === cluster.representativeThreadId ? 1 : (aggregatedEdges.get(scoreKey)?.score ?? null);
+          const excluded = this.db
+            .prepare(
+              `select 1
+               from cluster_overrides
+               where cluster_id = ?
+                 and thread_id = ?
+                 and action = 'exclude'
+                 and (expires_at is null or expires_at > ?)
+               limit 1`,
+            )
+            .get(clusterId, memberId, nowIso());
+          if (excluded) {
+            upsertClusterMembership(this.db, {
+              clusterId,
+              threadId: memberId,
+              role: 'related',
+              state: 'blocked_by_override',
+              scoreToRepresentative: score,
+              runId: pipelineRunId,
+              addedBy: 'algo',
+              removedBy: 'user',
+              addedReason: {
+                source: 'clusterRepository',
+                representativeThreadId: cluster.representativeThreadId,
+              },
+              removedReason: {
+                source: 'cluster_overrides',
+                action: 'exclude',
+              },
+            });
+            recordClusterEvent(this.db, {
+              clusterId,
+              runId: pipelineRunId,
+              eventType: 'block_member',
+              actorKind: 'algo',
+              payload: {
+                threadId: memberId,
+                representativeThreadId: cluster.representativeThreadId,
+                scoreToRepresentative: score,
+                reason: 'manual_exclusion',
+              },
+            });
+            continue;
+          }
           upsertClusterMembership(this.db, {
             clusterId,
             threadId: memberId,
