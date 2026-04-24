@@ -1,6 +1,12 @@
 import http from 'node:http';
 
-import { actionRequestSchema, closeClusterRequestSchema, closeThreadRequestSchema, refreshRequestSchema } from '@ghcrawl/api-contract';
+import {
+  actionRequestSchema,
+  closeClusterRequestSchema,
+  closeThreadRequestSchema,
+  excludeClusterMemberRequestSchema,
+  refreshRequestSchema,
+} from '@ghcrawl/api-contract';
 import { ZodError } from 'zod';
 
 import { GHCrawlService, parseRepoParams } from '../service.js';
@@ -188,6 +194,12 @@ export function createApiServer(service: GHCrawlService): http.Server {
       if (req.method === 'POST' && url.pathname === '/actions/close-cluster') {
         const body = closeClusterRequestSchema.parse(await readBody(req));
         sendJson(res, 200, service.closeClusterLocally(body));
+        return;
+      }
+
+      if (req.method === 'POST' && url.pathname === '/actions/exclude-cluster-member') {
+        const body = excludeClusterMemberRequestSchema.parse(await readBody(req));
+        sendJson(res, 200, service.excludeThreadFromCluster(body));
         return;
       }
 
