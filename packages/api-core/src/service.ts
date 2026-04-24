@@ -3594,7 +3594,12 @@ export class GHCrawlService {
       baseSha: typeof base?.sha === 'string' ? base.sha : null,
       headSha: typeof head?.sha === 'string' ? head.sha : null,
       signature: buildCodeSnapshotSignature(files),
+      storeRoot: this.blobStoreRoot(),
     });
+  }
+
+  private blobStoreRoot(): string {
+    return path.join(path.dirname(this.config.dbPath), '.ghcrawl-store');
   }
 
   private async applyClosedOverlapSweep(params: {

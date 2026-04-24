@@ -1,5 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 import { migrate } from '../db/migrate.js';
 import { openDb } from '../db/sqlite.js';
@@ -278,6 +281,57 @@ test('persistent cluster store records code snapshots, changed files, and hunk s
     assert.equal(hunkCount.count, 1);
   } finally {
     db.close();
+  }
+});
+
+test('persistent cluster store keeps large code patches out of SQLite', () => {
+  const db = openDb(':memory:');
+  const storeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ghcrawl-code-blob-'));
+  try {
+    migrate(db);
+    seedRepoAndThreads(db);
+    const revisionId = upsertThreadRevision(db, {
+      threadId: 10,
+      sourceUpdatedAt: '2026-01-01T00:00:00Z',
+      title: 'Fix cache collision',
+      body: '',
+      labels: [],
+      rawJson: '{}',
+    });
+    const largePatch = `@@ -1 +1 @@\n-${'oldKey\n'.repeat(800)}+${'newKey\n'.repeat(800)}`;
+    const signature = buildCodeSnapshotSignature([
+      {
+        filename: 'packages/api-core/src/cache.ts',
+        status: 'modified',
+        additions: 800,
+        deletions: 800,
+        changes: 1600,
+        patch: largePatch,
+      },
+    ]);
+
+    const snapshotId = upsertThreadCodeSnapshot(db, {
+      threadRevisionId: revisionId,
+      signature,
+      storeRoot,
+    });
+
+    const blob = db
+      .prepare(
+        `select b.storage_kind, b.storage_path, b.inline_text
+         from thread_changed_files f
+         join blobs b on b.id = f.patch_blob_id
+         where f.snapshot_id = ?`,
+      )
+      .get(snapshotId) as { storage_kind: string; storage_path: string | null; inline_text: string | null };
+
+    assert.equal(blob.storage_kind, 'file');
+    assert.equal(blob.inline_text, null);
+    assert.ok(blob.storage_path);
+    assert.ok(fs.existsSync(path.join(storeRoot, blob.storage_path)));
+  } finally {
+    db.close();
+    fs.rmSync(storeRoot, { recursive: true, force: true });
   }
 });
 

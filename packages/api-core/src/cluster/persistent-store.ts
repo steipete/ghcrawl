@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 
+import { storeTextBlob } from '../db/blob-store.js';
 import type { SqliteDatabase } from '../db/sqlite.js';
 import type { CodeSnapshotSignature } from './code-signature.js';
 import type { EvidenceTier, SimilarityEvidenceBreakdown } from './evidence-score.js';
@@ -33,6 +34,23 @@ function upsertInlineBlob(
   ).run(sha256, params.mediaType, Buffer.byteLength(params.text), params.text, nowIso());
   const row = db.prepare('select id from blobs where sha256 = ? limit 1').get(sha256) as { id: number };
   return row.id;
+}
+
+function upsertTextBlob(
+  db: SqliteDatabase,
+  params: {
+    text: string;
+    mediaType: string;
+    storeRoot?: string;
+  },
+): number {
+  if (params.storeRoot) {
+    return storeTextBlob(db, params.storeRoot, params.text, {
+      mediaType: params.mediaType,
+      inlineThresholdBytes: 4096,
+    }).id;
+  }
+  return upsertInlineBlob(db, params);
 }
 
 export type PipelineRunKind = 'sync' | 'fingerprint' | 'enrich' | 'edge' | 'cluster';
@@ -244,6 +262,7 @@ export function upsertThreadCodeSnapshot(
     baseSha?: string | null;
     headSha?: string | null;
     signature: CodeSnapshotSignature;
+    storeRoot?: string;
   },
 ): number {
   const timestamp = nowIso();
@@ -285,9 +304,10 @@ export function upsertThreadCodeSnapshot(
   );
   for (const file of params.signature.files) {
     const patchBlobId = file.patch
-      ? upsertInlineBlob(db, {
+      ? upsertTextBlob(db, {
           text: file.patch,
           mediaType: 'text/x-diff',
+          storeRoot: params.storeRoot,
         })
       : null;
     insertFile.run(
