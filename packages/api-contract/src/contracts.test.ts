@@ -5,6 +5,7 @@ import {
   actionRequestSchema,
   clusterMergeResponseSchema,
   clusterOverrideResponseSchema,
+  clusterSplitResponseSchema,
   durableClustersResponseSchema,
   excludeClusterMemberRequestSchema,
   healthResponseSchema,
@@ -13,6 +14,7 @@ import {
   neighborsResponseSchema,
   searchResponseSchema,
   setClusterCanonicalRequestSchema,
+  splitClusterRequestSchema,
 } from './contracts.js';
 
 test('health schema accepts configured status payload', () => {
@@ -104,6 +106,19 @@ test('merge clusters request trims optional reason', () => {
   });
 
   assert.equal(parsed.reason, 'same root cause');
+});
+
+test('split cluster request trims optional reason', () => {
+  const parsed = splitClusterRequestSchema.parse({
+    owner: 'openclaw',
+    repo: 'openclaw',
+    sourceClusterId: 7,
+    threadNumbers: [42, 43],
+    reason: '  separate root cause  ',
+  });
+
+  assert.equal(parsed.reason, 'separate root cause');
+  assert.deepEqual(parsed.threadNumbers, [42, 43]);
 });
 
 test('cluster override response accepts durable removal state', () => {
@@ -199,6 +214,26 @@ test('cluster merge response accepts source and target ids', () => {
   });
 
   assert.equal(parsed.targetClusterId, 8);
+});
+
+test('cluster split response accepts source and new ids', () => {
+  const parsed = clusterSplitResponseSchema.parse({
+    ok: true,
+    repository: {
+      id: 1,
+      owner: 'openclaw',
+      name: 'openclaw',
+      fullName: 'openclaw/openclaw',
+      githubRepoId: null,
+      updatedAt: new Date().toISOString(),
+    },
+    sourceClusterId: 7,
+    newClusterId: 8,
+    movedCount: 2,
+    message: 'split',
+  });
+
+  assert.equal(parsed.newClusterId, 8);
 });
 
 test('durable clusters response accepts stable slugs and governed member states', () => {

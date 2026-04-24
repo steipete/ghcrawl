@@ -8,6 +8,7 @@ import {
   clusterDetailResponseSchema,
   clusterMergeResponseSchema,
   clusterOverrideResponseSchema,
+  clusterSplitResponseSchema,
   clusterSummariesResponseSchema,
   clustersResponseSchema,
   excludeClusterMemberRequestSchema,
@@ -19,12 +20,14 @@ import {
   repositoriesResponseSchema,
   searchResponseSchema,
   setClusterCanonicalRequestSchema,
+  splitClusterRequestSchema,
   threadsResponseSchema,
   type ActionRequest,
   type ActionResponse,
   type CloseResponse,
   type ClusterMergeResponse,
   type ClusterOverrideResponse,
+  type ClusterSplitResponse,
   type AuthorThreadsResponse,
   type ClusterDetailResponse,
   type ClusterSummariesResponse,
@@ -70,6 +73,7 @@ export type GitcrawlClient = {
   includeClusterMember: (request: { owner: string; repo: string; clusterId: number; threadNumber: number; reason?: string }) => Promise<ClusterOverrideResponse>;
   setClusterCanonical: (request: { owner: string; repo: string; clusterId: number; threadNumber: number; reason?: string }) => Promise<ClusterOverrideResponse>;
   mergeClusters: (request: { owner: string; repo: string; sourceClusterId: number; targetClusterId: number; reason?: string }) => Promise<ClusterMergeResponse>;
+  splitCluster: (request: { owner: string; repo: string; sourceClusterId: number; threadNumbers: number[]; reason?: string }) => Promise<ClusterSplitResponse>;
 };
 
 type FetchLike = typeof fetch;
@@ -218,6 +222,15 @@ export function createGitcrawlClient(baseUrl: string, fetchImpl: FetchLike = fet
         body: JSON.stringify(body),
       });
       return readJson(res, clusterMergeResponseSchema);
+    },
+    async splitCluster(request) {
+      const body = splitClusterRequestSchema.parse(request);
+      const res = await fetchImpl(`${normalized}/actions/split-cluster`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      return readJson(res, clusterSplitResponseSchema);
     },
   };
 }

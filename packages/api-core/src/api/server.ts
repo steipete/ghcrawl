@@ -9,6 +9,7 @@ import {
   mergeClustersRequestSchema,
   refreshRequestSchema,
   setClusterCanonicalRequestSchema,
+  splitClusterRequestSchema,
 } from '@ghcrawl/api-contract';
 import { ZodError } from 'zod';
 
@@ -237,6 +238,12 @@ export function createApiServer(service: GHCrawlService): http.Server {
       if (req.method === 'POST' && url.pathname === '/actions/merge-clusters') {
         const body = mergeClustersRequestSchema.parse(await readBody(req));
         sendJson(res, 200, service.mergeDurableClusters(body));
+        return;
+      }
+
+      if (req.method === 'POST' && url.pathname === '/actions/split-cluster') {
+        const body = splitClusterRequestSchema.parse(await readBody(req));
+        sendJson(res, 200, service.splitDurableCluster(body));
         return;
       }
 

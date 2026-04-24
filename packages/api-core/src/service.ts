@@ -15,6 +15,7 @@ import {
   closeResponseSchema,
   clusterOverrideResponseSchema,
   clusterMergeResponseSchema,
+  clusterSplitResponseSchema,
   clusterDetailResponseSchema,
   clusterResultSchema,
   clusterSummariesResponseSchema,
@@ -34,6 +35,7 @@ import {
   type CloseResponse,
   type ClusterMergeResponse,
   type ClusterOverrideResponse,
+  type ClusterSplitResponse,
   type ClusterDetailResponse,
   type ClusterDto,
   type ClusterResultDto,
@@ -53,6 +55,7 @@ import {
   type SearchMode,
   type SearchResponse,
   type SetClusterCanonicalRequest,
+  type SplitClusterRequest,
   type SyncResultDto,
   type ThreadDto,
   type ThreadsResponse,
@@ -1268,6 +1271,179 @@ export class GHCrawlService {
       sourceClusterId: source.id,
       targetClusterId: target.id,
       message: `Merged durable cluster ${source.id} into ${target.id}.`,
+    });
+  }
+
+  splitDurableCluster(params: SplitClusterRequest): ClusterSplitResponse {
+    const threadNumbers = Array.from(new Set(params.threadNumbers)).sort((left, right) => left - right);
+    const repository = this.requireRepository(params.owner, params.repo);
+    const source = this.db
+      .prepare(
+        `select id, stable_slug
+         from cluster_groups
+         where repo_id = ?
+           and id = ?
+         limit 1`,
+      )
+      .get(repository.id, params.sourceClusterId) as { id: number; stable_slug: string } | undefined;
+    if (!source) {
+      throw new Error(`Durable source cluster ${params.sourceClusterId} was not found for ${repository.fullName}.`);
+    }
+
+    const placeholders = threadNumbers.map(() => '?').join(', ');
+    const requestedThreads = this.db
+      .prepare(`select id, number, title from threads where repo_id = ? and number in (${placeholders})`)
+      .all(repository.id, ...threadNumbers) as Array<{ id: number; number: number; title: string }>;
+    const requestedByNumber = new Map(requestedThreads.map((thread) => [thread.number, thread]));
+    const missingNumbers = threadNumbers.filter((number) => !requestedByNumber.has(number));
+    if (missingNumbers.length > 0) {
+      throw new Error(`Thread(s) ${missingNumbers.map((number) => `#${number}`).join(', ')} were not found for ${repository.fullName}.`);
+    }
+
+    const activeMembers = this.db
+      .prepare(
+        `select cm.thread_id, cm.role, cm.score_to_representative, t.number, t.title
+         from cluster_memberships cm
+         join threads t on t.id = cm.thread_id
+         where cm.cluster_id = ?
+           and cm.state = 'active'
+         order by t.number asc`,
+      )
+      .all(source.id) as Array<{
+        thread_id: number;
+        role: 'canonical' | 'duplicate' | 'related';
+        score_to_representative: number | null;
+        number: number;
+        title: string;
+      }>;
+    const selectedThreadIds = new Set(requestedThreads.map((thread) => thread.id));
+    const selectedMembers = activeMembers.filter((member) => selectedThreadIds.has(member.thread_id));
+    const missingActiveNumbers = threadNumbers.filter((number) => !selectedMembers.some((member) => member.number === number));
+    if (missingActiveNumbers.length > 0) {
+      throw new Error(`Thread(s) ${missingActiveNumbers.map((number) => `#${number}`).join(', ')} are not active members of durable cluster ${source.id}.`);
+    }
+
+    const remainingMembers = activeMembers.filter((member) => !selectedThreadIds.has(member.thread_id));
+    if (remainingMembers.length === 0) {
+      throw new Error('Split must leave at least one active member in the source cluster.');
+    }
+
+    const selectedCanonical = selectedMembers.find((member) => member.role === 'canonical') ?? selectedMembers[0];
+    const remainingCanonical = remainingMembers.find((member) => member.role === 'canonical') ?? remainingMembers[0];
+    if (!selectedCanonical || !remainingCanonical) {
+      throw new Error('Split requires selected and remaining active members.');
+    }
+
+    const identity = humanKeyForValue(`cluster-split:${repository.id}:${source.id}:${selectedMembers.map((member) => member.thread_id).join(',')}`);
+    const timestamp = nowIso();
+    let newClusterId = 0;
+    this.db.transaction(() => {
+      newClusterId = upsertClusterGroup(this.db, {
+        repoId: repository.id,
+        stableKey: identity.hash,
+        stableSlug: identity.slug,
+        status: 'active',
+        clusterType: 'duplicate_candidate',
+        representativeThreadId: selectedCanonical.thread_id,
+        title: `Split from ${source.stable_slug}`,
+      });
+
+      this.db
+        .prepare('update cluster_groups set representative_thread_id = ?, updated_at = ? where id = ?')
+        .run(remainingCanonical.thread_id, timestamp, source.id);
+      this.db
+        .prepare("update cluster_memberships set role = 'canonical', updated_at = ? where cluster_id = ? and thread_id = ?")
+        .run(timestamp, source.id, remainingCanonical.thread_id);
+
+      for (const member of selectedMembers) {
+        const reason = params.reason ?? `split into cluster ${newClusterId}`;
+        this.db
+          .prepare(
+            `insert into cluster_overrides (repo_id, cluster_id, thread_id, action, reason, created_at, expires_at)
+             values (?, ?, ?, 'exclude', ?, ?, null)
+             on conflict(cluster_id, thread_id, action) do update set
+               reason = excluded.reason,
+               created_at = excluded.created_at,
+               expires_at = null`,
+          )
+          .run(repository.id, source.id, member.thread_id, reason, timestamp);
+        upsertClusterMembership(this.db, {
+          clusterId: source.id,
+          threadId: member.thread_id,
+          role: member.role,
+          state: 'removed_by_user',
+          scoreToRepresentative: member.score_to_representative,
+          addedBy: 'user',
+          removedBy: 'user',
+          addedReason: {
+            source: 'splitDurableCluster',
+            newClusterId,
+          },
+          removedReason: {
+            source: 'cluster_overrides',
+            action: 'exclude',
+            reason: params.reason ?? null,
+          },
+        });
+
+        this.db
+          .prepare(
+            `insert into cluster_overrides (repo_id, cluster_id, thread_id, action, reason, created_at, expires_at)
+             values (?, ?, ?, 'force_include', ?, ?, null)
+             on conflict(cluster_id, thread_id, action) do update set
+               reason = excluded.reason,
+               created_at = excluded.created_at,
+               expires_at = null`,
+          )
+          .run(repository.id, newClusterId, member.thread_id, reason, timestamp);
+        upsertClusterMembership(this.db, {
+          clusterId: newClusterId,
+          threadId: member.thread_id,
+          role: member.thread_id === selectedCanonical.thread_id ? 'canonical' : 'related',
+          state: 'active',
+          scoreToRepresentative: member.thread_id === selectedCanonical.thread_id ? 1 : member.score_to_representative,
+          addedBy: 'user',
+          addedReason: {
+            source: 'splitDurableCluster',
+            sourceClusterId: source.id,
+            reason: params.reason ?? null,
+          },
+        });
+        this.db
+          .prepare("update cluster_memberships set added_by = 'user', updated_at = ? where cluster_id = ? and thread_id = ?")
+          .run(timestamp, newClusterId, member.thread_id);
+      }
+
+      recordClusterEvent(this.db, {
+        clusterId: source.id,
+        eventType: 'manual_split_source',
+        actorKind: 'user',
+        payload: {
+          newClusterId,
+          movedThreadNumbers: selectedMembers.map((member) => member.number),
+          reason: params.reason ?? null,
+        },
+      });
+      recordClusterEvent(this.db, {
+        clusterId: newClusterId,
+        eventType: 'manual_split_target',
+        actorKind: 'user',
+        payload: {
+          sourceClusterId: source.id,
+          sourceSlug: source.stable_slug,
+          movedThreadNumbers: selectedMembers.map((member) => member.number),
+          reason: params.reason ?? null,
+        },
+      });
+    })();
+
+    return clusterSplitResponseSchema.parse({
+      ok: true,
+      repository,
+      sourceClusterId: source.id,
+      newClusterId,
+      movedCount: selectedMembers.length,
+      message: `Split ${selectedMembers.length} member(s) from durable cluster ${source.id} into ${newClusterId}.`,
     });
   }
 

@@ -25,6 +25,7 @@ type CommandName =
   | 'include-cluster-member'
   | 'set-cluster-canonical'
   | 'merge-clusters'
+  | 'split-cluster'
   | 'summarize'
   | 'key-summaries'
   | 'purge-comments'
@@ -249,6 +250,19 @@ const COMMAND_SPECS: readonly CommandSpec[] = [
       '--json  Emit machine-readable JSON output explicitly',
     ],
     examples: ['ghcrawl merge-clusters openclaw/openclaw --source 123 --target 456 --reason "same root cause" --json'],
+    agentJson: true,
+  },
+  {
+    name: 'split-cluster',
+    synopsis: 'split-cluster <owner/repo> --source <cluster-id> --numbers <n,n,...> [--reason <text>] [--json]',
+    description: 'Split selected active members into a new durable cluster and block automatic re-entry into the source.',
+    options: [
+      '--source <cluster-id>  Durable cluster id to split from',
+      '--numbers <n,n,...>  Issue or PR numbers to move into the new cluster',
+      '--reason <text>  Optional maintainer reason',
+      '--json  Emit machine-readable JSON output explicitly',
+    ],
+    examples: ['ghcrawl split-cluster openclaw/openclaw --source 123 --numbers 42,43 --reason "separate root cause" --json'],
     agentJson: true,
   },
   {
@@ -1168,6 +1182,24 @@ export async function run(
           repo,
           sourceClusterId: parsePositiveInteger('source', values.source, 'merge-clusters'),
           targetClusterId: parsePositiveInteger('target', values.target, 'merge-clusters'),
+          reason: typeof values.reason === 'string' ? values.reason : undefined,
+        });
+        writeJson(stdout, result);
+        return;
+      }
+      case 'split-cluster': {
+        const { owner, repo, values } = parseRepoFlags('split-cluster', rest);
+        if (typeof values.source !== 'string') {
+          throw new CliUsageError('Missing --source', 'split-cluster');
+        }
+        if (typeof values.numbers !== 'string') {
+          throw new CliUsageError('Missing --numbers', 'split-cluster');
+        }
+        const result = getService().splitDurableCluster({
+          owner,
+          repo,
+          sourceClusterId: parsePositiveInteger('source', values.source, 'split-cluster'),
+          threadNumbers: parsePositiveIntegerList('numbers', values.numbers, 'split-cluster'),
           reason: typeof values.reason === 'string' ? values.reason : undefined,
         });
         writeJson(stdout, result);

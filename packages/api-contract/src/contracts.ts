@@ -314,6 +314,15 @@ export const mergeClustersRequestSchema = z.object({
 });
 export type MergeClustersRequest = z.infer<typeof mergeClustersRequestSchema>;
 
+export const splitClusterRequestSchema = z.object({
+  owner: z.string(),
+  repo: z.string(),
+  sourceClusterId: z.number().int().positive(),
+  threadNumbers: z.array(z.number().int().positive()).min(1),
+  reason: z.string().trim().min(1).optional(),
+});
+export type SplitClusterRequest = z.infer<typeof splitClusterRequestSchema>;
+
 export const closeResponseSchema = z.object({
   ok: z.boolean(),
   repository: repositorySchema,
@@ -343,6 +352,16 @@ export const clusterMergeResponseSchema = z.object({
   message: z.string(),
 });
 export type ClusterMergeResponse = z.infer<typeof clusterMergeResponseSchema>;
+
+export const clusterSplitResponseSchema = z.object({
+  ok: z.boolean(),
+  repository: repositorySchema,
+  sourceClusterId: z.number().int().positive(),
+  newClusterId: z.number().int().positive(),
+  movedCount: z.number().int().nonnegative(),
+  message: z.string(),
+});
+export type ClusterSplitResponse = z.infer<typeof clusterSplitResponseSchema>;
 
 export const rerunActionSchema = z.enum(['summarize', 'embed', 'cluster']);
 export type RerunAction = z.infer<typeof rerunActionSchema>;

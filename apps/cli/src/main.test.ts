@@ -275,6 +275,7 @@ test('agent-facing command help advertises explicit --json', async () => {
     'include-cluster-member',
     'set-cluster-canonical',
     'merge-clusters',
+    'split-cluster',
     'embed',
     'key-summaries',
     'cluster',
@@ -467,6 +468,43 @@ test('merge-clusters command forwards durable merge inputs', async () => {
     reason: 'same root cause',
   });
   assert.match(stdout.read(), /"targetClusterId": 8/);
+});
+
+test('split-cluster command forwards durable split inputs', async () => {
+  const stdout = createWritableCapture();
+  const context = makeRunContext();
+  const original = GHCrawlService.prototype.splitDurableCluster;
+  let received: unknown;
+
+  GHCrawlService.prototype.splitDurableCluster = function splitDurableClusterStub(params: unknown) {
+    received = params;
+    return {
+      ok: true,
+      sourceClusterId: 7,
+      newClusterId: 9,
+      movedCount: 2,
+      message: 'split',
+    } as never;
+  };
+
+  try {
+    await run(['split-cluster', 'openclaw/openclaw', '--source', '7', '--numbers', '42,43', '--reason', 'separate root cause'], stdout.stream, {
+      env: context.env,
+      cwd: context.cwd,
+    });
+  } finally {
+    GHCrawlService.prototype.splitDurableCluster = original;
+    context.cleanup();
+  }
+
+  assert.deepEqual(received, {
+    owner: 'openclaw',
+    repo: 'openclaw',
+    sourceClusterId: 7,
+    threadNumbers: [42, 43],
+    reason: 'separate root cause',
+  });
+  assert.match(stdout.read(), /"newClusterId": 9/);
 });
 
 test('durable-clusters command forwards stable cluster list options', async () => {

@@ -2480,6 +2480,105 @@ test('mergeDurableClusters preserves source slug and force-includes active sourc
   }
 });
 
+test('splitDurableCluster creates a governed cluster and blocks source re-entry', () => {
+  const service = new GHCrawlService({
+    config: makeTestConfig(),
+    github: {
+      checkAuth: async () => undefined,
+      getRepo: async () => ({ id: 1, full_name: 'openclaw/openclaw' }),
+      listRepositoryIssues: async () => [],
+      getIssue: async () => {
+        throw new Error('not expected');
+      },
+      getPull: async () => {
+        throw new Error('not expected');
+      },
+      listIssueComments: async () => [],
+      listPullReviews: async () => [],
+      listPullReviewComments: async () => [],
+      listPullFiles: async () => [],
+    },
+  });
+
+  try {
+    const now = '2026-03-09T00:00:00Z';
+    service.db
+      .prepare(
+        `insert into repositories (id, owner, name, full_name, github_repo_id, raw_json, updated_at)
+         values (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(1, 'openclaw', 'openclaw', 'openclaw/openclaw', '1', '{}', now);
+    const insertThread = service.db.prepare(
+      `insert into threads (
+        id, repo_id, github_id, number, kind, state, title, body, author_login, author_type, html_url,
+        labels_json, assignees_json, raw_json, content_hash, is_draft, created_at_gh, updated_at_gh, closed_at_gh,
+        merged_at_gh, first_pulled_at, last_pulled_at, updated_at
+      ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    insertThread.run(10, 1, '100', 42, 'issue', 'open', 'Canonical issue', 'body', 'alice', 'User', 'https://github.com/openclaw/openclaw/issues/42', '[]', '[]', '{}', 'hash-42', 0, now, now, null, null, now, now, now);
+    insertThread.run(11, 1, '101', 43, 'issue', 'open', 'Remaining issue', 'body', 'bob', 'User', 'https://github.com/openclaw/openclaw/issues/43', '[]', '[]', '{}', 'hash-43', 0, now, now, null, null, now, now, now);
+    insertThread.run(12, 1, '102', 44, 'issue', 'open', 'Moved issue', 'body', 'carol', 'User', 'https://github.com/openclaw/openclaw/issues/44', '[]', '[]', '{}', 'hash-44', 0, now, now, null, null, now, now, now);
+    service.db
+      .prepare(
+        `insert into cluster_groups (
+          id, repo_id, stable_key, stable_slug, status, cluster_type, representative_thread_id, title, created_at, updated_at
+        ) values (?, ?, ?, ?, 'active', 'duplicate_candidate', ?, ?, ?, ?)`,
+      )
+      .run(7, 1, 'source-key', 'source-slug', 10, 'Source cluster', now, now);
+    const insertMembership = service.db.prepare(
+      `insert into cluster_memberships (
+        cluster_id, thread_id, role, state, score_to_representative, first_seen_run_id, last_seen_run_id,
+        added_by, removed_by, added_reason_json, removed_reason_json, created_at, updated_at, removed_at
+      ) values (?, ?, ?, 'active', ?, ?, ?, 'algo', ?, ?, ?, ?, ?, ?)`,
+    );
+    insertMembership.run(7, 10, 'canonical', 1, null, null, null, '{}', '{}', now, now, null);
+    insertMembership.run(7, 11, 'related', 0.72, null, null, null, '{}', '{}', now, now, null);
+    insertMembership.run(7, 12, 'related', 0.81, null, null, null, '{}', '{}', now, now, null);
+
+    const result = service.splitDurableCluster({
+      owner: 'openclaw',
+      repo: 'openclaw',
+      sourceClusterId: 7,
+      threadNumbers: [42, 44],
+      reason: 'separate root cause',
+    });
+
+    const sourceCanonical = service.db
+      .prepare('select representative_thread_id from cluster_groups where id = ?')
+      .get(7) as { representative_thread_id: number };
+    const movedSourceMembership = service.db
+      .prepare('select state, removed_by from cluster_memberships where cluster_id = ? and thread_id = ?')
+      .get(7, 10) as { state: string; removed_by: string };
+    const remainingSourceMembership = service.db
+      .prepare('select role, state from cluster_memberships where cluster_id = ? and thread_id = ?')
+      .get(7, 11) as { role: string; state: string };
+    const sourceOverride = service.db
+      .prepare('select action, reason from cluster_overrides where cluster_id = ? and thread_id = ?')
+      .get(7, 10) as { action: string; reason: string };
+    const newCanonical = service.db
+      .prepare('select role, state, added_by from cluster_memberships where cluster_id = ? and thread_id = ?')
+      .get(result.newClusterId, 10) as { role: string; state: string; added_by: string };
+    const newRelated = service.db
+      .prepare('select role, state, added_by from cluster_memberships where cluster_id = ? and thread_id = ?')
+      .get(result.newClusterId, 12) as { role: string; state: string; added_by: string };
+    const newOverride = service.db
+      .prepare('select action, reason from cluster_overrides where cluster_id = ? and thread_id = ?')
+      .get(result.newClusterId, 12) as { action: string; reason: string };
+
+    assert.equal(result.sourceClusterId, 7);
+    assert.equal(result.movedCount, 2);
+    assert.equal(sourceCanonical.representative_thread_id, 11);
+    assert.deepEqual(movedSourceMembership, { state: 'removed_by_user', removed_by: 'user' });
+    assert.deepEqual(remainingSourceMembership, { role: 'canonical', state: 'active' });
+    assert.deepEqual(sourceOverride, { action: 'exclude', reason: 'separate root cause' });
+    assert.deepEqual(newCanonical, { role: 'canonical', state: 'active', added_by: 'user' });
+    assert.deepEqual(newRelated, { role: 'related', state: 'active', added_by: 'user' });
+    assert.deepEqual(newOverride, { action: 'force_include', reason: 'separate root cause' });
+  } finally {
+    service.close();
+  }
+});
+
 test('clusterRepository materializes only changed deterministic fingerprints', async () => {
   const service = new GHCrawlService({
     config: makeTestConfig(),
