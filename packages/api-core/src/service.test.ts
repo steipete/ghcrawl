@@ -3089,7 +3089,7 @@ test('tui snapshot returns mixed issue and pull request counts with default visi
     );
     assert.equal(allSnapshot.clusters[0].issueCount, 2);
     assert.equal(allSnapshot.clusters[0].pullRequestCount, 1);
-    assert.equal(allSnapshot.clusters[0].displayTitle, 'Recent issue cluster');
+    assert.match(allSnapshot.clusters[0]?.displayTitle ?? '', /^[a-z]+-[a-z]+-[a-z]+  Recent issue cluster$/);
 
     const sizeSorted = service.getTuiSnapshot({ owner: 'openclaw', repo: 'openclaw', minSize: 0, sort: 'size' });
     assert.deepEqual(
@@ -3512,7 +3512,7 @@ test('agent cluster summary and detail dumps expose repo stats, snippets, and su
     const summaries = service.listClusterSummaries({ owner: 'openclaw', repo: 'openclaw', minSize: 0 });
     assert.equal(summaries.stats.openIssueCount, 1);
     assert.equal(summaries.clusters.length, 1);
-    assert.equal(summaries.clusters[0]?.displayTitle, 'Downloader hangs');
+    assert.match(summaries.clusters[0]?.displayTitle ?? '', /^[a-z]+-[a-z]+-[a-z]+  Downloader hangs$/);
 
     const detail = service.getClusterDetailDump({
       owner: 'openclaw',

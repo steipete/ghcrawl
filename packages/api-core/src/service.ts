@@ -3996,21 +3996,24 @@ export class GHCrawlService {
         search_text: string | null;
       }>;
 
-    return rows.map((row) => ({
-      clusterId: row.cluster_id,
-      displayTitle: row.representative_title ?? `Cluster ${row.cluster_id}`,
-      isClosed: row.close_reason_local !== null || row.closed_member_count >= row.member_count,
-      closedAtLocal: row.closed_at_local,
-      closeReasonLocal: row.close_reason_local,
-      totalCount: row.member_count,
-      issueCount: row.issue_count,
-      pullRequestCount: row.pull_request_count,
-      latestUpdatedAt: row.latest_updated_at,
-      representativeThreadId: row.representative_thread_id,
-      representativeNumber: row.representative_number,
-      representativeKind: row.representative_kind,
-      searchText: `${(row.representative_title ?? '').toLowerCase()} ${row.search_text ?? ''}`.trim(),
-    }));
+    return rows.map((row) => {
+      const clusterName = this.clusterHumanName(repoId, row.representative_thread_id, row.cluster_id);
+      return {
+        clusterId: row.cluster_id,
+        displayTitle: this.clusterDisplayTitle(clusterName, row.representative_title, row.cluster_id),
+        isClosed: row.close_reason_local !== null || row.closed_member_count >= row.member_count,
+        closedAtLocal: row.closed_at_local,
+        closeReasonLocal: row.close_reason_local,
+        totalCount: row.member_count,
+        issueCount: row.issue_count,
+        pullRequestCount: row.pull_request_count,
+        latestUpdatedAt: row.latest_updated_at,
+        representativeThreadId: row.representative_thread_id,
+        representativeNumber: row.representative_number,
+        representativeKind: row.representative_kind,
+        searchText: `${clusterName} ${(row.representative_title ?? '').toLowerCase()} ${row.search_text ?? ''}`.trim(),
+      };
+    });
   }
 
   private getRawTuiClusterSummary(repoId: number, clusterRunId: number, clusterId: number): TuiClusterSummary | null {
@@ -4067,9 +4070,10 @@ export class GHCrawlService {
       return null;
     }
 
+    const clusterName = this.clusterHumanName(repoId, row.representative_thread_id, row.cluster_id);
     return {
       clusterId: row.cluster_id,
-      displayTitle: row.representative_title ?? `Cluster ${row.cluster_id}`,
+      displayTitle: this.clusterDisplayTitle(clusterName, row.representative_title, row.cluster_id),
       isClosed: row.close_reason_local !== null || row.closed_member_count >= row.member_count,
       closedAtLocal: row.closed_at_local,
       closeReasonLocal: row.close_reason_local,
@@ -4080,8 +4084,20 @@ export class GHCrawlService {
       representativeThreadId: row.representative_thread_id,
       representativeNumber: row.representative_number,
       representativeKind: row.representative_kind,
-      searchText: `${(row.representative_title ?? '').toLowerCase()} ${row.search_text ?? ''}`.trim(),
+      searchText: `${clusterName} ${(row.representative_title ?? '').toLowerCase()} ${row.search_text ?? ''}`.trim(),
     };
+  }
+
+  private clusterHumanName(repoId: number, representativeThreadId: number | null, clusterId: number): string {
+    return humanKeyForValue(
+      representativeThreadId === null
+        ? `repo:${repoId}:cluster:${clusterId}`
+        : `repo:${repoId}:cluster-representative:${representativeThreadId}`,
+    ).slug;
+  }
+
+  private clusterDisplayTitle(clusterName: string, representativeTitle: string | null, clusterId: number): string {
+    return `${clusterName}  ${representativeTitle ?? `Cluster ${clusterId}`}`;
   }
 
   private compareTuiClusterSummary(left: TuiClusterSummary, right: TuiClusterSummary, sort: TuiClusterSortMode): number {

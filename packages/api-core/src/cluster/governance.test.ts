@@ -19,7 +19,7 @@ test('applyClusterGovernance creates a stable cluster for new evidence', () => {
   });
 
   assert.equal(result.clusters.length, 1);
-  assert.match(result.clusters[0].stableSlug, /^[a-z]+-[a-z]+-[a-z]+-[a-z0-9]{4}$/);
+  assert.match(result.clusters[0].stableSlug, /^[a-z]+-[a-z]+-[a-z]+$/);
   assert.deepEqual(result.clusters[0].memberThreadIds, [10, 11]);
   assert.equal(result.events[0].eventType, 'create_cluster');
 });

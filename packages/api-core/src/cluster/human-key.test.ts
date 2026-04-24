@@ -10,7 +10,8 @@ test('humanKeyForValue returns a stable operator slug and machine hash', () => {
   assert.equal(first.hash, second.hash);
   assert.equal(first.slug, second.slug);
   assert.match(first.hash, /^[a-f0-9]{64}$/);
-  assert.match(first.slug, /^[a-z]+-[a-z]+-[a-z]+-[a-z0-9]{4}$/);
+  assert.match(first.slug, /^[a-z]+-[a-z]+-[a-z]+$/);
+  assert.match(first.checksum, /^[a-z0-9]{4}$/);
 });
 
 test('humanKeyFromHash rejects non-SHA256 input', () => {
