@@ -121,7 +121,7 @@ export class OpenAiProvider implements AiProvider {
     const format = zodTextFormat(llmKeySummarySchema, 'ghcrawl_key_summary');
     let lastError: Error | null = null;
 
-    for (const [attemptIndex, maxOutputTokens] of [240, 400, 600].entries()) {
+    for (const [attemptIndex, maxOutputTokens] of [600, 900, 1200].entries()) {
       try {
         const response = await this.client.responses.create({
           model: params.model,

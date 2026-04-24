@@ -167,6 +167,14 @@ type ActiveVectorTask = {
   wasTruncated: boolean;
 };
 
+type KeySummaryTask = {
+  threadId: number;
+  threadNumber: number;
+  revisionId: number;
+  inputHash: string;
+  text: string;
+};
+
 type ActiveVectorRow = ThreadRow & {
   basis: EmbeddingBasis;
   model: string;
@@ -405,6 +413,9 @@ const EMBED_TRUNCATION_MARKER = '\n\n[truncated for embedding]';
 const EMBED_CONTEXT_RETRY_ATTEMPTS = 5;
 const EMBED_CONTEXT_RETRY_FALLBACK_SHRINK_RATIO = 0.9;
 const EMBED_CONTEXT_RETRY_TARGET_BUFFER_RATIO = 0.95;
+const KEY_SUMMARY_MAX_BODY_CHARS = 6000;
+const KEY_SUMMARY_CONCURRENCY = 8;
+const KEY_SUMMARY_MAX_UNREAD = 16;
 const SUMMARY_PROMPT_VERSION = 'v1';
 const ACTIVE_EMBED_DIMENSIONS = 1024;
 const ACTIVE_EMBED_PIPELINE_VERSION = 'vectorlite-1024-v1';
@@ -1696,6 +1707,7 @@ export class GHCrawlService {
     if (!ai.generateKeySummary) {
       throw new Error('Configured AI provider does not support key summary generation.');
     }
+    const generateKeySummary = ai.generateKeySummary;
     const providerName = ai.providerName ?? 'custom';
     const repository = this.requireRepository(params.owner, params.repo);
     const runId = this.startRun('summary_runs', repository.id, params.threadNumber ? `key-summary:${params.threadNumber}` : `key-summary:${repository.fullName}`);
@@ -1734,12 +1746,18 @@ export class GHCrawlService {
       let outputTokens = 0;
       let totalTokens = 0;
       const errorSamples: Array<{ number: number; error: string }> = [];
+      const tasks: KeySummaryTask[] = [];
 
       for (const row of rows) {
         const labels = parseArray(row.labels_json);
+        const text = this.buildKeySummaryInputText({
+          title: row.title,
+          labels,
+          body: row.body,
+        });
         const inputHash = llmKeyInputHash({
           title: row.title,
-          body: row.body,
+          body: text,
           commentsText: null,
           diffText: null,
         });
@@ -1768,28 +1786,72 @@ export class GHCrawlService {
           continue;
         }
 
-        let result: Awaited<ReturnType<NonNullable<typeof ai.generateKeySummary>>>;
-        try {
-          result = await ai.generateKeySummary({
-            model: this.config.summaryModel,
-            text: [`title: ${row.title}`, `labels: ${labels.join(', ')}`, `body: ${row.body ?? ''}`].join('\n'),
-          });
-        } catch (error) {
-          failed += 1;
-          const message = error instanceof Error ? error.message : String(error);
-          if (errorSamples.length < 10) {
-            errorSamples.push({ number: row.number, error: message });
+        tasks.push({
+          threadId: row.id,
+          threadNumber: row.number,
+          revisionId,
+          inputHash,
+          text,
+        });
+      }
+
+      params.onProgress?.(
+        `[key-summary] pending=${tasks.length} skipped=${skipped} concurrency=${KEY_SUMMARY_CONCURRENCY} max_body_chars=${KEY_SUMMARY_MAX_BODY_CHARS}`,
+      );
+
+      const mapper = new IterableMapper(
+        tasks,
+        async (task: KeySummaryTask) => {
+          try {
+            const result = await generateKeySummary({
+              model: this.config.summaryModel,
+              text: task.text,
+            });
+            return { task, result, error: null };
+          } catch (error) {
+            return {
+              task,
+              result: null,
+              error: error instanceof Error ? error : new Error(String(error)),
+            };
           }
-          params.onProgress?.(`[key-summary] failed thread #${row.number}: ${message}`);
+        },
+        {
+          concurrency: KEY_SUMMARY_CONCURRENCY,
+          maxUnread: KEY_SUMMARY_MAX_UNREAD,
+        },
+      );
+
+      for await (const item of mapper) {
+        const { task } = item;
+        if (item.error) {
+          failed += 1;
+          const message = item.error.message;
+          if (errorSamples.length < 10) {
+            errorSamples.push({ number: task.threadNumber, error: message });
+          }
+          params.onProgress?.(`[key-summary] failed thread #${task.threadNumber}: ${message}`);
           continue;
         }
+
+        const result = item.result;
+        if (!result) {
+          failed += 1;
+          const message = 'AI provider returned no key summary result';
+          if (errorSamples.length < 10) {
+            errorSamples.push({ number: task.threadNumber, error: message });
+          }
+          params.onProgress?.(`[key-summary] failed thread #${task.threadNumber}: ${message}`);
+          continue;
+        }
+
         upsertThreadKeySummary(this.db, {
-          threadRevisionId: revisionId,
+          threadRevisionId: task.revisionId,
           summaryKind: 'llm_key_3line',
           promptVersion: LLM_KEY_SUMMARY_PROMPT_VERSION,
           provider: providerName,
           model: this.config.summaryModel,
-          inputHash,
+          inputHash: task.inputHash,
           summary: result.summary,
         });
         generated += 1;
@@ -1798,7 +1860,10 @@ export class GHCrawlService {
           outputTokens += result.usage.outputTokens;
           totalTokens += result.usage.totalTokens;
         }
-        params.onProgress?.(`[key-summary] generated ${generated}/${rows.length} thread #${row.number}`);
+        const completed = generated + failed;
+        params.onProgress?.(
+          `[key-summary] generated ${generated}/${tasks.length} failed=${failed} completed=${completed}/${tasks.length} thread #${task.threadNumber}`,
+        );
       }
 
       const payload = { runId, generated, skipped, failed, inputTokens, outputTokens, totalTokens, errorSamples };
@@ -1808,6 +1873,15 @@ export class GHCrawlService {
       this.finishRun('summary_runs', runId, 'failed', null, error);
       throw error;
     }
+  }
+
+  private buildKeySummaryInputText(params: { title: string; labels: string[]; body: string | null }): string {
+    const body = normalizeSummaryText(params.body ?? '');
+    const truncatedBody =
+      body.length > KEY_SUMMARY_MAX_BODY_CHARS
+        ? `${body.slice(0, KEY_SUMMARY_MAX_BODY_CHARS)}\n\n[truncated for key summary]`
+        : body;
+    return [`title: ${params.title}`, `labels: ${params.labels.join(', ')}`, `body: ${truncatedBody}`].join('\n');
   }
 
   purgeComments(params: {
