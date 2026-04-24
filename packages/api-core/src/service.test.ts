@@ -4159,6 +4159,12 @@ test('syncRepository records actors and repo stats from thread and comment autho
       { login: 'alice', opened_issues: 1, comments: 0 },
       { login: 'bob', opened_issues: 0, comments: 1 },
     ]);
+
+    const author = service.getAuthor({ owner: 'openclaw', repo: 'openclaw', login: 'alice' });
+    assert.equal(author.actor?.providerUserId, '501');
+    assert.equal(author.stats.openedIssueCount, 1);
+    assert.equal(author.stats.commentCount, 0);
+    assert.deepEqual(author.threads.map((item) => item.thread.number), [42]);
   } finally {
     service.close();
   }

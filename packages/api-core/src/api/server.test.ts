@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  authorResponseSchema,
   authorThreadsResponseSchema,
   closeResponseSchema,
   clusterDetailResponseSchema,
@@ -298,6 +299,22 @@ test('author-threads endpoint returns one author with strongest same-author matc
        values (?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(1, 1, 10, 11, 'exact_cosine', 0.91, '{}', now);
+  service.db
+    .prepare(
+      `insert into actors (
+        id, provider, provider_user_id, login, display_name, actor_type, site_admin, raw_json_blob_id,
+        first_seen_at, last_seen_at, updated_at
+      ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(1, 'github', '501', 'lqquan', null, 'User', 0, null, now, now, now);
+  service.db
+    .prepare(
+      `insert into actor_repo_stats (
+        repo_id, actor_id, opened_issues, opened_prs, comments, merged_prs, closed_threads,
+        first_activity_at, last_activity_at, trust_tier
+      ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(1, 1, 1, 1, 0, 0, 0, now, now, 'unknown');
 
   const server = createApiServer(service);
   try {
@@ -313,6 +330,13 @@ test('author-threads endpoint returns one author with strongest same-author matc
     assert.equal(payload.authorLogin, 'lqquan');
     assert.deepEqual(payload.threads.map((item) => item.thread.number), [43, 42]);
     assert.equal(payload.threads[0]?.strongestSameAuthorMatch?.number, 42);
+
+    const authorResponse = await fetch(`http://127.0.0.1:${address.port}/author?owner=openclaw&repo=openclaw&login=lqquan`);
+    assert.equal(authorResponse.status, 200);
+    const author = authorResponseSchema.parse((await authorResponse.json()) as unknown);
+    assert.equal(author.actor?.providerUserId, '501');
+    assert.equal(author.stats.openedIssueCount, 1);
+    assert.deepEqual(author.threads.map((item) => item.thread.number), [43, 42]);
   } finally {
     await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
     service.close();

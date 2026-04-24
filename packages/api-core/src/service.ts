@@ -11,6 +11,7 @@ import { Worker } from 'node:worker_threads';
 import { IterableMapper } from '@shutterstock/p-map-iterable';
 import {
   actionResponseSchema,
+  authorResponseSchema,
   authorThreadsResponseSchema,
   closeResponseSchema,
   clusterOverrideResponseSchema,
@@ -32,6 +33,8 @@ import {
   threadsResponseSchema,
   type ActionRequest,
   type ActionResponse,
+  type AuthorResponse,
+  type AuthorStatsDto,
   type AuthorThreadsResponse,
   type CloseResponse,
   type ClusterMergeResponse,
@@ -610,6 +613,19 @@ function threadToDto(row: ThreadRow, clusterId?: number | null): ThreadDto {
   };
 }
 
+function emptyAuthorStats(): AuthorStatsDto {
+  return {
+    openedIssueCount: 0,
+    openedPullRequestCount: 0,
+    commentCount: 0,
+    mergedPullRequestCount: 0,
+    closedThreadCount: 0,
+    firstActivityAt: null,
+    lastActivityAt: null,
+    trustTier: null,
+  };
+}
+
 export class GHCrawlService {
   readonly config: GitcrawlConfig;
   readonly db: SqliteDatabase;
@@ -877,6 +893,167 @@ export class GHCrawlService {
         strongestSameAuthorMatch: strongestByThread.get(row.id) ?? null,
       })),
     });
+  }
+
+  getAuthor(params: { owner: string; repo: string; login: string; includeClosed?: boolean }): AuthorResponse {
+    const repository = this.requireRepository(params.owner, params.repo);
+    const normalizedLogin = params.login.trim();
+    if (!normalizedLogin) {
+      return authorResponseSchema.parse({
+        repository,
+        authorLogin: '',
+        actor: null,
+        stats: emptyAuthorStats(),
+        threads: [],
+      });
+    }
+
+    const threads = this.listAuthorThreads(params).threads;
+    const actorRow = this.db
+      .prepare(
+        `select
+           a.id,
+           a.provider,
+           a.provider_user_id,
+           a.login,
+           a.display_name,
+           a.actor_type,
+           a.site_admin,
+           a.first_seen_at,
+           a.last_seen_at,
+           a.updated_at,
+           s.opened_issues,
+           s.opened_prs,
+           s.comments,
+           s.merged_prs,
+           s.closed_threads,
+           s.first_activity_at,
+           s.last_activity_at,
+           s.trust_tier
+         from actors a
+         left join actor_repo_stats s on s.actor_id = a.id and s.repo_id = ?
+         where lower(a.login) = lower(?)
+         order by s.last_activity_at desc nulls last, a.last_seen_at desc
+         limit 1`,
+      )
+      .get(repository.id, normalizedLogin) as
+      | {
+          id: number;
+          provider: string;
+          provider_user_id: string;
+          login: string;
+          display_name: string | null;
+          actor_type: string | null;
+          site_admin: number;
+          first_seen_at: string;
+          last_seen_at: string;
+          updated_at: string;
+          opened_issues: number | null;
+          opened_prs: number | null;
+          comments: number | null;
+          merged_prs: number | null;
+          closed_threads: number | null;
+          first_activity_at: string | null;
+          last_activity_at: string | null;
+          trust_tier: string | null;
+        }
+      | undefined;
+    const fallbackStats = this.computeAuthorStats(repository.id, normalizedLogin);
+
+    return authorResponseSchema.parse({
+      repository,
+      authorLogin: actorRow?.login ?? normalizedLogin,
+      actor: actorRow
+        ? {
+            id: actorRow.id,
+            provider: actorRow.provider,
+            providerUserId: actorRow.provider_user_id,
+            login: actorRow.login,
+            displayName: actorRow.display_name,
+            actorType: actorRow.actor_type,
+            siteAdmin: actorRow.site_admin === 1,
+            firstSeenAt: actorRow.first_seen_at,
+            lastSeenAt: actorRow.last_seen_at,
+            updatedAt: actorRow.updated_at,
+          }
+        : null,
+      stats: {
+        openedIssueCount: actorRow?.opened_issues ?? fallbackStats.openedIssueCount,
+        openedPullRequestCount: actorRow?.opened_prs ?? fallbackStats.openedPullRequestCount,
+        commentCount: actorRow?.comments ?? fallbackStats.commentCount,
+        mergedPullRequestCount: actorRow?.merged_prs ?? fallbackStats.mergedPullRequestCount,
+        closedThreadCount: actorRow?.closed_threads ?? fallbackStats.closedThreadCount,
+        firstActivityAt: actorRow?.first_activity_at ?? fallbackStats.firstActivityAt,
+        lastActivityAt: actorRow?.last_activity_at ?? fallbackStats.lastActivityAt,
+        trustTier: actorRow?.trust_tier ?? fallbackStats.trustTier,
+      },
+      threads,
+    });
+  }
+
+  private computeAuthorStats(repoId: number, login: string): ReturnType<typeof emptyAuthorStats> {
+    const row = this.db
+      .prepare(
+        `select
+           (select count(*) from threads where repo_id = ? and kind = 'issue' and lower(author_login) = lower(?)) as opened_issues,
+           (select count(*) from threads where repo_id = ? and kind = 'pull_request' and lower(author_login) = lower(?)) as opened_prs,
+           (select count(*) from comments c join threads t on t.id = c.thread_id where t.repo_id = ? and lower(c.author_login) = lower(?)) as comments,
+           (select count(*) from threads where repo_id = ? and kind = 'pull_request' and merged_at_gh is not null and lower(author_login) = lower(?)) as merged_prs,
+           (select count(*) from threads where repo_id = ? and closed_at_gh is not null and lower(author_login) = lower(?)) as closed_threads,
+           (select min(activity_at)
+            from (
+              select created_at_gh as activity_at from threads where repo_id = ? and lower(author_login) = lower(?)
+              union all
+              select c.created_at_gh as activity_at from comments c join threads t on t.id = c.thread_id where t.repo_id = ? and lower(c.author_login) = lower(?)
+            )
+            where activity_at is not null) as first_activity_at,
+           (select max(activity_at)
+            from (
+              select updated_at_gh as activity_at from threads where repo_id = ? and lower(author_login) = lower(?)
+              union all
+              select c.updated_at_gh as activity_at from comments c join threads t on t.id = c.thread_id where t.repo_id = ? and lower(c.author_login) = lower(?)
+            )
+            where activity_at is not null) as last_activity_at`,
+      )
+      .get(
+        repoId,
+        login,
+        repoId,
+        login,
+        repoId,
+        login,
+        repoId,
+        login,
+        repoId,
+        login,
+        repoId,
+        login,
+        repoId,
+        login,
+        repoId,
+        login,
+        repoId,
+        login,
+      ) as {
+      opened_issues: number;
+      opened_prs: number;
+      comments: number;
+      merged_prs: number;
+      closed_threads: number;
+      first_activity_at: string | null;
+      last_activity_at: string | null;
+    };
+
+    return {
+      openedIssueCount: row.opened_issues,
+      openedPullRequestCount: row.opened_prs,
+      commentCount: row.comments,
+      mergedPullRequestCount: row.merged_prs,
+      closedThreadCount: row.closed_threads,
+      firstActivityAt: row.first_activity_at,
+      lastActivityAt: row.last_activity_at,
+      trustTier: row.opened_issues + row.opened_prs >= 3 ? 'repeat_contributor' : null,
+    };
   }
 
   closeThreadLocally(params: { owner: string; repo: string; threadNumber: number }): CloseResponse {

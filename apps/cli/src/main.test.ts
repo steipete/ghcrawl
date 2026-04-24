@@ -232,6 +232,70 @@ test('missing required flags exit with code 2 and command-specific hints', async
   }
 });
 
+test('author command returns actor profile stats and threads', async () => {
+  const stdout = createWritableCapture();
+  const context = makeRunContext();
+  const original = GHCrawlService.prototype.getAuthor;
+  let received: unknown;
+
+  GHCrawlService.prototype.getAuthor = function getAuthorStub(params: unknown) {
+    received = params;
+    return {
+      repository: {
+        id: 1,
+        owner: 'openclaw',
+        name: 'openclaw',
+        fullName: 'openclaw/openclaw',
+        githubRepoId: '1',
+        updatedAt: '2026-03-09T00:00:00Z',
+      },
+      authorLogin: 'alice',
+      actor: {
+        id: 1,
+        provider: 'github',
+        providerUserId: '501',
+        login: 'alice',
+        displayName: null,
+        actorType: 'User',
+        siteAdmin: false,
+        firstSeenAt: '2026-03-09T00:00:00Z',
+        lastSeenAt: '2026-03-09T00:00:00Z',
+        updatedAt: '2026-03-09T00:00:00Z',
+      },
+      stats: {
+        openedIssueCount: 1,
+        openedPullRequestCount: 0,
+        commentCount: 0,
+        mergedPullRequestCount: 0,
+        closedThreadCount: 0,
+        firstActivityAt: '2026-03-09T00:00:00Z',
+        lastActivityAt: '2026-03-09T00:00:00Z',
+        trustTier: 'unknown',
+      },
+      threads: [],
+    } as never;
+  };
+
+  try {
+    await run(['author', 'openclaw/openclaw', '--login', 'alice', '--include-closed'], stdout.stream, {
+      env: context.env,
+      cwd: context.cwd,
+    });
+  } finally {
+    GHCrawlService.prototype.getAuthor = original;
+    context.cleanup();
+  }
+
+  assert.deepEqual(received, {
+    owner: 'openclaw',
+    repo: 'openclaw',
+    login: 'alice',
+    includeClosed: true,
+  });
+  assert.match(stdout.read(), /"providerUserId": "501"/);
+  assert.match(stdout.read(), /"openedIssueCount": 1/);
+});
+
 test('invalid enum and value parsing exits with code 2', async () => {
   const context = makeRunContext();
 

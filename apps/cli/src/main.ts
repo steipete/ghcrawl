@@ -176,7 +176,7 @@ const COMMAND_SPECS: readonly CommandSpec[] = [
   {
     name: 'author',
     synopsis: 'author <owner/repo> --login <user> [--include-closed] [--json]',
-    description: 'List local issue and PR records for a single author.',
+    description: 'Show actor identity, repo stats, and local threads for one author.',
     options: [
       '--login <user>  GitHub login to inspect',
       '--include-closed  Include locally closed items',
@@ -1096,7 +1096,7 @@ export async function run(
         if (typeof values.login !== 'string' || values.login.trim().length === 0) {
           throw new CliUsageError('Missing --login', 'author');
         }
-        const result = getService().listAuthorThreads({
+        const result = getService().getAuthor({
           owner,
           repo,
           login: values.login,
