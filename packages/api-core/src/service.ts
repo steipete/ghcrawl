@@ -426,10 +426,10 @@ const KEY_SUMMARY_MAX_UNREAD = 48;
 const SUMMARY_PROMPT_VERSION = 'v1';
 const ACTIVE_EMBED_DIMENSIONS = 1024;
 const ACTIVE_EMBED_PIPELINE_VERSION = 'vectorlite-1024-v1';
-const DEFAULT_CLUSTER_MIN_SCORE = 0.74;
+const DEFAULT_CLUSTER_MIN_SCORE = 0.8;
 const DEFAULT_DETERMINISTIC_CLUSTER_MIN_SCORE = 0.36;
-const DEFAULT_CROSS_KIND_CLUSTER_MIN_SCORE = 0.9;
-const DEFAULT_CLUSTER_MAX_SIZE = 64;
+const DEFAULT_CROSS_KIND_CLUSTER_MIN_SCORE = 0.93;
+const DEFAULT_CLUSTER_MAX_SIZE = 40;
 const VECTORLITE_CLUSTER_EXPANDED_K = 24;
 const VECTORLITE_CLUSTER_EXPANDED_MULTIPLIER = 4;
 const VECTORLITE_CLUSTER_EXPANDED_CANDIDATE_K = 512;
@@ -2033,7 +2033,7 @@ export class GHCrawlService {
           maxClusterSize: params.maxClusterSize ?? DEFAULT_CLUSTER_MAX_SIZE,
           clusterMode: 'size_bounded',
           crossKindMinScore: Math.max(params.minScore ?? DEFAULT_CLUSTER_MIN_SCORE, DEFAULT_CROSS_KIND_CLUSTER_MIN_SCORE),
-          k: params.k ?? 6,
+          k: params.k ?? 16,
           embedModel: this.config.embedModel,
           embeddingBasis: this.config.embeddingBasis,
         }),
@@ -2091,8 +2091,9 @@ export class GHCrawlService {
         `[cluster] built ${aggregatedEdges.size} deterministic similarity edge(s) for ${runSubject}`,
       );
 
-      if (this.isRepoVectorStateCurrent(repository.id)) {
-        const vectorItems = this.loadClusterableActiveVectorMeta(repository.id, repository.fullName);
+      const vectorStateCurrent = this.isRepoVectorStateCurrent(repository.id);
+      const vectorItems = this.loadClusterableActiveVectorMeta(repository.id, repository.fullName);
+      if (vectorItems.length > 0) {
         const queryVectorItems = seedThreadIds ? vectorItems.filter((item) => seedThreadIds.includes(item.id)) : vectorItems;
         const activeSourceKind = this.activeVectorSourceKind();
         const activeIds = new Set(vectorItems.map((item) => item.id));
@@ -2101,7 +2102,7 @@ export class GHCrawlService {
         let lastProgressAt = Date.now();
 
         params.onProgress?.(
-          `[cluster] loaded ${vectorItems.length} active vector(s), querying ${queryVectorItems.length} for ${runSubject} backend=${this.config.vectorBackend} k=${k} query_limit=${annQuery.limit} candidateK=${annQuery.candidateK} efSearch=${annQuery.efSearch ?? 'default'} minScore=${minScore}`,
+          `[cluster] loaded ${vectorItems.length} ${vectorStateCurrent ? 'current' : 'stale'} active vector(s), querying ${queryVectorItems.length} for ${runSubject} backend=${this.config.vectorBackend} k=${k} query_limit=${annQuery.limit} candidateK=${annQuery.candidateK} efSearch=${annQuery.efSearch ?? 'default'} minScore=${minScore}`,
         );
         for (const item of queryVectorItems) {
           const neighbors = this.queryNearestWithRecovery(repository.id, repository.fullName, {
@@ -2184,6 +2185,7 @@ export class GHCrawlService {
         edges,
         { maxClusterSize },
       );
+      const clusterQuality = this.summarizeClusterQuality(clusters, threadKinds, maxClusterSize);
       if (!seedThreadIds) {
         this.persistClusterRun(repository.id, runId, aggregatedEdges, clusters);
       }
@@ -2191,7 +2193,7 @@ export class GHCrawlService {
       if (!seedThreadIds) {
         this.pruneOldClusterRuns(repository.id, runId);
       }
-      if (!seedThreadIds && this.isRepoVectorStateCurrent(repository.id)) {
+      if (!seedThreadIds && vectorStateCurrent) {
         this.markRepoClustersCurrent(repository.id);
         this.cleanupMigratedRepositoryArtifacts(repository.id, repository.fullName, params.onProgress);
       }
@@ -2208,6 +2210,7 @@ export class GHCrawlService {
         threadNumber: params.threadNumber ?? null,
         droppedCrossKindEdges,
         crossKindMinScore,
+        ...clusterQuality,
       };
       this.finishRun('cluster_runs', runId, 'completed', stats);
       finishPipelineRun(this.db, pipelineRunId, { status: 'completed', stats });
@@ -6120,6 +6123,52 @@ export class GHCrawlService {
       histogram: Array.from(histogramCounts.entries())
         .map(([size, count]) => ({ size, count }))
         .sort((left, right) => left.size - right.size),
+    };
+  }
+
+  private summarizeClusterQuality(
+    clusters: Array<{ representativeThreadId: number; members: number[] }>,
+    threadKinds: Map<number, 'issue' | 'pull_request'>,
+    maxClusterSize: number,
+  ): {
+    maxClusterSize: number;
+    maxObservedClusterSize: number;
+    maxedClusterCount: number;
+    mixedKindClusterCount: number;
+    singletonClusterCount: number;
+    nonSingletonClusterCount: number;
+  } {
+    let maxObservedClusterSize = 0;
+    let maxedClusterCount = 0;
+    let mixedKindClusterCount = 0;
+    let singletonClusterCount = 0;
+
+    for (const cluster of clusters) {
+      const size = cluster.members.length;
+      maxObservedClusterSize = Math.max(maxObservedClusterSize, size);
+      if (size >= maxClusterSize) maxedClusterCount += 1;
+      if (size === 1) singletonClusterCount += 1;
+
+      let hasIssue = false;
+      let hasPullRequest = false;
+      for (const memberId of cluster.members) {
+        const kind = threadKinds.get(memberId);
+        hasIssue ||= kind === 'issue';
+        hasPullRequest ||= kind === 'pull_request';
+        if (hasIssue && hasPullRequest) {
+          mixedKindClusterCount += 1;
+          break;
+        }
+      }
+    }
+
+    return {
+      maxClusterSize,
+      maxObservedClusterSize,
+      maxedClusterCount,
+      mixedKindClusterCount,
+      singletonClusterCount,
+      nonSingletonClusterCount: clusters.length - singletonClusterCount,
     };
   }
 

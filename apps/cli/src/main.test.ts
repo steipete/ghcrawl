@@ -579,7 +579,7 @@ test('cluster command forwards neighborhood refresh inputs', async () => {
   };
 
   try {
-    await run(['cluster', 'openclaw/openclaw', '--number', '42', '--k', '4', '--threshold', '0.82'], stdout.stream, {
+    await run(['cluster', 'openclaw/openclaw', '--number', '42', '--k', '4', '--threshold', '0.82', '--max-cluster-size', '24'], stdout.stream, {
       env: context.env,
       cwd: context.cwd,
     });
@@ -588,12 +588,21 @@ test('cluster command forwards neighborhood refresh inputs', async () => {
     context.cleanup();
   }
 
-  const params = received as { owner: string; repo: string; threadNumber: number; k: number; minScore: number; onProgress?: unknown };
+  const params = received as {
+    owner: string;
+    repo: string;
+    threadNumber: number;
+    k: number;
+    minScore: number;
+    maxClusterSize: number;
+    onProgress?: unknown;
+  };
   assert.equal(params.owner, 'openclaw');
   assert.equal(params.repo, 'openclaw');
   assert.equal(params.threadNumber, 42);
   assert.equal(params.k, 4);
   assert.equal(params.minScore, 0.82);
+  assert.equal(params.maxClusterSize, 24);
   assert.equal(typeof params.onProgress, 'function');
   assert.match(stdout.read(), /"edges": 3/);
 });

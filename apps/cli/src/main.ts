@@ -576,6 +576,7 @@ export function parseRepoFlags(command: CommandName, args: string[]): ParsedRepo
       backend: { type: 'string' },
       'candidate-k': { type: 'string' },
       threshold: { type: 'string' },
+      'max-cluster-size': { type: 'string' },
       port: { type: 'string' },
       id: { type: 'string' },
       source: { type: 'string' },
