@@ -745,6 +745,14 @@ export async function startTui(params: StartTuiParams): Promise<void> {
     render();
   };
 
+  const copyToStatus = (label: string, value: string): void => {
+    if (!value.trim()) {
+      status = `No ${label} to copy`;
+      return;
+    }
+    status = copyTextToClipboard(value) ? `Copied ${label}` : 'Clipboard copy failed';
+  };
+
   const toggleDetailMode = (): void => {
     detailMode = detailMode === 'full' ? 'compact' : 'full';
     status = `Detail mode: ${detailMode}`;
@@ -917,6 +925,7 @@ export async function startTui(params: StartTuiParams): Promise<void> {
       },
       })),
       ...detailCopyContextItems(),
+      ...clusterCopyContextItems({ includeVisibleClusters: false }),
       {
         label: 'Close thread locally',
         run: () =>
@@ -965,28 +974,35 @@ export async function startTui(params: StartTuiParams): Promise<void> {
 
   const detailCopyContextItems = (): ContextMenuItem[] => {
     if (!threadDetail) return [];
+    const selectedThreadDetail = threadDetail;
     return [
       {
         label: detailMode === 'full' ? 'Use compact detail' : 'Use full detail',
         run: toggleDetailMode,
       },
       {
+        label: 'Copy all detail',
+        run: () => {
+          copyToStatus('detail', formatThreadDetailForClipboard(selectedThreadDetail, clusterDetail));
+        },
+      },
+      {
         label: 'Copy body',
         run: () => {
-          status = copyTextToClipboard(threadDetail?.thread.body ?? '') ? 'Copied body' : 'Clipboard copy failed';
+          copyToStatus('body', selectedThreadDetail.thread.body ?? '');
         },
       },
       {
         label: 'Copy summaries',
         run: () => {
-          status = copyTextToClipboard(formatSummariesForClipboard(threadDetail?.summaries ?? {})) ? 'Copied summaries' : 'Clipboard copy failed';
+          copyToStatus('summaries', formatSummariesForClipboard(selectedThreadDetail.summaries));
         },
       },
       {
         label: 'Copy links',
         run: () => {
-          const links = getThreadReferenceLinks(threadDetail);
-          status = links.length > 0 ? (copyTextToClipboard(links.join('\n')) ? 'Copied links' : 'Clipboard copy failed') : 'No referenced links found';
+          const links = getThreadReferenceLinks(selectedThreadDetail);
+          copyToStatus('links', links.join('\n'));
         },
       },
     ];
@@ -1059,25 +1075,13 @@ export async function startTui(params: StartTuiParams): Promise<void> {
 
   const clusterContextItems = (): ContextMenuItem[] => {
     const selectedCluster = clusterDetail;
-    const title = selectedCluster ? splitClusterDisplayTitle(selectedCluster.displayTitle) : null;
     return [
       ...(selectedCluster
         ? [
             { label: 'Focus members', run: () => updateFocus('members') },
-            {
-              label: 'Copy cluster id',
-              run: () => {
-                status = copyTextToClipboard(String(selectedCluster.clusterId)) ? `Copied cluster ${selectedCluster.clusterId}` : 'Clipboard copy failed';
-              },
-            },
-            {
-              label: 'Copy cluster title',
-              run: () => {
-                status = copyTextToClipboard(title?.title ?? selectedCluster.displayTitle) ? 'Copied cluster title' : 'Clipboard copy failed';
-              },
-            },
           ]
         : []),
+      ...clusterCopyContextItems({ includeVisibleClusters: true }),
       ...(selectedCluster
         ? [
             {
@@ -1114,6 +1118,12 @@ export async function startTui(params: StartTuiParams): Promise<void> {
   const globalContextItems = (): ContextMenuItem[] => [
     { label: 'Refresh', run: () => refreshAll(true) },
     { label: 'Repository browser', run: browseRepositories },
+    {
+      label: 'Copy visible clusters',
+      run: () => {
+        copyToStatus('visible clusters', formatVisibleClustersForClipboard(snapshot?.clusters ?? []));
+      },
+    },
     { label: 'Sort by size', run: () => setSortMode('size') },
     { label: 'Sort by recent', run: () => setSortMode('recent') },
     { label: 'Member sort grouped', run: () => setMemberSortMode('kind') },
@@ -1131,6 +1141,45 @@ export async function startTui(params: StartTuiParams): Promise<void> {
       },
     },
   ];
+
+  const clusterCopyContextItems = (options: { includeVisibleClusters: boolean }): ContextMenuItem[] => {
+    const selectedCluster = clusterDetail;
+    const title = selectedCluster ? splitClusterDisplayTitle(selectedCluster.displayTitle) : null;
+    return [
+      ...(selectedCluster && title
+        ? [
+            {
+              label: 'Copy cluster name',
+              run: () => copyToStatus('cluster name', title.name),
+            },
+            {
+              label: 'Copy cluster title',
+              run: () => copyToStatus('cluster title', title.title),
+            },
+            {
+              label: 'Copy cluster id',
+              run: () => copyToStatus('cluster id', String(selectedCluster.clusterId)),
+            },
+            {
+              label: 'Copy cluster details',
+              run: () => copyToStatus('cluster details', formatClusterForClipboard(selectedCluster)),
+            },
+            {
+              label: 'Copy member list',
+              run: () => copyToStatus('member list', formatClusterMembersForClipboard(selectedCluster)),
+            },
+          ]
+        : []),
+      ...(options.includeVisibleClusters
+        ? [
+            {
+              label: 'Copy visible clusters',
+              run: () => copyToStatus('visible clusters', formatVisibleClustersForClipboard(snapshot?.clusters ?? [])),
+            },
+          ]
+        : []),
+    ];
+  };
 
   const openHelp = (): void => {
     if (modalOpen) return;
@@ -1711,11 +1760,12 @@ export function renderDetailPane(
     `{bold}${thread.kind === 'pull_request' ? 'PR' : 'Issue'} #${thread.number}{/bold}  ${escapeBlessedText(thread.title)}`,
     `{cyan-fg}${escapeBlessedText(clusterTitle.name)}{/cyan-fg}  C${clusterDetail.clusterId}${escapeBlessedText(representativeLabel)}`,
     '{gray-fg}' + '-'.repeat(72) + '{/gray-fg}',
+    summaries ? `{bold}LLM Summary{/bold}\n${summaries}` : '',
+    summaries ? '{gray-fg}' + '-'.repeat(72) + '{/gray-fg}' : '',
     `${closedLabel}  {bold}Updated:{/bold} ${escapeBlessedText(formatRelativeTime(thread.updatedAtGh))}  {bold}Author:{/bold} ${escapeBlessedText(thread.authorLogin ?? 'unknown')}`,
     `{bold}Labels:{/bold} ${labels}`,
     `{bold}URL:{/bold} ${formatTerminalLink(thread.htmlUrl, thread.htmlUrl)}`,
     topFiles ? `\n{bold}Top files{/bold}\n${topFiles}` : '',
-    summaries ? `\n{bold}LLM Summary{/bold}\n${summaries}` : '',
     '',
     '{gray-fg}' + '-'.repeat(72) + '{/gray-fg}',
     `{bold}Main Preview{/bold}`,
@@ -1860,6 +1910,67 @@ export function formatSummariesForClipboard(summaries: TuiThreadDetail['summarie
   }).join('\n\n');
 }
 
+export function formatThreadDetailForClipboard(threadDetail: TuiThreadDetail, clusterDetail: TuiClusterDetail | null): string {
+  const thread = threadDetail.thread;
+  const clusterTitle = clusterDetail ? splitClusterDisplayTitle(clusterDetail.displayTitle) : null;
+  const sections = [
+    `${thread.kind === 'pull_request' ? 'PR' : 'Issue'} #${thread.number}: ${thread.title}`,
+    clusterDetail && clusterTitle ? `Cluster ${clusterDetail.clusterId}: ${clusterTitle.name} | ${clusterTitle.title}` : '',
+    `State: ${thread.isClosed ? 'closed' : 'open'}`,
+    `Updated: ${thread.updatedAtGh ?? 'unknown'}`,
+    `Author: ${thread.authorLogin ?? 'unknown'}`,
+    `Labels: ${thread.labels.join(', ') || 'none'}`,
+    `URL: ${thread.htmlUrl}`,
+    formatSummariesForClipboard(threadDetail.summaries) ? `LLM Summary:\n${formatSummariesForClipboard(threadDetail.summaries)}` : '',
+    threadDetail.topFiles.length > 0 ? `Top files:\n${formatTopFilesForClipboard(threadDetail.topFiles)}` : '',
+    `Body:\n${thread.body ?? ''}`,
+    getThreadReferenceLinks(threadDetail).length > 0 ? `Links:\n${getThreadReferenceLinks(threadDetail).join('\n')}` : '',
+  ];
+  return sections.filter((section) => section.trim()).join('\n\n');
+}
+
+export function formatClusterForClipboard(cluster: TuiClusterDetail): string {
+  const title = splitClusterDisplayTitle(cluster.displayTitle);
+  return [
+    `Cluster ${cluster.clusterId}`,
+    `Name: ${title.name}`,
+    `Title: ${title.title}`,
+    `State: ${cluster.isClosed ? 'closed' : 'open'}`,
+    `Members: ${cluster.totalCount} (${cluster.issueCount} issues, ${cluster.pullRequestCount} PRs)`,
+    `Updated: ${cluster.latestUpdatedAt ?? 'unknown'}`,
+    cluster.representativeNumber !== null ? `Representative: #${cluster.representativeNumber} ${cluster.representativeKind ?? ''}`.trimEnd() : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
+export function formatClusterMembersForClipboard(cluster: TuiClusterDetail): string {
+  return cluster.members
+    .map((member) => {
+      const state = member.isClosed ? 'closed' : 'open';
+      const kind = member.kind === 'pull_request' ? 'PR' : 'Issue';
+      return `${kind} #${member.number} [${state}] ${member.title} ${member.htmlUrl}`;
+    })
+    .join('\n');
+}
+
+export function formatVisibleClustersForClipboard(clusters: TuiClusterSummary[]): string {
+  return clusters
+    .map((cluster) => {
+      const title = splitClusterDisplayTitle(cluster.displayTitle);
+      const state = cluster.isClosed ? 'closed' : 'open';
+      return `C${cluster.clusterId} [${state}] ${cluster.totalCount} items ${title.name} | ${title.title}`;
+    })
+    .join('\n');
+}
+
+function formatTopFilesForClipboard(files: TuiThreadDetail['topFiles']): string {
+  return files
+    .slice(0, 5)
+    .map((file) => `${file.path} ${file.status ? `${file.status} ` : ''}+${file.additions}/-${file.deletions}`)
+    .join('\n');
+}
+
 type InlineMarkdownSegment =
   | { kind: 'text'; value: string }
   | { kind: 'link'; label: string; url: string };
@@ -1904,7 +2015,7 @@ function pushBareLinkSegments(value: string, segments: InlineMarkdownSegment[]):
 
 function renderInlineText(value: string): string {
   return escapeBlessedText(value)
-    .replace(/`([^`]+)`/g, '{yellow-fg}$1{/yellow-fg}')
+    .replace(/`([^`]+)`/g, '$1')
     .replace(/\*\*([^*]+)\*\*/g, '{bold}$1{/bold}');
 }
 

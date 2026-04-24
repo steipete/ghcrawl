@@ -8,11 +8,15 @@ import {
   buildHelpContent,
   escapeBlessedText,
   formatClusterDateColumn,
+  formatClusterForClipboard,
   formatClusterListHeader,
   formatClusterListLabel,
+  formatClusterMembersForClipboard,
   formatClusterShortName,
   formatLinkChoiceLabel,
   formatSummariesForClipboard,
+  formatThreadDetailForClipboard,
+  formatVisibleClustersForClipboard,
   getThreadReferenceLinks,
   limitRenderedLines,
   getRepositoryChoices,
@@ -100,6 +104,7 @@ test('renderDetailPane escapes user-provided text before rendering into a tags-e
   assert.match(rendered, /Summary \\{yellow-fg\\}text\\{\/yellow-fg\\}/);
   assert.match(rendered, /Neighbor \\{blue-fg\\}title\\{\/blue-fg\\}/);
   assert.ok(rendered.indexOf('Cluster signal:') < rendered.indexOf('{bold}Main Preview{/bold}'));
+  assert.ok(rendered.indexOf('{bold}LLM Summary{/bold}') < rendered.indexOf('{bold}Top files{/bold}'));
 });
 
 test('renderDetailPane can compact very long bodies', () => {
@@ -228,10 +233,70 @@ test('renderMarkdownForTerminal formats common markdown without exposing blessed
   );
 
   assert.match(rendered, /\{bold\}Heading \\{boom\\}\{\/bold\}/);
-  assert.match(rendered, /- \{bold\}bold\{\/bold\} and \{yellow-fg\}code\{\/yellow-fg\}/);
+  assert.match(rendered, /- \{bold\}bold\{\/bold\} and code/);
+  assert.doesNotMatch(rendered, /yellow-fg/);
   assert.match(rendered, /site <https:\/\/example\.com\/path>/);
   assert.match(rendered, /https:\/\/example\.com\/raw/);
   assert.doesNotMatch(rendered, /\x1B\]8;;/);
+});
+
+test('clipboard formatters expose cluster and thread context without blessed tags', () => {
+  const cluster: TuiClusterDetail = {
+    clusterId: 7,
+    displayTitle: 'alpha-bravo-charlie  Fix retries',
+    isClosed: false,
+    closedAtLocal: null,
+    closeReasonLocal: null,
+    totalCount: 1,
+    issueCount: 1,
+    pullRequestCount: 0,
+    latestUpdatedAt: '2026-03-09T00:00:00Z',
+    representativeThreadId: 1,
+    representativeNumber: 42,
+    representativeKind: 'issue',
+    members: [
+      {
+        id: 1,
+        number: 42,
+        kind: 'issue',
+        isClosed: false,
+        title: 'Fix retries',
+        updatedAtGh: '2026-03-09T00:00:00Z',
+        htmlUrl: 'https://example.com/42',
+        labels: [],
+        clusterScore: null,
+      },
+    ],
+  };
+  const detail: TuiThreadDetail = {
+    thread: {
+      id: 1,
+      repoId: 1,
+      number: 42,
+      kind: 'issue',
+      state: 'open',
+      isClosed: false,
+      closedAtGh: null,
+      closedAtLocal: null,
+      closeReasonLocal: null,
+      title: 'Fix retries',
+      body: 'Body',
+      authorLogin: 'dev',
+      htmlUrl: 'https://example.com/42',
+      labels: ['bug'],
+      updatedAtGh: '2026-03-09T00:00:00Z',
+      clusterId: 7,
+    },
+    summaries: { problem_summary: 'Retries fail' },
+    topFiles: [{ path: 'src/retry.ts', status: 'modified', additions: 3, deletions: 1 }],
+    neighbors: [],
+  };
+
+  assert.match(formatClusterForClipboard(cluster), /Name: alpha-bravo-charlie/);
+  assert.match(formatClusterMembersForClipboard(cluster), /Issue #42 \[open\] Fix retries/);
+  assert.match(formatThreadDetailForClipboard(detail, cluster), /LLM Summary:\nPurpose:\nRetries fail/);
+  assert.match(formatThreadDetailForClipboard(detail, cluster), /Top files:\nsrc\/retry\.ts modified \+3\/-1/);
+  assert.match(formatVisibleClustersForClipboard([{ ...cluster, searchText: '' }]), /C7 \[open\] 1 items alpha-bravo-charlie/);
 });
 
 test('renderSummarySections orders and labels LLM summaries for scanning', () => {
