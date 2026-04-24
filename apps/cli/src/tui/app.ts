@@ -18,6 +18,7 @@ import {
   cycleMinSizeFilter,
   cycleSortMode,
   findSelectableIndex,
+  formatRelativeTime,
   moveSelectableIndex,
   preserveSelectedId,
   type MemberListRow,
@@ -81,7 +82,7 @@ function createScreen(options: Parameters<typeof blessed.screen>[0]): blessed.Wi
 }
 
 const ACTIVITY_LOG_LIMIT = 200;
-const FOOTER_LOG_LINES = 3;
+const FOOTER_LOG_LINES = 1;
 
 export async function startTui(params: StartTuiParams): Promise<void> {
   const selectedRepository = params.owner && params.repo ? { owner: params.owner, repo: params.repo } : null;
@@ -329,17 +330,10 @@ export async function startTui(params: StartTuiParams): Promise<void> {
 
     widgets.detail.setContent(renderDetailPane(threadDetail, clusterDetail, focusPane));
     updatePaneStyles(widgets, focusPane);
-    const logLines = activityLines.slice(-FOOTER_LOG_LINES);
-    const footerLines = [...logLines];
-    while (footerLines.length < FOOTER_LOG_LINES) {
-      footerLines.unshift('');
-    }
-    footerLines.push(
-      `${status}  |  focus:${focusPane}  sort:${sortMode}  h/? help  # jump  p repos  / filter  s sort  f min`,
-    );
-    footerLines.push(
-      `Tab focus  mouse click/select/scroll  PgUp/PgDn page  l layout  x closed  r refresh  o open  q quit`,
-    );
+    const footerLines = [
+      activityLines.at(-1) ?? status,
+      `focus:${focusPane} sort:${sortMode} min:${minSize === 0 ? 'all' : `${minSize}+`}  Tab focus  / filter  s sort  f min  # jump  o open  h help  q quit`,
+    ];
     widgets.footer.setContent(footerLines.join('\n'));
     widgets.screen.render();
   };
@@ -955,12 +949,19 @@ export function renderDetailPane(
   if (!clusterDetail) {
     return 'No cluster selected.\n\nRun `ghcrawl cluster owner/repo` if you have not clustered this repository yet.';
   }
+  const clusterTitle = splitClusterDisplayTitle(clusterDetail.displayTitle);
   if (!threadDetail) {
     const representativeLabel =
       clusterDetail.representativeNumber !== null && clusterDetail.representativeKind !== null
         ? ` (#${clusterDetail.representativeNumber} representative ${clusterDetail.representativeKind === 'pull_request' ? 'pr' : 'issue'})`
         : '';
-    return `{bold}Cluster ${clusterDetail.clusterId}${escapeBlessedText(representativeLabel)}{/bold}\n${escapeBlessedText(clusterDetail.displayTitle)}\n\nSelect a member to inspect thread details.`;
+    return [
+      `{bold}Cluster ${clusterDetail.clusterId}${escapeBlessedText(representativeLabel)}{/bold}`,
+      `{cyan-fg}${escapeBlessedText(clusterTitle.name)}{/cyan-fg}`,
+      escapeBlessedText(clusterTitle.title),
+      '',
+      'Select a member to inspect thread details.',
+    ].join('\n');
   }
 
   const thread = threadDetail.thread;
@@ -968,7 +969,7 @@ export function renderDetailPane(
     clusterDetail.representativeNumber !== null && clusterDetail.representativeKind !== null
       ? ` (#${clusterDetail.representativeNumber} representative ${clusterDetail.representativeKind === 'pull_request' ? 'pr' : 'issue'})`
       : '';
-  const labels = thread.labels.length > 0 ? escapeBlessedText(thread.labels.join(', ')) : 'none';
+  const labels = thread.labels.length > 0 ? thread.labels.map((label) => `{cyan-fg}${escapeBlessedText(label)}{/cyan-fg}`).join(' ') : 'none';
   const closedLabel = thread.isClosed
     ? `{bold}Closed:{/bold} ${escapeBlessedText(thread.closedAtLocal ?? thread.closedAtGh ?? 'yes')} ${thread.closeReasonLocal ? `(${escapeBlessedText(thread.closeReasonLocal)})` : ''}`.trimEnd()
     : '{bold}Closed:{/bold} no';
@@ -986,20 +987,19 @@ export function renderDetailPane(
       : focusPane === 'detail'
         ? 'No neighbors available.'
         : 'Neighbors load when the detail pane is focused.';
+  const body = renderMarkdownForTerminal(thread.body ?? '(no body)');
   return [
-    `{bold}Cluster ${clusterDetail.clusterId}${escapeBlessedText(representativeLabel)}{/bold}`,
+    `{bold}${thread.kind === 'pull_request' ? 'PR' : 'Issue'} #${thread.number}{/bold}  ${escapeBlessedText(thread.title)}`,
+    `{cyan-fg}${escapeBlessedText(clusterTitle.name)}{/cyan-fg}  C${clusterDetail.clusterId}${escapeBlessedText(representativeLabel)}`,
     '',
-    `{bold}${thread.kind} #${thread.number}{/bold}  ${escapeBlessedText(thread.title)}`,
-    '',
-    `{bold}Author:{/bold} ${escapeBlessedText(thread.authorLogin ?? 'unknown')}`,
-    closedLabel,
-    `{bold}Updated:{/bold} ${thread.updatedAtGh ?? 'unknown'}`,
+    `${closedLabel}  {bold}Updated:{/bold} ${escapeBlessedText(formatRelativeTime(thread.updatedAtGh))}  {bold}Author:{/bold} ${escapeBlessedText(thread.authorLogin ?? 'unknown')}`,
     `{bold}Labels:{/bold} ${labels}`,
-    `{bold}URL:{/bold} ${escapeBlessedText(thread.htmlUrl)}`,
+    `{bold}URL:{/bold} ${formatTerminalLink(thread.htmlUrl, thread.htmlUrl)}`,
+    '',
     summaries ? `\n\n${summaries}` : '',
     '',
-    `{bold}Body{/bold}`,
-    escapeBlessedText(thread.body ?? '(no body)'),
+    `{bold}Main{/bold}`,
+    body,
     `\n\n{bold}Neighbors{/bold}\n${neighbors}`,
   ]
     .filter(Boolean)
@@ -1008,6 +1008,95 @@ export function renderDetailPane(
 
 export function escapeBlessedText(value: string): string {
   return value.replace(/\\/g, '\\\\').replace(/\{/g, '\\{').replace(/\}/g, '\\}');
+}
+
+export function splitClusterDisplayTitle(displayTitle: string): { name: string; title: string } {
+  const match = displayTitle.match(/^([a-z]+(?:-[a-z]+){2})\s{2,}(.+)$/);
+  if (match) {
+    return { name: match[1] ?? 'cluster', title: match[2] ?? displayTitle };
+  }
+  return { name: formatClusterShortName(displayTitle), title: displayTitle || 'Untitled cluster' };
+}
+
+export function renderMarkdownForTerminal(markdown: string): string {
+  let inFence = false;
+  const rendered = markdown.split(/\r?\n/).map((line) => {
+    if (/^```/.test(line.trim())) {
+      inFence = !inFence;
+      return '{gray-fg}--- code ---{/gray-fg}';
+    }
+    if (inFence) {
+      return `{gray-fg}${escapeBlessedText(line)}{/gray-fg}`;
+    }
+    const heading = line.match(/^(#{1,6})\s+(.+)$/);
+    if (heading) {
+      return `{bold}${escapeBlessedText(heading[2] ?? '')}{/bold}`;
+    }
+    const quote = line.match(/^>\s?(.*)$/);
+    if (quote) {
+      return `{gray-fg}> ${renderInlineMarkdown(quote[1] ?? '')}{/gray-fg}`;
+    }
+    const listItem = line.match(/^(\s*)([-*+]|\d+[.)])\s+(.+)$/);
+    if (listItem) {
+      const indent = listItem[1] ?? '';
+      return `${indent}- ${renderInlineMarkdown(listItem[3] ?? '')}`;
+    }
+    return renderInlineMarkdown(line);
+  });
+  return rendered.join('\n').replace(/\n{4,}/g, '\n\n\n').trimEnd();
+}
+
+type InlineMarkdownSegment =
+  | { kind: 'text'; value: string }
+  | { kind: 'link'; label: string; url: string };
+
+function renderInlineMarkdown(value: string): string {
+  const segments: InlineMarkdownSegment[] = [];
+  const markdownLinkPattern = /\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g;
+  let cursor = 0;
+
+  for (const match of value.matchAll(markdownLinkPattern)) {
+    const index = match.index ?? 0;
+    if (index > cursor) {
+      pushBareLinkSegments(value.slice(cursor, index), segments);
+    }
+    segments.push({ kind: 'link', label: match[1] ?? '', url: match[2] ?? '' });
+    cursor = index + match[0].length;
+  }
+
+  if (cursor < value.length) {
+    pushBareLinkSegments(value.slice(cursor), segments);
+  }
+
+  return segments.map((segment) => (segment.kind === 'link' ? formatTerminalLink(segment.url, segment.label) : renderInlineText(segment.value))).join('');
+}
+
+function pushBareLinkSegments(value: string, segments: InlineMarkdownSegment[]): void {
+  const bareLinkPattern = /https?:\/\/[^\s)]+/g;
+  let cursor = 0;
+  for (const match of value.matchAll(bareLinkPattern)) {
+    const index = match.index ?? 0;
+    if (index > cursor) {
+      segments.push({ kind: 'text', value: value.slice(cursor, index) });
+    }
+    const url = match[0];
+    segments.push({ kind: 'link', label: url, url });
+    cursor = index + url.length;
+  }
+  if (cursor < value.length) {
+    segments.push({ kind: 'text', value: value.slice(cursor) });
+  }
+}
+
+function renderInlineText(value: string): string {
+  return escapeBlessedText(value)
+    .replace(/`([^`]+)`/g, '{yellow-fg}$1{/yellow-fg}')
+    .replace(/\*\*([^*]+)\*\*/g, '{bold}$1{/bold}');
+}
+
+function formatTerminalLink(url: string, label: string): string {
+  const escapedUrl = url.replace(/[\u0007\u001b]/g, '');
+  return `\u001b]8;;${escapedUrl}\u0007${escapeBlessedText(label)}\u001b]8;;\u0007`;
 }
 
 function applyRect(element: blessed.Widgets.BoxElement | blessed.Widgets.ListElement, rect: { top: number; left: number; width: number; height: number }): void {
@@ -1276,10 +1365,11 @@ export function parseOwnerRepoValue(value: string): { owner: string; repo: strin
 }
 
 export function formatClusterListLabel(cluster: TuiClusterSummary): string {
-  const countLabel = `${cluster.totalCount} ${cluster.totalCount === 1 ? 'item' : 'items'}`.padStart(7);
-  const mixLabel = `${cluster.pullRequestCount}P/${cluster.issueCount}I`.padStart(6);
-  const updated = formatClusterDateColumn(cluster.latestUpdatedAt);
-  return `${countLabel}  ${formatClusterShortName(cluster.displayTitle).padEnd(24).slice(0, 24)}  C${cluster.clusterId}  ${mixLabel}  ${updated}`;
+  const countLabel = String(cluster.totalCount).padStart(3);
+  const mixLabel = `${cluster.issueCount}I/${cluster.pullRequestCount}P`.padStart(7);
+  const updated = formatRelativeTime(cluster.latestUpdatedAt).padStart(8);
+  const title = splitClusterDisplayTitle(cluster.displayTitle);
+  return `${countLabel}  ${title.name.padEnd(22).slice(0, 22)}  ${title.title.padEnd(56).slice(0, 56)}  ${mixLabel}  ${updated}`;
 }
 
 export function formatClusterShortName(title: string, maxWords = 3): string {
@@ -1332,26 +1422,4 @@ export function formatClusterDateColumn(value: string | null, locales?: Intl.Loc
   const date = ordering[0] === 'day' ? `${day}-${month}` : `${month}-${day}`;
 
   return `${date} ${hour}:${minute}`;
-}
-
-function formatRelativeTime(value: string | null, now: Date = new Date()): string {
-  if (!value) return 'never';
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  const diffMs = Math.max(0, now.getTime() - parsed.getTime());
-  const minuteMs = 60_000;
-  const hourMs = 60 * minuteMs;
-  const dayMs = 24 * hourMs;
-
-  if (diffMs < hourMs) {
-    const minutes = Math.max(1, Math.floor(diffMs / minuteMs));
-    return `${minutes}m ago`;
-  }
-  if (diffMs < dayMs) {
-    return `${Math.floor(diffMs / hourMs)}h ago`;
-  }
-  if (diffMs < 14 * dayMs) {
-    return `${Math.floor(diffMs / dayMs)}d ago`;
-  }
-  return parsed.toISOString().slice(0, 10);
 }

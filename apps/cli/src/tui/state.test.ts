@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildMemberRows, cycleFocusPane, cycleMinSizeFilter, cycleSortMode, findSelectableIndex, moveSelectableIndex, preserveSelectedId, applyClusterFilters } from './state.js';
+import { buildMemberRows, cycleFocusPane, cycleMinSizeFilter, cycleSortMode, findSelectableIndex, formatRelativeTime, moveSelectableIndex, preserveSelectedId, applyClusterFilters } from './state.js';
 import type { TuiClusterDetail, TuiClusterSummary } from '@ghcrawl/api-core';
 
 test('cycleSortMode toggles size and recent', () => {
@@ -21,6 +21,13 @@ test('cycleMinSizeFilter rotates through presets', () => {
 test('cycleFocusPane moves forward and backward', () => {
   assert.equal(cycleFocusPane('clusters', 1), 'members');
   assert.equal(cycleFocusPane('clusters', -1), 'detail');
+});
+
+test('formatRelativeTime returns compact human readable ages', () => {
+  const now = new Date('2026-04-24T12:00:00Z');
+  assert.equal(formatRelativeTime('2026-04-24T11:58:00Z', now), '2m ago');
+  assert.equal(formatRelativeTime('2026-04-24T06:00:00Z', now), '6h ago');
+  assert.equal(formatRelativeTime('2026-04-18T12:00:00Z', now), '6d ago');
 });
 
 test('applyClusterFilters sorts by recent and size and respects min size/search', () => {
@@ -123,6 +130,7 @@ test('buildMemberRows groups issues and pull requests and selection skips header
 
   const rows = buildMemberRows(detail);
   assert.equal(rows[0]?.selectable, false);
+  assert.match(rows[1]?.label ?? '', /#42\s+\d+d ago|#42\s+2026-03-09/);
   assert.equal(findSelectableIndex(rows, 10), 1);
   assert.equal(moveSelectableIndex(rows, 1, 1), 3);
 });

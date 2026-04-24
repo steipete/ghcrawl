@@ -113,9 +113,32 @@ function compareClusters(left: TuiClusterSummary, right: TuiClusterSummary, sort
 }
 
 function formatMemberLabel(number: number, title: string, updatedAtGh: string | null, isClosed: boolean): string {
-  const updated = updatedAtGh ? updatedAtGh.slice(5, 16).replace('T', ' ') : 'unknown';
+  const updated = formatRelativeTime(updatedAtGh);
   const label = escapeBlessedInline(`#${number}  ${updated}  ${title}`);
   return isClosed ? `{gray-fg}${label}{/gray-fg}` : label;
+}
+
+export function formatRelativeTime(value: string | null, now: Date = new Date()): string {
+  if (!value) return 'never';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  const diffMs = Math.max(0, now.getTime() - parsed.getTime());
+  const minuteMs = 60_000;
+  const hourMs = 60 * minuteMs;
+  const dayMs = 24 * hourMs;
+
+  if (diffMs < minuteMs) return 'now';
+  if (diffMs < hourMs) {
+    const minutes = Math.max(1, Math.floor(diffMs / minuteMs));
+    return `${minutes}m ago`;
+  }
+  if (diffMs < dayMs) {
+    return `${Math.floor(diffMs / hourMs)}h ago`;
+  }
+  if (diffMs < 14 * dayMs) {
+    return `${Math.floor(diffMs / dayMs)}d ago`;
+  }
+  return parsed.toISOString().slice(0, 10);
 }
 
 function escapeBlessedInline(value: string): string {

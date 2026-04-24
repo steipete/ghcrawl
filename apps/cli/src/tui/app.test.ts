@@ -11,8 +11,10 @@ import {
   formatClusterShortName,
   getRepositoryChoices,
   parseOwnerRepoValue,
+  renderMarkdownForTerminal,
   renderDetailPane,
   resolveBlessedTerminal,
+  splitClusterDisplayTitle,
 } from './app.js';
 
 test('escapeBlessedText escapes blessed tag delimiters', () => {
@@ -70,13 +72,14 @@ test('renderDetailPane escapes user-provided text before rendering into a tags-e
   };
 
   const rendered = renderDetailPane(detail, cluster, 'detail');
-  assert.match(rendered, /Cluster 1 \(#42 representative issue\)/);
+  assert.match(rendered, /C1 \(#42 representative issue\)/);
   assert.match(rendered, /Bad \\{bold\\}title\\{\/bold\\}/);
   assert.match(rendered, /LLM Summary:/);
+  assert.match(rendered, /Main/);
   assert.match(rendered, /Body with \\{red-fg\\}tags\\{\/red-fg\\}/);
   assert.match(rendered, /Summary \\{yellow-fg\\}text\\{\/yellow-fg\\}/);
   assert.match(rendered, /Neighbor \\{blue-fg\\}title\\{\/blue-fg\\}/);
-  assert.ok(rendered.indexOf('LLM Summary:') < rendered.indexOf('{bold}Body{/bold}'));
+  assert.ok(rendered.indexOf('LLM Summary:') < rendered.indexOf('{bold}Main{/bold}'));
 });
 
 test('parseOwnerRepoValue accepts owner slash repo values and rejects invalid ones', () => {
@@ -96,10 +99,10 @@ test('formatClusterDateColumn follows locale month/day ordering while keeping fi
   assert.equal(formatClusterDateColumn(iso, 'en-GB'), '10-03 16:04');
 });
 
-test('formatClusterListLabel keeps counts first and adds a short cluster name', () => {
+test('formatClusterListLabel keeps counts first and splits cluster name from title', () => {
   const label = formatClusterListLabel({
     clusterId: 1507,
-    displayTitle: 'Fix: dedupe section title/desc in single-section config view',
+    displayTitle: 'alpha-beta-gamma  Fix: dedupe section title/desc in single-section config view',
     isClosed: false,
     closedAtLocal: null,
     closeReasonLocal: null,
@@ -113,13 +116,34 @@ test('formatClusterListLabel keeps counts first and adds a short cluster name', 
     searchText: 'fix dedupe section',
   });
 
-  assert.match(label, /3 items\s+dedupe section title\/des\s+C1507\s+3P\/0I\s+04-24 07:29/);
+  assert.match(label, /^\s*3\s+alpha-beta-gamma\s+Fix: dedupe section title\/desc/);
+  assert.match(label, /0I\/3P/);
+  assert.doesNotMatch(label, /items/);
 });
 
 test('formatClusterShortName returns the first meaningful words', () => {
   assert.equal(formatClusterShortName('[codex] fix agent session-id routing'), 'agent session-id routing');
   assert.equal(formatClusterShortName('fix(agents): exclude volatile inbound metadata'), 'agents exclude volatile');
   assert.equal(formatClusterShortName(''), 'untitled');
+});
+
+test('splitClusterDisplayTitle separates stable slug from representative title', () => {
+  assert.deepEqual(splitClusterDisplayTitle('alpha-beta-gamma  Fix gateway timeout'), {
+    name: 'alpha-beta-gamma',
+    title: 'Fix gateway timeout',
+  });
+  assert.equal(splitClusterDisplayTitle('Fix gateway timeout').name, 'gateway timeout');
+});
+
+test('renderMarkdownForTerminal formats common markdown without exposing blessed tags', () => {
+  const rendered = renderMarkdownForTerminal(
+    ['# Heading {boom}', '- **bold** and `code`', '[site](https://example.com/path)', 'https://example.com/raw'].join('\n'),
+  );
+
+  assert.match(rendered, /\{bold\}Heading \\{boom\\}\{\/bold\}/);
+  assert.match(rendered, /- \{bold\}bold\{\/bold\} and \{yellow-fg\}code\{\/yellow-fg\}/);
+  assert.match(rendered, /\x1B\]8;;https:\/\/example\.com\/path/);
+  assert.match(rendered, /\x1B\]8;;https:\/\/example\.com\/raw/);
 });
 
 test('getRepositoryChoices sorts by most recent update and includes the new-repo action', () => {
