@@ -258,11 +258,12 @@ test('persistent cluster store records code snapshots, changed files, and hunk s
       signature,
     });
 
-    const snapshot = db.prepare('select files_changed, additions, deletions, patch_digest from thread_code_snapshots where id = ?').get(snapshotId) as {
+    const snapshot = db.prepare('select files_changed, additions, deletions, patch_digest, raw_diff_blob_id from thread_code_snapshots where id = ?').get(snapshotId) as {
       files_changed: number;
       additions: number;
       deletions: number;
       patch_digest: string;
+      raw_diff_blob_id: number;
     };
     const file = db.prepare('select path, patch_blob_id from thread_changed_files where snapshot_id = ?').get(snapshotId) as {
       path: string;
@@ -270,12 +271,11 @@ test('persistent cluster store records code snapshots, changed files, and hunk s
     };
     const hunkCount = db.prepare('select count(*) as count from thread_hunk_signatures where snapshot_id = ?').get(snapshotId) as { count: number };
 
-    assert.deepEqual(snapshot, {
-      files_changed: 1,
-      additions: 1,
-      deletions: 1,
-      patch_digest: signature.patchDigest,
-    });
+    assert.equal(snapshot.files_changed, 1);
+    assert.equal(snapshot.additions, 1);
+    assert.equal(snapshot.deletions, 1);
+    assert.equal(snapshot.patch_digest, signature.patchDigest);
+    assert.ok(snapshot.raw_diff_blob_id > 0);
     assert.equal(file.path, 'packages/api-core/src/cache.ts');
     assert.ok(file.patch_blob_id > 0);
     assert.equal(hunkCount.count, 1);
@@ -329,6 +329,18 @@ test('persistent cluster store keeps large code patches out of SQLite', () => {
     assert.equal(blob.inline_text, null);
     assert.ok(blob.storage_path);
     assert.ok(fs.existsSync(path.join(storeRoot, blob.storage_path)));
+    const rawDiffBlob = db
+      .prepare(
+        `select b.storage_kind, b.storage_path, b.inline_text
+         from thread_code_snapshots s
+         join blobs b on b.id = s.raw_diff_blob_id
+         where s.id = ?`,
+      )
+      .get(snapshotId) as { storage_kind: string; storage_path: string | null; inline_text: string | null };
+    assert.equal(rawDiffBlob.storage_kind, 'file');
+    assert.equal(rawDiffBlob.inline_text, null);
+    assert.ok(rawDiffBlob.storage_path);
+    assert.ok(fs.existsSync(path.join(storeRoot, rawDiffBlob.storage_path)));
   } finally {
     db.close();
     fs.rmSync(storeRoot, { recursive: true, force: true });

@@ -270,17 +270,33 @@ export function upsertThreadCodeSnapshot(
   const filesChanged = params.signature.files.length;
   const additions = params.signature.files.reduce((sum, file) => sum + file.additions, 0);
   const deletions = params.signature.files.reduce((sum, file) => sum + file.deletions, 0);
+  const rawDiff = params.signature.files
+    .filter((file) => file.patch)
+    .map((file) => {
+      const previous = file.previousFilename ?? file.filename;
+      return [`diff --git a/${previous} b/${file.filename}`, file.patch].join('\n');
+    })
+    .join('\n');
+  const rawDiffBlobId =
+    rawDiff.length > 0
+      ? upsertTextBlob(db, {
+          text: rawDiff,
+          mediaType: 'text/x-diff',
+          storeRoot: params.storeRoot,
+        })
+      : null;
   db.prepare(
     `insert into thread_code_snapshots (
        thread_revision_id, base_sha, head_sha, files_changed, additions, deletions, patch_digest, raw_diff_blob_id, created_at
-     ) values (?, ?, ?, ?, ?, ?, ?, null, ?)
+     ) values (?, ?, ?, ?, ?, ?, ?, ?, ?)
      on conflict(thread_revision_id) do update set
        base_sha = excluded.base_sha,
        head_sha = excluded.head_sha,
        files_changed = excluded.files_changed,
        additions = excluded.additions,
        deletions = excluded.deletions,
-       patch_digest = excluded.patch_digest`,
+       patch_digest = excluded.patch_digest,
+       raw_diff_blob_id = excluded.raw_diff_blob_id`,
   ).run(
     params.threadRevisionId,
     params.baseSha ?? null,
@@ -289,6 +305,7 @@ export function upsertThreadCodeSnapshot(
     additions,
     deletions,
     params.signature.patchDigest,
+    rawDiffBlobId,
     timestamp,
   );
   const snapshot = db
