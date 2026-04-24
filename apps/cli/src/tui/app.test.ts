@@ -17,6 +17,7 @@ import {
   renderDetailPane,
   resolveBlessedTerminal,
   resolveClusterHeaderSortFromClick,
+  renderSummarySections,
   splitClusterDisplayTitle,
 } from './app.js';
 
@@ -77,12 +78,12 @@ test('renderDetailPane escapes user-provided text before rendering into a tags-e
   const rendered = renderDetailPane(detail, cluster, 'detail');
   assert.match(rendered, /C1 \(#42 representative issue\)/);
   assert.match(rendered, /Bad \\{bold\\}title\\{\/bold\\}/);
-  assert.match(rendered, /LLM Summary:/);
+  assert.match(rendered, /Cluster signal:/);
   assert.match(rendered, /Main/);
   assert.match(rendered, /Body with \\{red-fg\\}tags\\{\/red-fg\\}/);
   assert.match(rendered, /Summary \\{yellow-fg\\}text\\{\/yellow-fg\\}/);
   assert.match(rendered, /Neighbor \\{blue-fg\\}title\\{\/blue-fg\\}/);
-  assert.ok(rendered.indexOf('LLM Summary:') < rendered.indexOf('{bold}Main{/bold}'));
+  assert.ok(rendered.indexOf('Cluster signal:') < rendered.indexOf('{bold}Main{/bold}'));
 });
 
 test('renderDetailPane gives useful empty detail content before a cluster is selected', () => {
@@ -169,6 +170,20 @@ test('renderMarkdownForTerminal formats common markdown without exposing blessed
   assert.match(rendered, /site <https:\/\/example\.com\/path>/);
   assert.match(rendered, /https:\/\/example\.com\/raw/);
   assert.doesNotMatch(rendered, /\x1B\]8;;/);
+});
+
+test('renderSummarySections orders and labels LLM summaries for scanning', () => {
+  const rendered = renderSummarySections({
+    dedupe_summary: 'same failure mode',
+    problem_summary: '**cron** timeout',
+    maintainer_signal_summary: 'needs owner',
+    solution_summary: 'raise timeout',
+  });
+
+  assert.ok(rendered.indexOf('Purpose:') < rendered.indexOf('Solution:'));
+  assert.ok(rendered.indexOf('Solution:') < rendered.indexOf('Maintainer signal:'));
+  assert.ok(rendered.indexOf('Maintainer signal:') < rendered.indexOf('Cluster signal:'));
+  assert.match(rendered, /\{bold\}cron\{\/bold\} timeout/);
 });
 
 test('buildThreadContextMenuItems exposes thread actions for right-click menus', () => {

@@ -1227,12 +1227,7 @@ export function renderDetailPane(
   const closedLabel = thread.isClosed
     ? `{bold}Closed:{/bold} ${escapeBlessedText(thread.closedAtLocal ?? thread.closedAtGh ?? 'yes')} ${thread.closeReasonLocal ? `(${escapeBlessedText(thread.closeReasonLocal)})` : ''}`.trimEnd()
     : '{bold}Closed:{/bold} no';
-  const summaries = Object.entries(threadDetail.summaries)
-    .map(([key, value]) => {
-      const label = key === 'dedupe_summary' ? 'LLM Summary' : key;
-      return `{bold}${escapeBlessedText(label)}:{/bold}\n${escapeBlessedText(value)}`;
-    })
-    .join('\n\n');
+  const summaries = renderSummarySections(threadDetail.summaries);
   const neighbors =
     threadDetail.neighbors.length > 0
       ? threadDetail.neighbors
@@ -1298,6 +1293,25 @@ export function renderMarkdownForTerminal(markdown: string): string {
     return renderInlineMarkdown(line);
   });
   return rendered.join('\n').replace(/\n{4,}/g, '\n\n\n').trimEnd();
+}
+
+type SummaryKey = NonNullable<keyof TuiThreadDetail['summaries']>;
+
+const SUMMARY_SECTION_ORDER: SummaryKey[] = ['problem_summary', 'solution_summary', 'maintainer_signal_summary', 'dedupe_summary'];
+
+export function renderSummarySections(summaries: TuiThreadDetail['summaries']): string {
+  return SUMMARY_SECTION_ORDER.flatMap((key) => {
+    const value = summaries[key];
+    if (!value) return [];
+    return [`{bold}${formatSummaryLabel(key)}:{/bold}\n${renderMarkdownForTerminal(value)}`];
+  }).join('\n\n');
+}
+
+function formatSummaryLabel(key: SummaryKey): string {
+  if (key === 'problem_summary') return 'Purpose';
+  if (key === 'solution_summary') return 'Solution';
+  if (key === 'maintainer_signal_summary') return 'Maintainer signal';
+  return 'Cluster signal';
 }
 
 type InlineMarkdownSegment =
