@@ -1,7 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildMemberRows, cycleFocusPane, cycleMinSizeFilter, cycleSortMode, findSelectableIndex, formatRelativeTime, moveSelectableIndex, preserveSelectedId, applyClusterFilters } from './state.js';
+import {
+  applyClusterFilters,
+  buildMemberRows,
+  cycleFocusPane,
+  cycleMinSizeFilter,
+  cycleSortMode,
+  findSelectableIndex,
+  formatMemberListHeader,
+  formatRelativeTime,
+  moveSelectableIndex,
+  preserveSelectedId,
+} from './state.js';
 import type { TuiClusterDetail, TuiClusterSummary } from '@ghcrawl/api-core';
 
 test('cycleSortMode toggles size and recent', () => {
@@ -132,8 +143,13 @@ test('buildMemberRows groups issues and pull requests and selection skips header
 
   const rows = buildMemberRows(detail);
   assert.equal(rows[0]?.selectable, false);
-  assert.match(rows[1]?.label ?? '', /#42\s+\d+d ago/);
-  assert.match(rows[3]?.label ?? '', /closed\s+\d+d ago\s+Bug: PR one/);
-  assert.equal(findSelectableIndex(rows, 10), 1);
-  assert.equal(moveSelectableIndex(rows, 1, 1), 3);
+  assert.match(rows[0]?.label ?? '', /number\s+state\s+updated\s+title/);
+  assert.match(rows[2]?.label ?? '', /#42\s+open\s+\d+d ago\s+Issue one/);
+  assert.match(rows[4]?.label ?? '', /closed\s+\d+d ago\s+Bug: PR one/);
+  assert.equal(findSelectableIndex(rows, 10), 2);
+  assert.equal(moveSelectableIndex(rows, 2, 1), 4);
+});
+
+test('formatMemberListHeader aligns the member table columns', () => {
+  assert.equal(formatMemberListHeader(), 'number  state  updated title');
 });

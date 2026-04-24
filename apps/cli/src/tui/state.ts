@@ -52,7 +52,7 @@ export function buildMemberRows(detail: TuiClusterDetail | null, options?: { inc
   const visibleMembers = includeClosedMembers ? detail.members : detail.members.filter((member) => !member.isClosed);
   const issues = visibleMembers.filter((member) => member.kind === 'issue');
   const pullRequests = visibleMembers.filter((member) => member.kind === 'pull_request');
-  const rows: MemberListRow[] = [];
+  const rows: MemberListRow[] = [{ key: 'members-table-header', label: `{bold}${formatMemberListHeader()}{/bold}`, selectable: false }];
 
   if (issues.length > 0) {
     rows.push({ key: 'issues-header', label: `ISSUES (${issues.length})`, selectable: false });
@@ -118,9 +118,15 @@ function compareClusters(left: TuiClusterSummary, right: TuiClusterSummary, sort
 
 function formatMemberLabel(number: number, title: string, updatedAtGh: string | null, isClosed: boolean): string {
   const updated = formatRelativeTime(updatedAtGh);
-  const status = isClosed ? 'closed  ' : '';
-  const label = escapeBlessedInline(`#${number}  ${status}${updated}  ${normalizeMemberTitle(title)}`);
+  const numberLabel = `#${number}`.padEnd(8).slice(0, 8);
+  const status = (isClosed ? 'closed' : 'open').padEnd(7);
+  const age = updated.padEnd(8).slice(0, 8);
+  const label = escapeBlessedInline(`${numberLabel}${status}${age}${normalizeMemberTitle(title)}`);
   return isClosed ? `{gray-fg}${label}{/gray-fg}` : label;
+}
+
+export function formatMemberListHeader(): string {
+  return `${'number'.padEnd(8)}${'state'.padEnd(7)}${'updated'.padEnd(8)}title`;
 }
 
 export function formatRelativeTime(value: string | null, now: Date = new Date()): string {
