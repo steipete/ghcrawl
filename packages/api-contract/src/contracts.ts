@@ -247,6 +247,15 @@ export const closeClusterRequestSchema = z.object({
 });
 export type CloseClusterRequest = z.infer<typeof closeClusterRequestSchema>;
 
+export const excludeClusterMemberRequestSchema = z.object({
+  owner: z.string(),
+  repo: z.string(),
+  clusterId: z.number().int().positive(),
+  threadNumber: z.number().int().positive(),
+  reason: z.string().trim().min(1).optional(),
+});
+export type ExcludeClusterMemberRequest = z.infer<typeof excludeClusterMemberRequestSchema>;
+
 export const closeResponseSchema = z.object({
   ok: z.boolean(),
   repository: repositorySchema,
@@ -256,6 +265,17 @@ export const closeResponseSchema = z.object({
   message: z.string(),
 });
 export type CloseResponse = z.infer<typeof closeResponseSchema>;
+
+export const clusterOverrideResponseSchema = z.object({
+  ok: z.boolean(),
+  repository: repositorySchema,
+  clusterId: z.number().int().positive(),
+  thread: threadSchema,
+  action: z.enum(['exclude']),
+  state: z.enum(['removed_by_user', 'blocked_by_override']),
+  message: z.string(),
+});
+export type ClusterOverrideResponse = z.infer<typeof clusterOverrideResponseSchema>;
 
 export const rerunActionSchema = z.enum(['summarize', 'embed', 'cluster']);
 export type RerunAction = z.infer<typeof rerunActionSchema>;

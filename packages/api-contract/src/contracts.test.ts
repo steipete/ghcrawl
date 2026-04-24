@@ -1,7 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { actionRequestSchema, healthResponseSchema, neighborsResponseSchema, searchResponseSchema } from './contracts.js';
+import {
+  actionRequestSchema,
+  clusterOverrideResponseSchema,
+  excludeClusterMemberRequestSchema,
+  healthResponseSchema,
+  neighborsResponseSchema,
+  searchResponseSchema,
+} from './contracts.js';
 
 test('health schema accepts configured status payload', () => {
   const parsed = healthResponseSchema.parse({
@@ -44,6 +51,56 @@ test('action request accepts optional thread number', () => {
   });
 
   assert.equal(parsed.threadNumber, 42);
+});
+
+test('exclude cluster member request trims optional reason', () => {
+  const parsed = excludeClusterMemberRequestSchema.parse({
+    owner: 'openclaw',
+    repo: 'openclaw',
+    clusterId: 7,
+    threadNumber: 42,
+    reason: '  confirmed separate bug  ',
+  });
+
+  assert.equal(parsed.reason, 'confirmed separate bug');
+});
+
+test('cluster override response accepts durable removal state', () => {
+  const parsed = clusterOverrideResponseSchema.parse({
+    ok: true,
+    repository: {
+      id: 1,
+      owner: 'openclaw',
+      name: 'openclaw',
+      fullName: 'openclaw/openclaw',
+      githubRepoId: null,
+      updatedAt: new Date().toISOString(),
+    },
+    clusterId: 7,
+    thread: {
+      id: 10,
+      repoId: 1,
+      number: 42,
+      kind: 'issue',
+      state: 'open',
+      isClosed: false,
+      closedAtGh: null,
+      closedAtLocal: null,
+      closeReasonLocal: null,
+      title: 'Downloader hangs',
+      body: 'The transfer never finishes.',
+      authorLogin: 'alice',
+      htmlUrl: 'https://github.com/openclaw/openclaw/issues/42',
+      labels: ['bug'],
+      updatedAtGh: new Date().toISOString(),
+      clusterId: null,
+    },
+    action: 'exclude',
+    state: 'removed_by_user',
+    message: 'Removed issue #42 from cluster 7.',
+  });
+
+  assert.equal(parsed.state, 'removed_by_user');
 });
 
 test('neighbors schema accepts repository, source thread, and neighbor list', () => {
