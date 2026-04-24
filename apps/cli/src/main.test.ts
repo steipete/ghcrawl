@@ -28,6 +28,10 @@ function makeRunContext(): { env: NodeJS.ProcessEnv; cwd: string; cleanup: () =>
     env: {
       ...process.env,
       HOME: home,
+      GITHUB_TOKEN: undefined,
+      OPENAI_API_KEY: undefined,
+      GHCRAWL_SUMMARY_MODEL: undefined,
+      GHCRAWL_API_PORT: undefined,
       XDG_CONFIG_HOME: undefined,
       APPDATA: undefined,
     },
@@ -190,8 +194,9 @@ test('configure prints current persisted settings and cost estimates', async () 
   }
 
   assert.match(stdout.read(), /ghcrawl configure/);
-  assert.match(stdout.read(), /summary model: gpt-5-mini/);
+  assert.match(stdout.read(), /summary model: gpt-5\.4/);
   assert.match(stdout.read(), /embedding basis: title_original/);
+  assert.match(stdout.read(), /gpt-5\.4: not estimated locally/);
   assert.match(stdout.read(), /gpt-5\.4-mini: ~\$30 USD/);
 });
 

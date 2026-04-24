@@ -330,9 +330,10 @@ test('persistent cluster store records structured key summaries', () => {
       summaryKind: 'llm_key_3line',
       promptVersion: 'llm-key-summary-v1',
       provider: 'openai',
-      model: 'gpt-5-mini',
+      model: 'gpt-5.4',
       inputHash: 'input-hash',
       summary: {
+        purpose: 'Keep cache entries distinct for repeated API reads.',
         intent: 'Fix cache collision.',
         surface: 'API core cache.',
         mechanism: 'Changes cache key derivation.',
@@ -344,6 +345,7 @@ test('persistent cluster store records structured key summaries', () => {
       key_text: string;
     };
     assert.equal(row.input_hash, 'input-hash');
+    assert.match(row.key_text, /purpose: Keep cache entries distinct/);
     assert.match(row.key_text, /intent: Fix cache collision\./);
     assert.match(row.key_text, /surface: API core cache\./);
   } finally {

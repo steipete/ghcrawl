@@ -183,13 +183,13 @@ Use `configure` to inspect or change the active summary model and embedding basi
 
 ```bash
 ghcrawl configure
-ghcrawl configure --summary-model gpt-5.4-mini
+ghcrawl configure --summary-model gpt-5.4
 ghcrawl configure --embedding-basis title_original
 ```
 
 Current defaults:
 
-- summary model: `gpt-5-mini`
+- summary model: `gpt-5.4`
 - embedding basis: `title_original` (`title + original body`)
 - vector backend: `vectorlite`
 
@@ -250,10 +250,11 @@ On a real local run against roughly `12k` issues plus about `1.2x` related PR an
 
 For one-time summary migration planning on a repo around the size of `openclaw/openclaw` (`~20k` issues and PRs), `ghcrawl configure` reports these operator estimates using the April 1, 2026 USD pricing assumptions for this release:
 
+- `gpt-5.4`: not estimated locally in this release
 - `gpt-5-mini`: about **$12 USD** one time
 - `gpt-5.4-mini`: about **$30 USD** one time
 
-`gpt-5-mini` is the default to keep that migration cost lower. `gpt-5.4-mini` is available when you want higher-quality summaries and are comfortable with the higher one-time spend.
+`gpt-5.4` is the default summary model. The mini model estimates are kept as operator planning references for lower-cost migrations.
 
 This screenshot is the reference point for that estimate:
 

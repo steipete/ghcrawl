@@ -788,7 +788,7 @@ test('summarizeRepository prices progress output using the configured summary mo
   }
 });
 
-test('generateKeySummaries stores cached 3-line key summaries', async () => {
+test('generateKeySummaries stores cached structured key summaries', async () => {
   let calls = 0;
   const service = makeTestService(
     {
@@ -810,6 +810,7 @@ test('generateKeySummaries stores cached 3-line key summaries', async () => {
         calls += 1;
         return {
           summary: {
+            purpose: 'Keep downloads from hanging repository sync.',
             intent: 'Fix retry loop.',
             surface: 'Downloader.',
             mechanism: 'Changes timeout handling.',
@@ -1061,7 +1062,7 @@ test('embedRepository batches multi-source embeddings and skips unchanged inputs
   }
 });
 
-test('embedRepository can use stored 3-line key summaries as active vector input', async () => {
+test('embedRepository can use stored structured key summaries as active vector input', async () => {
   let embeddedText = '';
   const service = new GHCrawlService({
     config: makeTestConfig({ embeddingBasis: 'llm_key_summary' }),
@@ -1118,13 +1119,13 @@ test('embedRepository can use stored 3-line key summaries as active vector input
       .run(
         100,
         'llm_key_3line',
-        'llm-key-summary-v1',
+        'llm-key-summary-v2',
         'openai',
         'gpt-5-mini',
         'input-hash',
         'output-hash',
         null,
-        'intent: Fix retry loop.\nsurface: Downloader.\nmechanism: Changes timeout handling.',
+        'purpose: Keep downloads from hanging repository sync.\nintent: Fix retry loop.\nsurface: Downloader.\nmechanism: Changes timeout handling.',
         now,
       );
 

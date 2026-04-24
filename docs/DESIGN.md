@@ -136,7 +136,7 @@ Environment variables:
 - `OPENAI_API_KEY`
 - `GHCRAWL_DB_PATH` with default `data/ghcrawl.db`
 - `GHCRAWL_API_PORT` with default `5179`
-- `GHCRAWL_SUMMARY_MODEL` with default `gpt-5-mini`
+- `GHCRAWL_SUMMARY_MODEL` with default `gpt-5.4`
 - `GHCRAWL_EMBED_MODEL` with default `text-embedding-3-small`
 - `GHCRAWL_OPENSEARCH_URL` optional
 - `GHCRAWL_OPENSEARCH_INDEX` optional
@@ -278,7 +278,7 @@ Use OpenAI for two distinct jobs:
 
 Default models:
 
-- summarization: `gpt-5-mini`
+- summarization: `gpt-5.4`
 - embeddings: `text-embedding-3-small`
 
 Relevant official constraints to design around:

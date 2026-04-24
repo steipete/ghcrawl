@@ -62,12 +62,13 @@ type DoctorReport = DoctorResult & {
 type ConfigureReport = {
   configPath: string;
   updated: boolean;
-  summaryModel: 'gpt-5-mini' | 'gpt-5.4-mini';
+  summaryModel: 'gpt-5.4' | 'gpt-5-mini' | 'gpt-5.4-mini';
   embeddingBasis: 'title_original' | 'title_summary' | 'llm_key_summary';
   vectorBackend: 'vectorlite';
   costEstimateUsd: {
     sampleThreads: number;
     pricingDate: string;
+    gpt54: number | null;
     gpt5Mini: number;
     gpt54Mini: number;
   };
@@ -103,14 +104,14 @@ const COMMAND_SPECS: readonly CommandSpec[] = [
   },
   {
     name: 'configure',
-    synopsis: 'configure [--summary-model gpt-5-mini|gpt-5.4-mini] [--embedding-basis title_original|title_summary|llm_key_summary] [--json]',
+    synopsis: 'configure [--summary-model gpt-5.4|gpt-5-mini|gpt-5.4-mini] [--embedding-basis title_original|title_summary|llm_key_summary] [--json]',
     description: 'Show or update persisted summarization and embedding settings.',
     options: [
-      '--summary-model <model>  Select gpt-5-mini or gpt-5.4-mini for summarization',
+      '--summary-model <model>  Select gpt-5.4, gpt-5-mini, or gpt-5.4-mini for summarization',
       '--embedding-basis <basis>  Select title_original, title_summary, or llm_key_summary for active vectors',
       '--json  Emit machine-readable JSON output explicitly',
     ],
-    examples: ['ghcrawl configure', 'ghcrawl configure --summary-model gpt-5.4-mini', 'ghcrawl configure --embedding-basis title_original --json'],
+    examples: ['ghcrawl configure', 'ghcrawl configure --summary-model gpt-5.4', 'ghcrawl configure --embedding-basis title_original --json'],
     agentJson: true,
   },
   {
@@ -268,7 +269,7 @@ const COMMAND_SPECS: readonly CommandSpec[] = [
   {
     name: 'key-summaries',
     synopsis: 'key-summaries <owner/repo> [--number <thread>] [--limit <count>] [--json]',
-    description: 'Generate cached 3-line LLM key summaries for clustering enrichment.',
+    description: 'Generate cached structured LLM key summaries for clustering enrichment.',
     options: [
       '--number <thread>  Restrict key summary work to one thread',
       '--limit <count>  Limit the number of generated summaries',
@@ -726,7 +727,7 @@ function parseEnum<T extends string>(command: CommandName, flagName: string, val
 function buildConfigureReport(options: {
   configPath: string;
   updated: boolean;
-  summaryModel: 'gpt-5-mini' | 'gpt-5.4-mini';
+  summaryModel: 'gpt-5.4' | 'gpt-5-mini' | 'gpt-5.4-mini';
   embeddingBasis: 'title_original' | 'title_summary' | 'llm_key_summary';
   vectorBackend: 'vectorlite';
 }): ConfigureReport {
@@ -735,6 +736,7 @@ function buildConfigureReport(options: {
     costEstimateUsd: {
       sampleThreads: 20_000,
       pricingDate: 'April 1, 2026',
+      gpt54: null,
       gpt5Mini: 12,
       gpt54Mini: 30,
     },
@@ -788,7 +790,7 @@ export function formatConfigureReport(result: ConfigureReport): string {
     result.embeddingBasis === 'title_summary'
       ? 'title + dedupe summary'
       : result.embeddingBasis === 'llm_key_summary'
-        ? 'title + 3-line LLM key summary'
+        ? 'title + structured LLM key summary'
         : 'title + original body';
   const summaryModeNote =
     result.embeddingBasis === 'title_summary'
@@ -809,6 +811,7 @@ export function formatConfigureReport(result: ConfigureReport): string {
     '',
     `Estimated one-time summary cost for ~${result.costEstimateUsd.sampleThreads.toLocaleString()} threads`,
     `  pricing date: ${result.costEstimateUsd.pricingDate}`,
+    `  gpt-5.4: ${result.costEstimateUsd.gpt54 === null ? 'not estimated locally' : `~$${result.costEstimateUsd.gpt54.toFixed(0)} USD`}`,
     `  gpt-5-mini: ~$${result.costEstimateUsd.gpt5Mini.toFixed(0)} USD`,
     `  gpt-5.4-mini: ~$${result.costEstimateUsd.gpt54Mini.toFixed(0)} USD`,
     '',
@@ -981,7 +984,7 @@ export async function run(
           json: { type: 'boolean' },
         });
         const values = parsed.values as RepoCommandValues;
-        const summaryModel = parseEnum('configure', 'summary-model', values['summary-model'], ['gpt-5-mini', 'gpt-5.4-mini']);
+        const summaryModel = parseEnum('configure', 'summary-model', values['summary-model'], ['gpt-5.4', 'gpt-5-mini', 'gpt-5.4-mini']);
         const embeddingBasis = parseEnum('configure', 'embedding-basis', values['embedding-basis'], ['title_original', 'title_summary', 'llm_key_summary']);
         const current = getConfig();
         const stored = readPersistedConfig(loadConfigOptions);
@@ -1001,7 +1004,7 @@ export async function run(
         const result = buildConfigureReport({
           configPath: current.configPath,
           updated,
-          summaryModel: next.summaryModel as 'gpt-5-mini' | 'gpt-5.4-mini',
+          summaryModel: next.summaryModel as 'gpt-5.4' | 'gpt-5-mini' | 'gpt-5.4-mini',
           embeddingBasis: next.embeddingBasis as 'title_original' | 'title_summary' | 'llm_key_summary',
           vectorBackend: 'vectorlite',
         });

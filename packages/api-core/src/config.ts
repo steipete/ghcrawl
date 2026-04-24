@@ -323,7 +323,7 @@ export function loadConfig(options: LoadConfigOptions = {}): GitcrawlConfig {
     { source: 'env', value: getEnvString(env, 'GHCRAWL_SUMMARY_MODEL', 'GHCRAWL_SUMMARY_MODEL') },
     { source: 'config', value: stored.data.summaryModel },
     { source: 'dotenv', value: getDotenvString(dotenvValues, 'GHCRAWL_SUMMARY_MODEL', 'GHCRAWL_SUMMARY_MODEL') },
-    { source: 'default', value: 'gpt-5-mini' },
+    { source: 'default', value: 'gpt-5.4' },
   );
   const embedModel = pickDefined<string>(
     { source: 'env', value: getEnvString(env, 'GHCRAWL_EMBED_MODEL', 'GHCRAWL_EMBED_MODEL') },
@@ -376,7 +376,7 @@ export function loadConfig(options: LoadConfigOptions = {}): GitcrawlConfig {
     githubTokenSource: githubToken.source,
     openaiApiKey: openaiApiKey.value,
     openaiApiKeySource: openaiApiKey.source,
-    summaryModel: summaryModel.value ?? 'gpt-5-mini',
+    summaryModel: summaryModel.value ?? 'gpt-5.4',
     embedModel: embedModel.value ?? 'text-embedding-3-large',
     embeddingBasis: embeddingBasis.value ?? 'title_original',
     vectorBackend: vectorBackend.value ?? 'vectorlite',
