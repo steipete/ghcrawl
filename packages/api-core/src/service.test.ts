@@ -157,6 +157,50 @@ test('doctor explains when secrets are expected from 1Password CLI env injection
   }
 });
 
+test('listRunHistory returns recent runs across pipeline tables', () => {
+  const service = makeTestService({
+    checkAuth: async () => undefined,
+    getRepo: async () => ({}),
+    listRepositoryIssues: async () => [],
+    getIssue: async () => ({}),
+    getPull: async () => ({}),
+    listIssueComments: async () => [],
+    listPullReviews: async () => [],
+    listPullReviewComments: async () => [],
+    listPullFiles: async () => [],
+  });
+
+  try {
+    service.db
+      .prepare(
+        `insert into repositories (id, owner, name, full_name, github_repo_id, raw_json, updated_at)
+         values (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(1, 'openclaw', 'openclaw', 'openclaw/openclaw', '1', '{}', '2026-03-09T00:00:00Z');
+    service.db
+      .prepare(`insert into sync_runs (id, repo_id, scope, status, started_at, finished_at, stats_json) values (?, ?, ?, ?, ?, ?, ?)`)
+      .run(1, 1, 'openclaw/openclaw', 'completed', '2026-03-09T00:00:00Z', '2026-03-09T00:01:00Z', '{"threadsSynced":2}');
+    service.db
+      .prepare(`insert into cluster_runs (id, repo_id, scope, status, started_at, finished_at, error_text) values (?, ?, ?, ?, ?, ?, ?)`)
+      .run(2, 1, 'openclaw/openclaw', 'failed', '2026-03-09T00:02:00Z', '2026-03-09T00:03:00Z', 'boom');
+
+    const allRuns = service.listRunHistory({ owner: 'openclaw', repo: 'openclaw' });
+    assert.deepEqual(
+      allRuns.runs.map((run) => [run.runKind, run.status]),
+      [
+        ['cluster', 'failed'],
+        ['sync', 'completed'],
+      ],
+    );
+    assert.equal(allRuns.runs[1]?.stats?.threadsSynced, 2);
+
+    const syncRuns = service.listRunHistory({ owner: 'openclaw', repo: 'openclaw', kind: 'sync' });
+    assert.deepEqual(syncRuns.runs.map((run) => run.runKind), ['sync']);
+  } finally {
+    service.close();
+  }
+});
+
 test('syncRepository defaults to metadata-only mode, preserves thread kind, and tracks first/last pull timestamps', async () => {
   const messages: string[] = [];
   let listIssueCommentCalls = 0;

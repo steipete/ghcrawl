@@ -28,6 +28,7 @@ import {
   neighborsResponseSchema,
   refreshResponseSchema,
   repositoriesResponseSchema,
+  runHistoryResponseSchema,
   searchResponseSchema,
   syncResultSchema,
   threadsResponseSchema,
@@ -56,6 +57,8 @@ import {
   type RefreshResponse,
   type RepositoriesResponse,
   type RepositoryDto,
+  type RunHistoryResponse,
+  type RunKind,
   type SearchHitDto,
   type SearchMode,
   type SearchResponse,
@@ -734,6 +737,50 @@ export class GHCrawlService {
   listRepositories(): RepositoriesResponse {
     const rows = this.db.prepare('select * from repositories order by full_name asc').all() as Array<Record<string, unknown>>;
     return repositoriesResponseSchema.parse({ repositories: rows.map(repositoryToDto) });
+  }
+
+  listRunHistory(params: { owner: string; repo: string; kind?: RunKind; limit?: number }): RunHistoryResponse {
+    const repository = this.requireRepository(params.owner, params.repo);
+    const limit = Math.min(Math.max(params.limit ?? 20, 1), 200);
+    const tables: Array<{ kind: RunKind; table: RunTable }> = [
+      { kind: 'sync', table: 'sync_runs' },
+      { kind: 'summary', table: 'summary_runs' },
+      { kind: 'embedding', table: 'embedding_runs' },
+      { kind: 'cluster', table: 'cluster_runs' },
+    ];
+    const selectedTables = params.kind ? tables.filter((entry) => entry.kind === params.kind) : tables;
+    const sql = selectedTables
+      .map(
+        (entry) =>
+          `select '${entry.kind}' as run_kind, id, scope, status, started_at, finished_at, stats_json, error_text from ${entry.table} where repo_id = ?`,
+      )
+      .join(' union all ');
+    const rows = this.db
+      .prepare(`select * from (${sql}) order by started_at desc, id desc limit ?`)
+      .all(...selectedTables.map(() => repository.id), limit) as Array<{
+      run_kind: RunKind;
+      id: number;
+      scope: string;
+      status: string;
+      started_at: string;
+      finished_at: string | null;
+      stats_json: string | null;
+      error_text: string | null;
+    }>;
+
+    return runHistoryResponseSchema.parse({
+      repository,
+      runs: rows.map((row) => ({
+        runId: row.id,
+        runKind: row.run_kind,
+        scope: row.scope,
+        status: row.status,
+        startedAt: row.started_at,
+        finishedAt: row.finished_at,
+        stats: parseObjectJson(row.stats_json),
+        errorText: row.error_text,
+      })),
+    });
   }
 
   listThreads(params: { owner: string; repo: string; kind?: 'issue' | 'pull_request'; numbers?: number[]; includeClosed?: boolean }): ThreadsResponse {

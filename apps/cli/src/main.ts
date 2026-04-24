@@ -17,6 +17,7 @@ type CommandName =
   | 'version'
   | 'sync'
   | 'refresh'
+  | 'runs'
   | 'threads'
   | 'author'
   | 'close-thread'
@@ -158,6 +159,18 @@ const COMMAND_SPECS: readonly CommandSpec[] = [
       '--json  Emit machine-readable JSON output explicitly',
     ],
     examples: ['ghcrawl refresh openclaw/openclaw', 'ghcrawl refresh openclaw/openclaw --no-sync --json'],
+    agentJson: true,
+  },
+  {
+    name: 'runs',
+    synopsis: 'runs <owner/repo> [--kind sync|summary|embedding|cluster] [--limit <count>] [--json]',
+    description: 'List recent local pipeline runs and failures for one repo.',
+    options: [
+      '--kind sync|summary|embedding|cluster  Restrict to one run table',
+      '--limit <count>  Maximum number of records to return',
+      '--json  Emit machine-readable JSON output explicitly',
+    ],
+    examples: ['ghcrawl runs openclaw/openclaw --limit 20 --json', 'ghcrawl runs openclaw/openclaw --kind cluster --json'],
     agentJson: true,
   },
   {
@@ -1077,6 +1090,18 @@ export async function run(
         } finally {
           heapDiagnostics?.dispose();
         }
+      }
+      case 'runs': {
+        const { owner, repo, values } = parseRepoFlags('runs', rest);
+        const kind = parseEnum('runs', 'kind', values.kind, ['sync', 'summary', 'embedding', 'cluster']);
+        const result = getService().listRunHistory({
+          owner,
+          repo,
+          kind,
+          limit: typeof values.limit === 'string' ? parsePositiveInteger('limit', values.limit, 'runs') : undefined,
+        });
+        writeJson(stdout, result);
+        return;
       }
       case 'threads': {
         const { owner, repo, values } = parseRepoFlags('threads', rest);

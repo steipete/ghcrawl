@@ -14,6 +14,7 @@ import {
   includeClusterMemberRequestSchema,
   mergeClustersRequestSchema,
   neighborsResponseSchema,
+  runHistoryResponseSchema,
   searchResponseSchema,
   setClusterCanonicalRequestSchema,
   splitClusterRequestSchema,
@@ -60,6 +61,34 @@ test('action request accepts optional thread number', () => {
   });
 
   assert.equal(parsed.threadNumber, 42);
+});
+
+test('run history response accepts mixed pipeline records', () => {
+  const parsed = runHistoryResponseSchema.parse({
+    repository: {
+      id: 1,
+      owner: 'openclaw',
+      name: 'openclaw',
+      fullName: 'openclaw/openclaw',
+      githubRepoId: null,
+      updatedAt: new Date().toISOString(),
+    },
+    runs: [
+      {
+        runId: 7,
+        runKind: 'sync',
+        scope: 'openclaw/openclaw',
+        status: 'completed',
+        startedAt: new Date().toISOString(),
+        finishedAt: new Date().toISOString(),
+        stats: { threadsSynced: 2 },
+        errorText: null,
+      },
+    ],
+  });
+
+  assert.equal(parsed.runs[0]?.runKind, 'sync');
+  assert.equal(parsed.runs[0]?.stats?.threadsSynced, 2);
 });
 
 test('author response accepts actor identity and repo stats', () => {

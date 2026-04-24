@@ -43,6 +43,7 @@ const publicCommands = [
   'version',
   'sync',
   'refresh',
+  'runs',
   'threads',
   'author',
   'close-thread',
@@ -299,6 +300,58 @@ test('author command returns actor profile stats and threads', async () => {
   });
   assert.match(stdout.read(), /"providerUserId": "501"/);
   assert.match(stdout.read(), /"openedIssueCount": 1/);
+});
+
+test('runs command returns pipeline history', async () => {
+  const stdout = createWritableCapture();
+  const context = makeRunContext();
+  const original = GHCrawlService.prototype.listRunHistory;
+  let received: unknown;
+
+  GHCrawlService.prototype.listRunHistory = function listRunHistoryStub(params: unknown) {
+    received = params;
+    return {
+      repository: {
+        id: 1,
+        owner: 'openclaw',
+        name: 'openclaw',
+        fullName: 'openclaw/openclaw',
+        githubRepoId: '1',
+        updatedAt: '2026-03-09T00:00:00Z',
+      },
+      runs: [
+        {
+          runId: 1,
+          runKind: 'cluster',
+          scope: 'openclaw/openclaw',
+          status: 'failed',
+          startedAt: '2026-03-09T00:00:00Z',
+          finishedAt: '2026-03-09T00:01:00Z',
+          stats: null,
+          errorText: 'boom',
+        },
+      ],
+    } as never;
+  };
+
+  try {
+    await run(['runs', 'openclaw/openclaw', '--kind', 'cluster', '--limit', '5'], stdout.stream, {
+      env: context.env,
+      cwd: context.cwd,
+    });
+  } finally {
+    GHCrawlService.prototype.listRunHistory = original;
+    context.cleanup();
+  }
+
+  assert.deepEqual(received, {
+    owner: 'openclaw',
+    repo: 'openclaw',
+    kind: 'cluster',
+    limit: 5,
+  });
+  assert.match(stdout.read(), /"runKind": "cluster"/);
+  assert.match(stdout.read(), /"errorText": "boom"/);
 });
 
 test('invalid enum and value parsing exits with code 2', async () => {

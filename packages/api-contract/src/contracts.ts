@@ -52,6 +52,27 @@ export const repositoriesResponseSchema = z.object({
 });
 export type RepositoriesResponse = z.infer<typeof repositoriesResponseSchema>;
 
+export const runKindSchema = z.enum(['sync', 'summary', 'embedding', 'cluster']);
+export type RunKind = z.infer<typeof runKindSchema>;
+
+export const runRecordSchema = z.object({
+  runId: z.number().int().positive(),
+  runKind: runKindSchema,
+  scope: z.string(),
+  status: z.string(),
+  startedAt: z.string(),
+  finishedAt: z.string().nullable(),
+  stats: z.record(z.string(), z.unknown()).nullable(),
+  errorText: z.string().nullable(),
+});
+export type RunRecordDto = z.infer<typeof runRecordSchema>;
+
+export const runHistoryResponseSchema = z.object({
+  repository: repositorySchema,
+  runs: z.array(runRecordSchema),
+});
+export type RunHistoryResponse = z.infer<typeof runHistoryResponseSchema>;
+
 export const threadsResponseSchema = z.object({
   repository: repositorySchema,
   threads: z.array(threadSchema),

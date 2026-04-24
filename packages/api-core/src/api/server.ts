@@ -49,6 +49,24 @@ export function createApiServer(service: GHCrawlService): http.Server {
         return;
       }
 
+      if (req.method === 'GET' && url.pathname === '/runs') {
+        const params = parseRepoParams(url);
+        const kindParam = url.searchParams.get('kind');
+        const kind =
+          kindParam === 'sync' || kindParam === 'summary' || kindParam === 'embedding' || kindParam === 'cluster' ? kindParam : undefined;
+        const limitValue = url.searchParams.get('limit');
+        sendJson(
+          res,
+          200,
+          service.listRunHistory({
+            ...params,
+            kind,
+            limit: limitValue ? Number(limitValue) : undefined,
+          }),
+        );
+        return;
+      }
+
       if (req.method === 'GET' && url.pathname === '/threads') {
         const params = parseRepoParams(url);
         const kindParam = url.searchParams.get('kind');

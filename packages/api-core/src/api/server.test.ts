@@ -12,6 +12,7 @@ import {
   durableClustersResponseSchema,
   healthResponseSchema,
   neighborsResponseSchema,
+  runHistoryResponseSchema,
   threadsResponseSchema,
 } from '@ghcrawl/api-contract';
 
@@ -65,6 +66,70 @@ test('health endpoint returns contract payload', async () => {
     const payload = healthResponseSchema.parse((await response.json()) as unknown);
 
     assert.equal(payload.ok, true);
+  } finally {
+    await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+    service.close();
+  }
+});
+
+test('runs endpoint returns recent pipeline history', async () => {
+  const service = new GHCrawlService({
+    config: {
+      workspaceRoot: process.cwd(),
+      configDir: '/tmp/ghcrawl-test',
+      configPath: '/tmp/ghcrawl-test/config.json',
+      configFileExists: true,
+      dbPath: ':memory:',
+      dbPathSource: 'config',
+      apiPort: 5179,
+      secretProvider: 'plaintext',
+      githubTokenSource: 'none',
+      openaiApiKeySource: 'none',
+      summaryModel: 'gpt-5-mini',
+      embedModel: 'text-embedding-3-large',
+      embeddingBasis: 'title_original',
+      vectorBackend: 'vectorlite',
+      embedBatchSize: 8,
+      embedConcurrency: 10,
+      embedMaxUnread: 20,
+      openSearchIndex: 'ghcrawl-threads',
+      tuiPreferences: {},
+    },
+    github: {
+      checkAuth: async () => undefined,
+      getRepo: async () => ({}),
+      listRepositoryIssues: async () => [],
+      getIssue: async () => ({}),
+      getPull: async () => ({}),
+      listIssueComments: async () => [],
+      listPullReviews: async () => [],
+      listPullReviewComments: async () => [],
+      listPullFiles: async () => [],
+    },
+  });
+
+  const now = '2026-03-09T00:00:00Z';
+  service.db
+    .prepare(
+      `insert into repositories (id, owner, name, full_name, github_repo_id, raw_json, updated_at)
+       values (?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(1, 'openclaw', 'openclaw', 'openclaw/openclaw', '1', '{}', now);
+  service.db
+    .prepare(`insert into sync_runs (id, repo_id, scope, status, started_at, finished_at, stats_json) values (?, ?, ?, ?, ?, ?, ?)`)
+    .run(1, 1, 'openclaw/openclaw', 'completed', now, now, '{"threadsSynced":2}');
+
+  const server = createApiServer(service);
+  try {
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    assert(address && typeof address === 'object');
+
+    const response = await fetch(`http://127.0.0.1:${address.port}/runs?owner=openclaw&repo=openclaw&kind=sync`);
+    assert.equal(response.status, 200);
+    const payload = runHistoryResponseSchema.parse((await response.json()) as unknown);
+    assert.equal(payload.runs[0]?.runKind, 'sync');
+    assert.equal(payload.runs[0]?.stats?.threadsSynced, 2);
   } finally {
     await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
     service.close();
