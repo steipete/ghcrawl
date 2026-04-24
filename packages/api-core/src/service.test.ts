@@ -2109,6 +2109,89 @@ test('clusterRepository falls back to deterministic fingerprints when vectors ar
   }
 });
 
+test('clusterRepository uses hydrated code hunk signatures without embeddings', async () => {
+  const service = new GHCrawlService({
+    config: makeTestConfig(),
+    github: {
+      checkAuth: async () => undefined,
+      getRepo: async () => ({ id: 1, full_name: 'openclaw/openclaw' }),
+      listRepositoryIssues: async () => [
+        {
+          id: 100,
+          number: 42,
+          state: 'open',
+          title: 'Rewrite scheduler state',
+          body: 'Internal cleanup.',
+          html_url: 'https://github.com/openclaw/openclaw/pull/42',
+          labels: [],
+          pull_request: { url: 'https://api.github.com/repos/openclaw/openclaw/pulls/42' },
+          user: { login: 'alice', type: 'User' },
+        },
+        {
+          id: 101,
+          number: 43,
+          state: 'open',
+          title: 'Patch migration locking',
+          body: 'Different prose.',
+          html_url: 'https://github.com/openclaw/openclaw/pull/43',
+          labels: [],
+          pull_request: { url: 'https://api.github.com/repos/openclaw/openclaw/pulls/43' },
+          user: { login: 'bob', type: 'User' },
+        },
+      ],
+      getIssue: async () => {
+        throw new Error('not expected');
+      },
+      getPull: async (_owner, _repo, number) => ({
+        id: number,
+        number,
+        state: 'open',
+        title: number === 42 ? 'Rewrite scheduler state' : 'Patch migration locking',
+        body: number === 42 ? 'Internal cleanup.' : 'Different prose.',
+        html_url: `https://github.com/openclaw/openclaw/pull/${number}`,
+        labels: [],
+        user: { login: number === 42 ? 'alice' : 'bob', type: 'User' },
+        draft: false,
+        base: { sha: 'base-sha' },
+        head: { sha: `head-${number}` },
+        updated_at: '2026-03-09T00:00:00Z',
+      }),
+      listIssueComments: async () => [],
+      listPullReviews: async () => [],
+      listPullReviewComments: async () => [],
+      listPullFiles: async () => [
+        {
+          filename: 'packages/api-core/src/cluster/build.ts',
+          status: 'modified',
+          additions: 1,
+          deletions: 1,
+          changes: 2,
+          patch: '@@ -1 +1 @@\n-oldCluster\n+newCluster',
+        },
+      ],
+    },
+  });
+
+  try {
+    const sync = await service.syncRepository({
+      owner: 'openclaw',
+      repo: 'openclaw',
+      includeCode: true,
+    });
+    const result = await service.clusterRepository({
+      owner: 'openclaw',
+      repo: 'openclaw',
+      minScore: 0.1,
+    });
+
+    assert.equal(sync.codeFilesSynced, 2);
+    assert.equal(result.edges, 1);
+    assert.equal(result.clusters, 1);
+  } finally {
+    service.close();
+  }
+});
+
 test('embedRepository rebuilds a corrupted active vector store during upsert', async () => {
   const vectors = new Map<number, number[]>();
   let failNextUpsert = true;
