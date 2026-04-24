@@ -258,6 +258,7 @@ test('syncRepository defaults to metadata-only mode, preserves thread kind, and 
     assert.match(messages.join('\n'), /1\/2 issue #42/);
     assert.match(messages.join('\n'), /2\/2 pull_request #43/);
     assert.match(messages.join('\n'), /metadata-only mode; skipping comment, review, and review-comment fetches/);
+    assert.match(messages.join('\n'), /\[fingerprint\] latest revisions computed=2 skipped=0/);
     assert.equal(service.listRepositories().repositories.length, 1);
     assert.equal(service.listThreads({ owner: 'openclaw', repo: 'openclaw' }).threads.length, 2);
     assert.deepEqual(
@@ -271,6 +272,8 @@ test('syncRepository defaults to metadata-only mode, preserves thread kind, and 
     assert.equal(listPullReviewCalls, 0);
     assert.equal(listPullReviewCommentCalls, 0);
     assert.equal(listPullFileCalls, 0);
+    const fingerprintCount = service.db.prepare('select count(*) as count from thread_fingerprints').get() as { count: number };
+    assert.equal(fingerprintCount.count, 2);
 
     const rows = service.db
       .prepare('select number, kind, first_pulled_at, last_pulled_at from threads order by number asc')
@@ -466,9 +469,11 @@ test('syncRepository hydrates pull request code snapshots when includeCode is en
     };
     const file = service.db.prepare('select path from thread_changed_files').get() as { path: string };
     const hunkCount = service.db.prepare('select count(*) as count from thread_hunk_signatures').get() as { count: number };
+    const fingerprint = service.db.prepare('select feature_json from thread_fingerprints').get() as { feature_json: string };
     assert.deepEqual(snapshot, { base_sha: 'base-sha', head_sha: 'head-sha', files_changed: 1 });
     assert.equal(file.path, 'packages/api-core/src/service.ts');
     assert.equal(hunkCount.count, 1);
+    assert.equal(JSON.parse(fingerprint.feature_json).hunkSignatures.length, 1);
   } finally {
     service.close();
   }

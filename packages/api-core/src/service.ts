@@ -1044,6 +1044,7 @@ export class GHCrawlService {
       let threadsSynced = 0;
       let commentsSynced = 0;
       let codeFilesSynced = 0;
+      const fingerprintThreadIds: number[] = [];
 
       for (const [index, item] of items.entries()) {
         if (index > 0 && index % SYNC_BATCH_SIZE === 0) {
@@ -1068,6 +1069,7 @@ export class GHCrawlService {
             commentsSynced += comments.length;
           }
           this.refreshDocument(threadId);
+          fingerprintThreadIds.push(threadId);
           threadsSynced += 1;
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
@@ -1110,6 +1112,13 @@ export class GHCrawlService {
       const threadsClosed = threadsClosedFromClosedSweep + threadsClosedFromDirectReconcile;
       if (threadsClosed > 0) {
         this.reconcileClusterCloseState(repoId);
+      }
+      if (fingerprintThreadIds.length > 0) {
+        const fingerprintItems = this.loadDeterministicClusterableThreadMeta(
+          repoId,
+          Array.from(new Set(fingerprintThreadIds)),
+        );
+        this.materializeLatestDeterministicFingerprints(fingerprintItems, params.onProgress);
       }
       const finishedAt = nowIso();
       const reconciledOpenCloseAt = shouldSweepClosedOverlap || shouldReconcileMissingOpenThreads ? finishedAt : null;
@@ -4404,7 +4413,7 @@ export class GHCrawlService {
     }));
   }
 
-  private loadDeterministicClusterableThreadMeta(repoId: number): Array<{
+  private loadDeterministicClusterableThreadMeta(repoId: number, threadIds?: number[]): Array<{
     id: number;
     number: number;
     kind: 'issue' | 'pull_request';
@@ -4417,16 +4426,24 @@ export class GHCrawlService {
     hunkSignatures: string[];
     patchIds: string[];
   }> {
+    let sql =
+      `select id, number, kind, title, body, labels_json, raw_json, updated_at_gh
+       from threads
+       where repo_id = ?
+         and state = 'open'
+         and closed_at_local is null`;
+    const args: Array<number> = [repoId];
+    if (threadIds && threadIds.length > 0) {
+      sql += ` and id in (${threadIds.map(() => '?').join(',')})`;
+      args.push(...threadIds);
+    }
+    sql += ' order by number asc';
+
     const rows = this.db
       .prepare(
-        `select id, number, kind, title, body, labels_json, raw_json, updated_at_gh
-         from threads
-         where repo_id = ?
-           and state = 'open'
-           and closed_at_local is null
-         order by number asc`,
+        sql,
       )
-      .all(repoId) as Array<{
+      .all(...args) as Array<{
       id: number;
       number: number;
       kind: 'issue' | 'pull_request';
