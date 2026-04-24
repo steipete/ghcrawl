@@ -1560,15 +1560,30 @@ export class GHCrawlService {
     const k = params.k ?? 6;
 
     try {
-      let items: Array<{ id: number; number: number; title: string }>;
-      let aggregatedEdges: Map<string, { leftThreadId: number; rightThreadId: number; score: number; sourceKinds: Set<SimilaritySourceKind> }>;
+      const deterministicItems = this.loadDeterministicClusterableThreadMeta(repository.id);
+      this.materializeLatestDeterministicFingerprints(deterministicItems, params.onProgress);
+      const persistedFingerprints = this.loadLatestDeterministicFingerprints(deterministicItems.map((item) => item.id));
+      const deterministic = buildDeterministicClusterGraphFromFingerprints(
+        deterministicItems.map((item) => ({ id: item.id, number: item.number, title: item.title })),
+        persistedFingerprints,
+        { topK: Math.max(k * 8, 64) },
+      );
+      const items = deterministicItems.map((item) => ({ id: item.id, number: item.number, title: item.title }));
+      const aggregatedEdges = new Map<string, { leftThreadId: number; rightThreadId: number; score: number; sourceKinds: Set<SimilaritySourceKind> }>();
+      this.mergeSourceKindEdges(
+        aggregatedEdges,
+        deterministic.edges.filter((edge) => edge.score >= minScore),
+        'deterministic_fingerprint',
+      );
+      params.onProgress?.(
+        `[cluster] built ${aggregatedEdges.size} deterministic similarity edge(s) for ${repository.fullName}`,
+      );
 
       if (this.isRepoVectorStateCurrent(repository.id)) {
         const vectorItems = this.loadClusterableActiveVectorMeta(repository.id, repository.fullName);
         const activeSourceKind = this.activeVectorSourceKind();
         const activeIds = new Set(vectorItems.map((item) => item.id));
         const annQuery = this.getVectorliteClusterQuery(vectorItems.length, k);
-        aggregatedEdges = new Map();
         let processed = 0;
         let lastProgressAt = Date.now();
 
@@ -1586,18 +1601,17 @@ export class GHCrawlService {
           for (const neighbor of neighbors) {
             if (!activeIds.has(neighbor.threadId)) continue;
             if (neighbor.score < minScore) continue;
-            const key = this.edgeKey(item.id, neighbor.threadId);
-            const existing = aggregatedEdges.get(key);
-            if (existing) {
-              existing.score = Math.max(existing.score, neighbor.score);
-            } else {
-              aggregatedEdges.set(key, {
-                leftThreadId: Math.min(item.id, neighbor.threadId),
-                rightThreadId: Math.max(item.id, neighbor.threadId),
-                score: neighbor.score,
-                sourceKinds: new Set([activeSourceKind]),
-              });
-            }
+            this.mergeSourceKindEdges(
+              aggregatedEdges,
+              [
+                {
+                  leftThreadId: Math.min(item.id, neighbor.threadId),
+                  rightThreadId: Math.max(item.id, neighbor.threadId),
+                  score: neighbor.score,
+                },
+              ],
+              activeSourceKind,
+            );
           }
           processed += 1;
           const now = Date.now();
@@ -1606,41 +1620,25 @@ export class GHCrawlService {
             lastProgressAt = now;
           }
         }
-        items = vectorItems;
       } else if (this.hasLegacyEmbeddings(repository.id)) {
         const legacy = this.loadClusterableThreadMeta(repository.id);
-        items = legacy.items;
         params.onProgress?.(
-          `[cluster] loaded ${items.length} legacy embedded thread(s) across ${legacy.sourceKinds.length} source kind(s) for ${repository.fullName} k=${k} minScore=${minScore}`,
+          `[cluster] loaded ${legacy.items.length} legacy embedded thread(s) across ${legacy.sourceKinds.length} source kind(s) for ${repository.fullName} k=${k} minScore=${minScore}`,
         );
-        aggregatedEdges = await this.aggregateRepositoryEdges(repository.id, legacy.sourceKinds, {
+        const legacyEdges = await this.aggregateRepositoryEdges(repository.id, legacy.sourceKinds, {
           limit: k,
           minScore,
           onProgress: params.onProgress,
         });
-      } else {
-        const deterministicItems = this.loadDeterministicClusterableThreadMeta(repository.id);
-        this.materializeLatestDeterministicFingerprints(deterministicItems, params.onProgress);
-        const persistedFingerprints = this.loadLatestDeterministicFingerprints(deterministicItems.map((item) => item.id));
-        const deterministic = buildDeterministicClusterGraphFromFingerprints(
-          deterministicItems.map((item) => ({ id: item.id, number: item.number, title: item.title })),
-          persistedFingerprints,
-          { topK: Math.max(k * 8, 64) },
-        );
-        items = deterministicItems.map((item) => ({ id: item.id, number: item.number, title: item.title }));
-        aggregatedEdges = new Map();
-        for (const edge of deterministic.edges) {
-          if (edge.score < minScore) continue;
-          aggregatedEdges.set(this.edgeKey(edge.leftThreadId, edge.rightThreadId), {
-            leftThreadId: edge.leftThreadId,
-            rightThreadId: edge.rightThreadId,
-            score: edge.score,
-            sourceKinds: new Set(['deterministic_fingerprint']),
-          });
+        for (const legacyEdge of legacyEdges.values()) {
+          for (const sourceKind of legacyEdge.sourceKinds) {
+            this.mergeSourceKindEdges(
+              aggregatedEdges,
+              [{ leftThreadId: legacyEdge.leftThreadId, rightThreadId: legacyEdge.rightThreadId, score: legacyEdge.score }],
+              sourceKind,
+            );
+          }
         }
-        params.onProgress?.(
-          `[cluster] built ${aggregatedEdges.size} deterministic similarity edge(s) for ${repository.fullName} without embeddings`,
-        );
       }
 
       const edges = Array.from(aggregatedEdges.values()).map((entry) => ({
