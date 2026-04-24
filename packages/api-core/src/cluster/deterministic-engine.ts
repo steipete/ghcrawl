@@ -88,6 +88,7 @@ export function buildDeterministicClusterGraph(
       input.id,
       buildDeterministicThreadFingerprint({
         ...input,
+        threadId: input.id,
         linkedRefs: Array.from(new Set([...(input.linkedRefs ?? []), ...inferredRefs])).sort(),
       }),
     );

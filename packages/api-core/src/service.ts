@@ -49,6 +49,7 @@ import {
 } from '@ghcrawl/api-contract';
 
 import { buildClusters, buildRefinedClusters, buildSizeBoundedClusters } from './cluster/build.js';
+import { buildDeterministicClusterGraph } from './cluster/deterministic-engine.js';
 import { buildSourceKindEdges } from './cluster/exact-edges.js';
 import {
   ensureRuntimeDirs,
@@ -104,6 +105,7 @@ type CommentSeed = {
 };
 
 type EmbeddingSourceKind = 'title' | 'body' | 'dedupe_summary';
+type SimilaritySourceKind = EmbeddingSourceKind | 'deterministic_fingerprint';
 
 type EmbeddingTask = {
   threadId: number;
@@ -1298,7 +1300,7 @@ export class GHCrawlService {
 
     try {
       let items: Array<{ id: number; number: number; title: string }>;
-      let aggregatedEdges: Map<string, { leftThreadId: number; rightThreadId: number; score: number; sourceKinds: Set<EmbeddingSourceKind> }>;
+      let aggregatedEdges: Map<string, { leftThreadId: number; rightThreadId: number; score: number; sourceKinds: Set<SimilaritySourceKind> }>;
 
       if (this.isRepoVectorStateCurrent(repository.id)) {
         const vectorItems = this.loadClusterableActiveVectorMeta(repository.id, repository.fullName);
@@ -1355,7 +1357,22 @@ export class GHCrawlService {
           onProgress: params.onProgress,
         });
       } else {
-        throw new Error(`Vectors for ${repository.fullName} are stale or missing. Run refresh or embed first.`);
+        const deterministicItems = this.loadDeterministicClusterableThreadMeta(repository.id);
+        const deterministic = buildDeterministicClusterGraph(deterministicItems, { topK: Math.max(k * 8, 64) });
+        items = deterministicItems.map((item) => ({ id: item.id, number: item.number, title: item.title }));
+        aggregatedEdges = new Map();
+        for (const edge of deterministic.edges) {
+          if (edge.score < minScore) continue;
+          aggregatedEdges.set(this.edgeKey(edge.leftThreadId, edge.rightThreadId), {
+            leftThreadId: edge.leftThreadId,
+            rightThreadId: edge.rightThreadId,
+            score: edge.score,
+            sourceKinds: new Set(['deterministic_fingerprint']),
+          });
+        }
+        params.onProgress?.(
+          `[cluster] built ${aggregatedEdges.size} deterministic similarity edge(s) for ${repository.fullName} without embeddings`,
+        );
       }
 
       const edges = Array.from(aggregatedEdges.values()).map((entry) => ({
@@ -3966,6 +3983,41 @@ export class GHCrawlService {
     }));
   }
 
+  private loadDeterministicClusterableThreadMeta(repoId: number): Array<{
+    id: number;
+    number: number;
+    kind: 'issue' | 'pull_request';
+    title: string;
+    body: string | null;
+    labels: string[];
+  }> {
+    const rows = this.db
+      .prepare(
+        `select id, number, kind, title, body, labels_json
+         from threads
+         where repo_id = ?
+           and state = 'open'
+           and closed_at_local is null
+         order by number asc`,
+      )
+      .all(repoId) as Array<{
+      id: number;
+      number: number;
+      kind: 'issue' | 'pull_request';
+      title: string;
+      body: string | null;
+      labels_json: string;
+    }>;
+    return rows.map((row) => ({
+      id: row.id,
+      number: row.number,
+      kind: row.kind,
+      title: row.title,
+      body: row.body,
+      labels: parseArray(row.labels_json),
+    }));
+  }
+
   private loadNormalizedActiveVectors(repoId: number): Array<{ id: number; number: number; title: string; embedding: number[] }> {
     return this.loadClusterableActiveVectorMeta(repoId, '').map((row) => ({
       id: row.id,
@@ -4133,8 +4185,8 @@ export class GHCrawlService {
     repoId: number,
     sourceKinds: EmbeddingSourceKind[],
     params: { limit: number; minScore: number; onProgress?: (message: string) => void },
-  ): Promise<Map<string, { leftThreadId: number; rightThreadId: number; score: number; sourceKinds: Set<EmbeddingSourceKind> }>> {
-    const aggregated = new Map<string, { leftThreadId: number; rightThreadId: number; score: number; sourceKinds: Set<EmbeddingSourceKind> }>();
+  ): Promise<Map<string, { leftThreadId: number; rightThreadId: number; score: number; sourceKinds: Set<SimilaritySourceKind> }>> {
+    const aggregated = new Map<string, { leftThreadId: number; rightThreadId: number; score: number; sourceKinds: Set<SimilaritySourceKind> }>();
     const totalItems = sourceKinds.reduce((sum, sourceKind) => sum + this.countEmbeddingsForSourceKind(repoId, sourceKind), 0);
 
     if (sourceKinds.length === 0 || totalItems === 0) {
@@ -4230,9 +4282,9 @@ export class GHCrawlService {
   }
 
   private mergeSourceKindEdges(
-    aggregated: Map<string, { leftThreadId: number; rightThreadId: number; score: number; sourceKinds: Set<EmbeddingSourceKind> }>,
+    aggregated: Map<string, { leftThreadId: number; rightThreadId: number; score: number; sourceKinds: Set<SimilaritySourceKind> }>,
     edges: Array<{ leftThreadId: number; rightThreadId: number; score: number }>,
-    sourceKind: EmbeddingSourceKind,
+    sourceKind: SimilaritySourceKind,
   ): void {
     for (const edge of edges) {
       const key = this.edgeKey(edge.leftThreadId, edge.rightThreadId);
@@ -4362,7 +4414,7 @@ export class GHCrawlService {
   private persistClusterRun(
     repoId: number,
     runId: number,
-    aggregatedEdges: Map<string, { leftThreadId: number; rightThreadId: number; score: number; sourceKinds: Set<EmbeddingSourceKind> }>,
+    aggregatedEdges: Map<string, { leftThreadId: number; rightThreadId: number; score: number; sourceKinds: Set<SimilaritySourceKind> }>,
     clusters: Array<{ representativeThreadId: number; members: number[] }>,
   ): void {
     const insertEdge = this.db.prepare(
