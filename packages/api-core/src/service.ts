@@ -1707,7 +1707,7 @@ export class GHCrawlService {
     if (!ai.generateKeySummary) {
       throw new Error('Configured AI provider does not support key summary generation.');
     }
-    const generateKeySummary = ai.generateKeySummary;
+    const generateKeySummary = ai.generateKeySummary.bind(ai);
     const providerName = ai.providerName ?? 'custom';
     const repository = this.requireRepository(params.owner, params.repo);
     const runId = this.startRun('summary_runs', repository.id, params.threadNumber ? `key-summary:${params.threadNumber}` : `key-summary:${repository.fullName}`);
