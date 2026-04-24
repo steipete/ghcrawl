@@ -282,6 +282,7 @@ test('agent-facing command help advertises explicit --json', async () => {
     'clusters',
     'durable-clusters',
     'cluster-detail',
+    'cluster-explain',
     'search',
     'neighbors',
   ] as const) {
@@ -566,6 +567,44 @@ test('durable-clusters command forwards stable cluster list options', async () =
     memberLimit: 5,
   });
   assert.match(stdout.read(), /trace-alpha-river/);
+});
+
+test('cluster-explain command forwards evidence options', async () => {
+  const stdout = createWritableCapture();
+  const context = makeRunContext();
+  const original = GHCrawlService.prototype.explainDurableCluster;
+  let received: unknown;
+
+  GHCrawlService.prototype.explainDurableCluster = function explainDurableClusterStub(params: unknown) {
+    received = params;
+    return {
+      repository: { fullName: 'openclaw/openclaw' },
+      cluster: { clusterId: 7, stableSlug: 'trace-alpha-river', members: [] },
+      evidence: [{ sources: ['deterministic_fingerprint'] }],
+      overrides: [],
+      aliases: [],
+      events: [],
+    } as never;
+  };
+
+  try {
+    await run(['cluster-explain', 'openclaw/openclaw', '--id', '7', '--member-limit', '4', '--event-limit', '9'], stdout.stream, {
+      env: context.env,
+      cwd: context.cwd,
+    });
+  } finally {
+    GHCrawlService.prototype.explainDurableCluster = original;
+    context.cleanup();
+  }
+
+  assert.deepEqual(received, {
+    owner: 'openclaw',
+    repo: 'openclaw',
+    clusterId: 7,
+    memberLimit: 4,
+    eventLimit: 9,
+  });
+  assert.match(stdout.read(), /deterministic_fingerprint/);
 });
 
 test('long-running command progress stays on stderr and payload stays on stdout', async () => {

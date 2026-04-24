@@ -4016,6 +4016,82 @@ test('listDurableClusters returns stable slugs and governed member states', () =
   }
 });
 
+test('explainDurableCluster returns evidence and governance records', () => {
+  const service = makeTestService({
+    checkAuth: async () => undefined,
+    getRepo: async () => ({}),
+    listRepositoryIssues: async () => [],
+    getIssue: async () => ({}),
+    getPull: async () => ({}),
+    listIssueComments: async () => [],
+    listPullReviews: async () => [],
+    listPullReviewComments: async () => [],
+    listPullFiles: async () => [],
+  });
+
+  try {
+    const now = '2026-03-10T12:00:00Z';
+    service.db
+      .prepare(
+        `insert into repositories (id, owner, name, full_name, github_repo_id, raw_json, updated_at)
+         values (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(1, 'openclaw', 'openclaw', 'openclaw/openclaw', '1', '{}', now);
+    const insertThread = service.db.prepare(
+      `insert into threads (
+        id, repo_id, github_id, number, kind, state, title, body, author_login, author_type, html_url,
+        labels_json, assignees_json, raw_json, content_hash, is_draft, created_at_gh, updated_at_gh, closed_at_gh,
+        merged_at_gh, first_pulled_at, last_pulled_at, updated_at
+      ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    insertThread.run(10, 1, '100', 42, 'issue', 'open', 'Issue one', 'body', 'alice', 'User', 'https://github.com/openclaw/openclaw/issues/42', '[]', '[]', '{}', 'hash-42', 0, now, now, null, null, now, now, now);
+    insertThread.run(11, 1, '101', 43, 'issue', 'open', 'Issue two', 'body', 'bob', 'User', 'https://github.com/openclaw/openclaw/issues/43', '[]', '[]', '{}', 'hash-43', 0, now, now, null, null, now, now, now);
+    service.db
+      .prepare(
+        `insert into cluster_groups (
+          id, repo_id, stable_key, stable_slug, status, cluster_type, representative_thread_id, title, created_at, updated_at
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(7, 1, 'stable-key', 'trace-alpha-river', 'active', 'duplicate_candidate', 10, 'Cluster trace-alpha-river', now, now);
+    const insertMembership = service.db.prepare(
+      `insert into cluster_memberships (
+        cluster_id, thread_id, role, state, score_to_representative, first_seen_run_id, last_seen_run_id,
+        added_by, removed_by, added_reason_json, removed_reason_json, created_at, updated_at, removed_at
+      ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    insertMembership.run(7, 10, 'canonical', 'active', 1, null, null, 'algo', null, '{}', null, now, now, null);
+    insertMembership.run(7, 11, 'related', 'active', 0.91, null, null, 'algo', null, '{}', null, now, now, null);
+    service.db
+      .prepare(
+        `insert into similarity_edge_evidence (
+          repo_id, left_thread_id, right_thread_id, algorithm_version, config_hash, score, tier, state,
+          breakdown_json, first_seen_run_id, last_seen_run_id, created_at, updated_at
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(1, 10, 11, 'persistent-cluster-v1', 'config', 0.91, 'strong', 'active', '{"sources":["deterministic_fingerprint"],"score":0.91}', null, null, now, now);
+    service.db
+      .prepare('insert into cluster_overrides (repo_id, cluster_id, thread_id, action, reason, created_at, expires_at) values (?, ?, ?, ?, ?, ?, ?)')
+      .run(1, 7, 10, 'force_canonical', 'best root issue', now, null);
+    service.db
+      .prepare('insert into cluster_aliases (cluster_id, alias_slug, reason, created_at) values (?, ?, ?, ?)')
+      .run(7, 'old-slug', 'merged_from:3', now);
+    service.db
+      .prepare('insert into cluster_events (cluster_id, run_id, event_type, actor_kind, payload_json, created_at) values (?, ?, ?, ?, ?, ?)')
+      .run(7, null, 'keep_canonical', 'algo', '{"threadId":10}', now);
+
+    const response = service.explainDurableCluster({ owner: 'openclaw', repo: 'openclaw', clusterId: 7 });
+
+    assert.equal(response.cluster.stableSlug, 'trace-alpha-river');
+    assert.equal(response.evidence[0]?.leftThreadNumber, 42);
+    assert.equal(response.evidence[0]?.sources[0], 'deterministic_fingerprint');
+    assert.equal(response.overrides[0]?.action, 'force_canonical');
+    assert.equal(response.aliases[0]?.aliasSlug, 'old-slug');
+    assert.deepEqual(response.events[0]?.payload, { threadId: 10 });
+  } finally {
+    service.close();
+  }
+});
+
 test('syncRepository records actors and repo stats from thread and comment authors', async () => {
   const service = makeTestService({
     checkAuth: async () => undefined,

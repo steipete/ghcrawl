@@ -6,6 +6,7 @@ import {
   closeThreadRequestSchema,
   authorThreadsResponseSchema,
   clusterDetailResponseSchema,
+  clusterExplainResponseSchema,
   clusterMergeResponseSchema,
   clusterOverrideResponseSchema,
   clusterSplitResponseSchema,
@@ -30,6 +31,7 @@ import {
   type ClusterSplitResponse,
   type AuthorThreadsResponse,
   type ClusterDetailResponse,
+  type ClusterExplainResponse,
   type ClusterSummariesResponse,
   type ClustersResponse,
   type HealthResponse,
@@ -65,6 +67,7 @@ export type GitcrawlClient = {
     bodyChars?: number;
     includeClosed?: boolean;
   }) => Promise<ClusterDetailResponse>;
+  explainCluster: (params: { owner: string; repo: string; clusterId: number; memberLimit?: number; eventLimit?: number }) => Promise<ClusterExplainResponse>;
   refresh: (request: RefreshRequest) => Promise<RefreshResponse>;
   rerun: (request: ActionRequest) => Promise<ActionResponse>;
   closeThread: (request: { owner: string; repo: string; threadNumber: number }) => Promise<CloseResponse>;
@@ -150,6 +153,17 @@ export function createGitcrawlClient(baseUrl: string, fetchImpl: FetchLike = fet
       if (params.includeClosed) search.set('includeClosed', 'true');
       const res = await fetchImpl(`${normalized}/cluster-detail?${search.toString()}`);
       return readJson(res, clusterDetailResponseSchema);
+    },
+    async explainCluster(params) {
+      const search = new URLSearchParams({
+        owner: params.owner,
+        repo: params.repo,
+        clusterId: String(params.clusterId),
+      });
+      if (params.memberLimit !== undefined) search.set('memberLimit', String(params.memberLimit));
+      if (params.eventLimit !== undefined) search.set('eventLimit', String(params.eventLimit));
+      const res = await fetchImpl(`${normalized}/cluster-explain?${search.toString()}`);
+      return readJson(res, clusterExplainResponseSchema);
     },
     async refresh(request) {
       const body = refreshRequestSchema.parse(request);

@@ -35,6 +35,7 @@ type CommandName =
   | 'clusters'
   | 'durable-clusters'
   | 'cluster-detail'
+  | 'cluster-explain'
   | 'search'
   | 'neighbors'
   | 'tui'
@@ -330,6 +331,19 @@ const COMMAND_SPECS: readonly CommandSpec[] = [
     agentJson: true,
   },
   {
+    name: 'cluster-explain',
+    synopsis: 'cluster-explain <owner/repo> --id <cluster-id> [--member-limit <count>] [--event-limit <count>] [--json]',
+    description: 'Explain one durable cluster with evidence, overrides, aliases, and event history.',
+    options: [
+      '--id <cluster-id>  Durable cluster id to inspect',
+      '--member-limit <count>  Limit member rows and evidence scope',
+      '--event-limit <count>  Limit event history rows',
+      '--json  Emit machine-readable JSON output explicitly',
+    ],
+    examples: ['ghcrawl cluster-explain openclaw/openclaw --id 123 --member-limit 20 --event-limit 50 --json'],
+    agentJson: true,
+  },
+  {
     name: 'durable-clusters',
     synopsis: 'durable-clusters <owner/repo> [--include-inactive] [--member-limit <count>] [--json]',
     description: 'List persistent cluster identities, stable slugs, and governed memberships.',
@@ -578,6 +592,7 @@ export function parseRepoFlags(command: CommandName, args: string[]): ParsedRepo
       search: { type: 'string' },
       'min-size': { type: 'string' },
       'member-limit': { type: 'string' },
+      'event-limit': { type: 'string' },
       'body-chars': { type: 'string' },
       'no-sync': { type: 'boolean' },
       'no-embed': { type: 'boolean' },
@@ -1338,6 +1353,27 @@ export async function run(
               ? parsePositiveInteger('body-chars', values['body-chars'], 'cluster-detail')
               : undefined,
           includeClosed: values['include-closed'] === true,
+        });
+        writeJson(stdout, result);
+        return;
+      }
+      case 'cluster-explain': {
+        const { owner, repo, values } = parseRepoFlags('cluster-explain', rest);
+        if (typeof values.id !== 'string') {
+          throw new CliUsageError('Missing --id', 'cluster-explain');
+        }
+        const result = getService().explainDurableCluster({
+          owner,
+          repo,
+          clusterId: parsePositiveInteger('id', values.id, 'cluster-explain'),
+          memberLimit:
+            typeof values['member-limit'] === 'string'
+              ? parsePositiveInteger('member-limit', values['member-limit'], 'cluster-explain')
+              : undefined,
+          eventLimit:
+            typeof values['event-limit'] === 'string'
+              ? parsePositiveInteger('event-limit', values['event-limit'], 'cluster-explain')
+              : undefined,
         });
         writeJson(stdout, result);
         return;

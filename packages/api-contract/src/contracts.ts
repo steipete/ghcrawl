@@ -219,6 +219,53 @@ export const clusterDetailResponseSchema = z.object({
 });
 export type ClusterDetailResponse = z.infer<typeof clusterDetailResponseSchema>;
 
+export const clusterExplainAliasSchema = z.object({
+  aliasSlug: z.string(),
+  reason: z.string(),
+  createdAt: z.string(),
+});
+export type ClusterExplainAliasDto = z.infer<typeof clusterExplainAliasSchema>;
+
+export const clusterExplainOverrideSchema = z.object({
+  threadNumber: z.number().int().positive(),
+  action: z.enum(['exclude', 'force_include', 'force_canonical']),
+  reason: z.string().nullable(),
+  createdAt: z.string(),
+  expiresAt: z.string().nullable(),
+});
+export type ClusterExplainOverrideDto = z.infer<typeof clusterExplainOverrideSchema>;
+
+export const clusterExplainEventSchema = z.object({
+  eventType: z.string(),
+  actorKind: z.string(),
+  payload: z.record(z.string(), z.unknown()).nullable(),
+  createdAt: z.string(),
+});
+export type ClusterExplainEventDto = z.infer<typeof clusterExplainEventSchema>;
+
+export const clusterExplainEvidenceSchema = z.object({
+  leftThreadNumber: z.number().int().positive(),
+  rightThreadNumber: z.number().int().positive(),
+  score: z.number(),
+  tier: z.enum(['strong', 'weak']),
+  state: z.enum(['active', 'stale', 'rejected']),
+  sources: z.array(z.string()),
+  breakdown: z.record(z.string(), z.unknown()),
+  lastSeenRunId: z.number().int().positive().nullable(),
+  updatedAt: z.string(),
+});
+export type ClusterExplainEvidenceDto = z.infer<typeof clusterExplainEvidenceSchema>;
+
+export const clusterExplainResponseSchema = z.object({
+  repository: repositorySchema,
+  cluster: durableClusterSchema,
+  aliases: z.array(clusterExplainAliasSchema),
+  overrides: z.array(clusterExplainOverrideSchema),
+  events: z.array(clusterExplainEventSchema),
+  evidence: z.array(clusterExplainEvidenceSchema),
+});
+export type ClusterExplainResponse = z.infer<typeof clusterExplainResponseSchema>;
+
 export const syncResultSchema = z.object({
   runId: z.number().int().positive(),
   threadsSynced: z.number().int().nonnegative(),

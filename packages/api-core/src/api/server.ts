@@ -193,6 +193,33 @@ export function createApiServer(service: GHCrawlService): http.Server {
         return;
       }
 
+      if (req.method === 'GET' && url.pathname === '/cluster-explain') {
+        const params = parseRepoParams(url);
+        const clusterIdValue = url.searchParams.get('clusterId');
+        if (!clusterIdValue) {
+          sendJson(res, 400, { error: 'Missing clusterId parameter' });
+          return;
+        }
+        const clusterId = Number(clusterIdValue);
+        if (!Number.isInteger(clusterId) || clusterId <= 0) {
+          sendJson(res, 400, { error: 'Invalid clusterId parameter' });
+          return;
+        }
+        const memberLimitValue = url.searchParams.get('memberLimit');
+        const eventLimitValue = url.searchParams.get('eventLimit');
+        sendJson(
+          res,
+          200,
+          service.explainDurableCluster({
+            ...params,
+            clusterId,
+            memberLimit: memberLimitValue ? Number(memberLimitValue) : undefined,
+            eventLimit: eventLimitValue ? Number(eventLimitValue) : undefined,
+          }),
+        );
+        return;
+      }
+
       if (req.method === 'POST' && url.pathname === '/actions/rerun') {
         const body = actionRequestSchema.parse(await readBody(req));
         sendJson(res, 200, await service.rerunAction(body));

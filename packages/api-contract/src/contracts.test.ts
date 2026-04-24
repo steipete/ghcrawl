@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   actionRequestSchema,
+  clusterExplainResponseSchema,
   clusterMergeResponseSchema,
   clusterOverrideResponseSchema,
   clusterSplitResponseSchema,
@@ -288,6 +289,68 @@ test('durable clusters response accepts stable slugs and governed member states'
   });
 
   assert.equal(parsed.clusters[0]?.stableSlug, 'trace-alpha-river');
+});
+
+test('cluster explain response accepts evidence and governance records', () => {
+  const thread = {
+    id: 10,
+    repoId: 1,
+    number: 42,
+    kind: 'issue' as const,
+    state: 'open',
+    isClosed: false,
+    closedAtGh: null,
+    closedAtLocal: null,
+    closeReasonLocal: null,
+    title: 'Downloader hangs',
+    body: 'The transfer never finishes.',
+    authorLogin: 'alice',
+    htmlUrl: 'https://github.com/openclaw/openclaw/issues/42',
+    labels: ['bug'],
+    updatedAtGh: new Date().toISOString(),
+    clusterId: null,
+  };
+  const parsed = clusterExplainResponseSchema.parse({
+    repository: {
+      id: 1,
+      owner: 'openclaw',
+      name: 'openclaw',
+      fullName: 'openclaw/openclaw',
+      githubRepoId: null,
+      updatedAt: new Date().toISOString(),
+    },
+    cluster: {
+      clusterId: 7,
+      stableKey: 'abc123',
+      stableSlug: 'trace-alpha-river',
+      status: 'active',
+      clusterType: 'duplicate_candidate',
+      title: 'Cluster trace-alpha-river',
+      representativeThreadId: 10,
+      activeCount: 1,
+      removedCount: 0,
+      blockedCount: 0,
+      members: [{ thread, role: 'canonical', state: 'active', scoreToRepresentative: 1 }],
+    },
+    aliases: [{ aliasSlug: 'old-slug', reason: 'merged_from:3', createdAt: '2026-03-09T00:00:00Z' }],
+    overrides: [{ threadNumber: 42, action: 'force_canonical', reason: 'best root issue', createdAt: '2026-03-09T00:00:00Z', expiresAt: null }],
+    events: [{ eventType: 'keep_canonical', actorKind: 'algo', payload: { threadId: 10 }, createdAt: '2026-03-09T00:00:00Z' }],
+    evidence: [
+      {
+        leftThreadNumber: 42,
+        rightThreadNumber: 43,
+        score: 0.91,
+        tier: 'strong',
+        state: 'active',
+        sources: ['deterministic_fingerprint'],
+        breakdown: { score: 0.91 },
+        lastSeenRunId: 5,
+        updatedAt: '2026-03-09T00:00:00Z',
+      },
+    ],
+  });
+
+  assert.equal(parsed.evidence[0]?.sources[0], 'deterministic_fingerprint');
 });
 
 test('neighbors schema accepts repository, source thread, and neighbor list', () => {
