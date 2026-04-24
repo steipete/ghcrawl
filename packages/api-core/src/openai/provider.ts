@@ -3,6 +3,8 @@ import { APIConnectionError, APIConnectionTimeoutError, APIError, RateLimitError
 import { zodTextFormat } from 'openai/helpers/zod';
 import { z } from 'zod';
 
+import { LLM_KEY_SUMMARY_SYSTEM_PROMPT, llmKeySummarySchema, type LlmKeySummary } from '../cluster/llm-key-summary.js';
+
 export type SummaryResult = {
   problemSummary: string;
   solutionSummary: string;
@@ -21,6 +23,7 @@ export type SummaryUsage = {
 export type AiProvider = {
   checkAuth: () => Promise<void>;
   summarizeThread: (params: { model: string; text: string }) => Promise<{ summary: SummaryResult; usage?: SummaryUsage }>;
+  generateKeySummary?: (params: { model: string; text: string }) => Promise<{ summary: LlmKeySummary; usage?: SummaryUsage }>;
   embedTexts: (params: { model: string; texts: string[]; dimensions?: number }) => Promise<number[][]>;
 };
 
@@ -114,6 +117,55 @@ export class OpenAiProvider implements AiProvider {
     }
 
     throw new Error(`OpenAI summarization failed after 3 attempts: ${lastError?.message ?? 'unknown error'}`);
+  }
+
+  async generateKeySummary(params: { model: string; text: string }): Promise<{ summary: LlmKeySummary; usage?: SummaryUsage }> {
+    const format = zodTextFormat(llmKeySummarySchema, 'ghcrawl_key_summary');
+    let lastError: Error | null = null;
+
+    for (const [attemptIndex, maxOutputTokens] of [240, 400, 600].entries()) {
+      try {
+        const response = await this.client.responses.create({
+          model: params.model,
+          input: [
+            {
+              role: 'system',
+              content: [{ type: 'input_text', text: LLM_KEY_SUMMARY_SYSTEM_PROMPT }],
+            },
+            {
+              role: 'user',
+              content: [{ type: 'input_text', text: params.text }],
+            },
+          ],
+          text: {
+            format,
+            verbosity: 'low',
+          },
+          max_output_tokens: maxOutputTokens,
+        });
+
+        const raw = response.output_text ?? '';
+        return {
+          summary: llmKeySummarySchema.parse(JSON.parse(raw)),
+          usage: response.usage
+            ? {
+                inputTokens: response.usage.input_tokens,
+                outputTokens: response.usage.output_tokens,
+                totalTokens: response.usage.total_tokens,
+                cachedInputTokens: response.usage.input_tokens_details?.cached_tokens ?? 0,
+                reasoningTokens: response.usage.output_tokens_details?.reasoning_tokens ?? 0,
+              }
+            : undefined,
+        };
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        if (attemptIndex === 2) {
+          break;
+        }
+      }
+    }
+
+    throw new Error(`OpenAI key summarization failed after 3 attempts: ${lastError?.message ?? 'unknown error'}`);
   }
 
   async embedTexts(params: { model: string; texts: string[]; dimensions?: number }): Promise<number[][]> {
