@@ -13,6 +13,7 @@ import {
   actionResponseSchema,
   authorThreadsResponseSchema,
   closeResponseSchema,
+  clusterOverrideResponseSchema,
   clusterDetailResponseSchema,
   clusterResultSchema,
   clusterSummariesResponseSchema,
@@ -29,11 +30,13 @@ import {
   type ActionResponse,
   type AuthorThreadsResponse,
   type CloseResponse,
+  type ClusterOverrideResponse,
   type ClusterDetailResponse,
   type ClusterDto,
   type ClusterResultDto,
   type ClusterSummariesResponse,
   type ClustersResponse,
+  type ExcludeClusterMemberRequest,
   type EmbedResultDto,
   type HealthResponse,
   type NeighborsResponse,
@@ -887,6 +890,76 @@ export class GHCrawlService {
       clusterId: row.id,
       clusterClosed: true,
       message: `Marked cluster ${row.id} closed locally.`,
+    });
+  }
+
+  excludeThreadFromCluster(params: ExcludeClusterMemberRequest): ClusterOverrideResponse {
+    const repository = this.requireRepository(params.owner, params.repo);
+    const cluster = this.db
+      .prepare('select id from cluster_groups where repo_id = ? and id = ? limit 1')
+      .get(repository.id, params.clusterId) as { id: number } | undefined;
+    if (!cluster) {
+      throw new Error(`Durable cluster ${params.clusterId} was not found for ${repository.fullName}.`);
+    }
+
+    const thread = this.db
+      .prepare('select * from threads where repo_id = ? and number = ? limit 1')
+      .get(repository.id, params.threadNumber) as ThreadRow | undefined;
+    if (!thread) {
+      throw new Error(`Thread #${params.threadNumber} was not found for ${repository.fullName}.`);
+    }
+
+    const existingMembership = this.db
+      .prepare('select role, score_to_representative from cluster_memberships where cluster_id = ? and thread_id = ? limit 1')
+      .get(cluster.id, thread.id) as { role: 'canonical' | 'duplicate' | 'related'; score_to_representative: number | null } | undefined;
+    const timestamp = nowIso();
+    this.db
+      .prepare(
+        `insert into cluster_overrides (repo_id, cluster_id, thread_id, action, reason, created_at, expires_at)
+         values (?, ?, ?, 'exclude', ?, ?, null)
+         on conflict(cluster_id, thread_id, action) do update set
+           reason = excluded.reason,
+           created_at = excluded.created_at,
+           expires_at = null`,
+      )
+      .run(repository.id, cluster.id, thread.id, params.reason ?? null, timestamp);
+
+    upsertClusterMembership(this.db, {
+      clusterId: cluster.id,
+      threadId: thread.id,
+      role: existingMembership?.role ?? 'related',
+      state: 'removed_by_user',
+      scoreToRepresentative: existingMembership?.score_to_representative ?? null,
+      addedBy: 'user',
+      removedBy: 'user',
+      addedReason: {
+        source: 'excludeThreadFromCluster',
+      },
+      removedReason: {
+        source: 'cluster_overrides',
+        action: 'exclude',
+        reason: params.reason ?? null,
+      },
+    });
+    recordClusterEvent(this.db, {
+      clusterId: cluster.id,
+      eventType: 'manual_exclude_member',
+      actorKind: 'user',
+      payload: {
+        threadId: thread.id,
+        threadNumber: thread.number,
+        reason: params.reason ?? null,
+      },
+    });
+
+    return clusterOverrideResponseSchema.parse({
+      ok: true,
+      repository,
+      clusterId: cluster.id,
+      thread: threadToDto(thread),
+      action: 'exclude',
+      state: 'removed_by_user',
+      message: `Removed ${thread.kind} #${thread.number} from durable cluster ${cluster.id}.`,
     });
   }
 

@@ -2918,6 +2918,81 @@ test('manual cluster closure is hidden from JSON summaries by default but remain
   }
 });
 
+test('excludeThreadFromCluster records a durable manual exclusion', () => {
+  const service = makeTestService({
+    checkAuth: async () => undefined,
+    getRepo: async () => ({}),
+    listRepositoryIssues: async () => [],
+    getIssue: async () => ({}),
+    getPull: async () => ({}),
+    listIssueComments: async () => [],
+    listPullReviews: async () => [],
+    listPullReviewComments: async () => [],
+  });
+
+  try {
+    const now = '2026-03-10T12:00:00Z';
+    service.db
+      .prepare(
+        `insert into repositories (id, owner, name, full_name, github_repo_id, raw_json, updated_at)
+         values (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(1, 'openclaw', 'openclaw', 'openclaw/openclaw', '1', '{}', now);
+    service.db
+      .prepare(
+        `insert into threads (
+          id, repo_id, github_id, number, kind, state, title, body, author_login, author_type, html_url,
+          labels_json, assignees_json, raw_json, content_hash, is_draft, created_at_gh, updated_at_gh, closed_at_gh,
+          merged_at_gh, first_pulled_at, last_pulled_at, updated_at
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(10, 1, '100', 42, 'issue', 'open', 'Issue one', 'body', 'alice', 'User', 'https://github.com/openclaw/openclaw/issues/42', '[]', '[]', '{}', 'hash-42', 0, now, now, null, null, now, now, now);
+    service.db
+      .prepare(
+        `insert into cluster_groups (
+          id, repo_id, stable_key, stable_slug, status, cluster_type, representative_thread_id, title, created_at, updated_at
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(7, 1, 'stable-key', 'trace-alpha-river', 'active', 'duplicate_candidate', 10, 'Cluster trace-alpha-river', now, now);
+    service.db
+      .prepare(
+        `insert into cluster_memberships (
+          cluster_id, thread_id, role, state, score_to_representative, first_seen_run_id, last_seen_run_id,
+          added_by, removed_by, added_reason_json, removed_reason_json, created_at, updated_at, removed_at
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(7, 10, 'related', 'active', 0.87, null, null, 'algo', null, '{}', null, now, now, null);
+
+    const response = service.excludeThreadFromCluster({
+      owner: 'openclaw',
+      repo: 'openclaw',
+      clusterId: 7,
+      threadNumber: 42,
+      reason: 'false positive',
+    });
+
+    assert.equal(response.ok, true);
+    assert.equal(response.state, 'removed_by_user');
+    assert.equal(response.thread.number, 42);
+    const override = service.db.prepare('select action, reason from cluster_overrides where cluster_id = ? and thread_id = ?').get(7, 10) as {
+      action: string;
+      reason: string;
+    };
+    assert.deepEqual(override, { action: 'exclude', reason: 'false positive' });
+    const membership = service.db
+      .prepare('select state, removed_by from cluster_memberships where cluster_id = ? and thread_id = ?')
+      .get(7, 10) as { state: string; removed_by: string };
+    assert.deepEqual(membership, { state: 'removed_by_user', removed_by: 'user' });
+    const event = service.db.prepare('select event_type, actor_kind from cluster_events where cluster_id = ?').get(7) as {
+      event_type: string;
+      actor_kind: string;
+    };
+    assert.deepEqual(event, { event_type: 'manual_exclude_member', actor_kind: 'user' });
+  } finally {
+    service.close();
+  }
+});
+
 test('syncRepository reconciles stale open threads and marks confirmed closures without re-fetching comments', async () => {
   let listIssueCommentCalls = 0;
   let getIssueCalls = 0;
