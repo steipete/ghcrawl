@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   actionRequestSchema,
   clusterOverrideResponseSchema,
+  durableClustersResponseSchema,
   excludeClusterMemberRequestSchema,
   healthResponseSchema,
   neighborsResponseSchema,
@@ -101,6 +102,60 @@ test('cluster override response accepts durable removal state', () => {
   });
 
   assert.equal(parsed.state, 'removed_by_user');
+});
+
+test('durable clusters response accepts stable slugs and governed member states', () => {
+  const parsed = durableClustersResponseSchema.parse({
+    repository: {
+      id: 1,
+      owner: 'openclaw',
+      name: 'openclaw',
+      fullName: 'openclaw/openclaw',
+      githubRepoId: null,
+      updatedAt: new Date().toISOString(),
+    },
+    clusters: [
+      {
+        clusterId: 7,
+        stableKey: 'abc123',
+        stableSlug: 'trace-alpha-river',
+        status: 'active',
+        clusterType: 'duplicate_candidate',
+        title: 'Cluster trace-alpha-river',
+        representativeThreadId: 10,
+        activeCount: 1,
+        removedCount: 1,
+        blockedCount: 0,
+        members: [
+          {
+            thread: {
+              id: 10,
+              repoId: 1,
+              number: 42,
+              kind: 'issue',
+              state: 'open',
+              isClosed: false,
+              closedAtGh: null,
+              closedAtLocal: null,
+              closeReasonLocal: null,
+              title: 'Downloader hangs',
+              body: 'The transfer never finishes.',
+              authorLogin: 'alice',
+              htmlUrl: 'https://github.com/openclaw/openclaw/issues/42',
+              labels: ['bug'],
+              updatedAtGh: new Date().toISOString(),
+              clusterId: null,
+            },
+            role: 'canonical',
+            state: 'active',
+            scoreToRepresentative: 1,
+          },
+        ],
+      },
+    ],
+  });
+
+  assert.equal(parsed.clusters[0]?.stableSlug, 'trace-alpha-river');
 });
 
 test('neighbors schema accepts repository, source thread, and neighbor list', () => {

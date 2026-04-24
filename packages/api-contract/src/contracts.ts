@@ -167,6 +167,35 @@ export const clusterSummariesResponseSchema = z.object({
 });
 export type ClusterSummariesResponse = z.infer<typeof clusterSummariesResponseSchema>;
 
+export const durableClusterMemberSchema = z.object({
+  thread: threadSchema,
+  role: z.enum(['canonical', 'duplicate', 'related']),
+  state: z.enum(['active', 'removed_by_user', 'blocked_by_override', 'pending_review', 'stale']),
+  scoreToRepresentative: z.number().nullable(),
+});
+export type DurableClusterMemberDto = z.infer<typeof durableClusterMemberSchema>;
+
+export const durableClusterSchema = z.object({
+  clusterId: z.number().int().positive(),
+  stableKey: z.string(),
+  stableSlug: z.string(),
+  status: z.enum(['active', 'closed', 'merged', 'split']),
+  clusterType: z.string().nullable(),
+  title: z.string().nullable(),
+  representativeThreadId: z.number().int().positive().nullable(),
+  activeCount: z.number().int().nonnegative(),
+  removedCount: z.number().int().nonnegative(),
+  blockedCount: z.number().int().nonnegative(),
+  members: z.array(durableClusterMemberSchema),
+});
+export type DurableClusterDto = z.infer<typeof durableClusterSchema>;
+
+export const durableClustersResponseSchema = z.object({
+  repository: repositorySchema,
+  clusters: z.array(durableClusterSchema),
+});
+export type DurableClustersResponse = z.infer<typeof durableClustersResponseSchema>;
+
 export const threadSummariesSchema = z.object({
   problem_summary: z.string().optional(),
   solution_summary: z.string().optional(),
