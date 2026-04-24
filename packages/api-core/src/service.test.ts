@@ -4225,23 +4225,8 @@ test('syncRepository treats missing stale pull requests as closed and continues'
     getIssue: async () => {
       throw new Error('not expected');
     },
-    getPull: async (_owner, _repo, number) => {
+    getPull: async () => {
       getPullCalls += 1;
-      if (getPullCalls === 1) {
-        return {
-          id: 101,
-          number,
-          state: 'open',
-          title: 'Fix downloader hang',
-          body: 'Implements a fix.',
-          html_url: `https://github.com/openclaw/openclaw/pull/${number}`,
-          labels: [{ name: 'bug' }],
-          assignees: [],
-          user: { login: 'bob', type: 'User' },
-          draft: false,
-          updated_at: '2026-03-09T00:00:00Z',
-        };
-      }
       throw Object.assign(new Error('GitHub request failed for GET /repos/openclaw/openclaw/pulls/43: Not Found'), {
         status: 404,
       });
@@ -4275,7 +4260,7 @@ test('syncRepository treats missing stale pull requests as closed and continues'
     assert.equal(after.state, 'closed');
     assert.ok(after.closed_at_gh);
     assert.ok(after.last_pulled_at);
-    assert.equal(getPullCalls, 2);
+    assert.equal(getPullCalls, 1);
     assert.match(messages.join('\n'), /missing on GitHub; marking it closed locally and continuing/);
   } finally {
     service.close();

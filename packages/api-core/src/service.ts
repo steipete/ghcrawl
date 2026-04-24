@@ -1445,7 +1445,8 @@ export class GHCrawlService {
         const kind = isPr ? 'pull_request' : 'issue';
         params.onProgress?.(`[sync] ${index + 1}/${items.length} ${kind} #${number}`);
         try {
-          const threadPayload = isPr ? await github.getPull(params.owner, params.repo, number, reporter) : item;
+          const shouldFetchPullPayload = isPr && includeCode;
+          const threadPayload = shouldFetchPullPayload ? await github.getPull(params.owner, params.repo, number, reporter) : item;
           const threadId = this.upsertThread(repoId, kind, threadPayload, crawlStartedAt);
           if (includeCode && isPr) {
             const files = await github.listPullFiles(params.owner, params.repo, number, reporter);
