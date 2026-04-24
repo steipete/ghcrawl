@@ -2070,7 +2070,11 @@ export class GHCrawlService {
       const deterministic = buildDeterministicClusterGraphFromFingerprints(
         deterministicItems.map((item) => ({ id: item.id, number: item.number, title: item.title })),
         persistedFingerprints,
-        { topK: Math.max(k * 8, 64), seedThreadIds },
+        {
+          maxBucketSize: seedThreadIds ? 500 : 200,
+          topK: seedThreadIds ? Math.max(k * 8, 64) : 32,
+          seedThreadIds,
+        },
       );
       const aggregatedEdges = new Map<string, AggregatedClusterEdge>();
       this.mergeSourceKindEdges(
