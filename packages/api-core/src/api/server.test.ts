@@ -5,6 +5,7 @@ import {
   authorThreadsResponseSchema,
   closeResponseSchema,
   clusterDetailResponseSchema,
+  clusterExplainResponseSchema,
   clusterOverrideResponseSchema,
   clusterSummariesResponseSchema,
   durableClustersResponseSchema,
@@ -793,6 +794,27 @@ test('cluster summary and detail endpoints return contract payloads', async () =
        values (?, ?, ?, ?)`,
     )
     .run(100, 10, null, now);
+  service.db
+    .prepare(
+      `insert into cluster_groups (
+        id, repo_id, stable_key, stable_slug, status, cluster_type, representative_thread_id, title, created_at, updated_at
+      ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(7, 1, 'stable-key', 'trace-alpha-river', 'active', 'duplicate_candidate', 10, 'Cluster trace-alpha-river', now, now);
+  service.db
+    .prepare(
+      `insert into cluster_memberships (
+        cluster_id, thread_id, role, state, score_to_representative, first_seen_run_id, last_seen_run_id,
+        added_by, removed_by, added_reason_json, removed_reason_json, created_at, updated_at, removed_at
+      ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(7, 10, 'canonical', 'active', 1, null, null, 'algo', null, '{}', null, now, now, null);
+  service.db
+    .prepare(
+      `insert into cluster_events (cluster_id, run_id, event_type, actor_kind, payload_json, created_at)
+       values (?, ?, ?, ?, ?, ?)`,
+    )
+    .run(7, null, 'keep_canonical', 'algo', '{"threadId":10}', now);
 
   const server = createApiServer(service);
   try {
@@ -814,6 +836,14 @@ test('cluster summary and detail endpoints return contract payloads', async () =
     const detail = clusterDetailResponseSchema.parse((await detailResponse.json()) as unknown);
     assert.equal(detail.cluster.clusterId, 100);
     assert.equal(detail.members[0]?.thread.number, 42);
+
+    const explainResponse = await fetch(
+      `http://127.0.0.1:${address.port}/cluster-explain?owner=openclaw&repo=openclaw&clusterId=7`,
+    );
+    assert.equal(explainResponse.status, 200);
+    const explain = clusterExplainResponseSchema.parse((await explainResponse.json()) as unknown);
+    assert.equal(explain.cluster.clusterId, 7);
+    assert.equal(explain.events[0]?.eventType, 'keep_canonical');
   } finally {
     await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
     service.close();
