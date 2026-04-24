@@ -1436,7 +1436,7 @@ export class GHCrawlService {
       const fingerprintThreadIds: number[] = [];
 
       for (const [index, item] of items.entries()) {
-        if (index > 0 && index % SYNC_BATCH_SIZE === 0) {
+        if ((includeComments || includeCode) && index > 0 && index % SYNC_BATCH_SIZE === 0) {
           params.onProgress?.(`[sync] batch boundary reached at ${index} threads; sleeping 5s before continuing`);
           await new Promise((resolve) => setTimeout(resolve, SYNC_BATCH_DELAY_MS));
         }
