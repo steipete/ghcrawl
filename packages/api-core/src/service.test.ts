@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { humanKeyForValue } from './cluster/human-key.js';
+import { openDb } from './db/sqlite.js';
 import { GHCrawlService } from './service.js';
 import type { VectorStore } from './vector/store.js';
 
@@ -161,6 +162,187 @@ test('optimizeStorage runs SQLite maintenance and reports missing vector store',
     assert.equal(response.targets[1]?.name, 'vector');
     assert.equal(response.targets[1]?.existed, false);
     assert.deepEqual(response.targets[1]?.operations, ['skipped_missing_vector_store']);
+  } finally {
+    service.close();
+  }
+});
+
+test('exportPortableSync writes a compact sync database without bulky cache tables', () => {
+  const config = makeTestConfig();
+  const sourcePath = path.join(config.configDir, 'source.db');
+  const outputPath = path.join(config.configDir, 'openclaw.sync.db');
+  const service = new GHCrawlService({
+    config: {
+      ...config,
+      dbPath: sourcePath,
+    },
+    github: {
+      getRepo: async () => ({}),
+      listRepositoryIssues: async () => [],
+      getIssue: async () => ({}),
+      getPull: async () => ({}),
+      listIssueComments: async () => [],
+      listPullReviews: async () => [],
+      listPullReviewComments: async () => [],
+      listPullFiles: async () => [],
+    },
+  });
+
+  try {
+    const now = '2026-03-10T12:00:00Z';
+    const longBody = 'body '.repeat(2000);
+    const hugeRaw = JSON.stringify({ payload: 'x'.repeat(200_000) });
+    service.db
+      .prepare(
+        `insert into repositories (id, owner, name, full_name, github_repo_id, raw_json, updated_at)
+         values (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(1, 'openclaw', 'openclaw', 'openclaw/openclaw', '1', hugeRaw, now);
+    service.db
+      .prepare(
+        `insert into threads (
+          id, repo_id, github_id, number, kind, state, title, body, author_login, author_type, html_url,
+          labels_json, assignees_json, raw_json, content_hash, is_draft, created_at_gh, updated_at_gh,
+          closed_at_gh, merged_at_gh, first_pulled_at, last_pulled_at, updated_at
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        10,
+        1,
+        '100',
+        42,
+        'issue',
+        'open',
+        'Gateway crash',
+        longBody,
+        'alice',
+        'User',
+        'https://github.com/openclaw/openclaw/issues/42',
+        '["bug"]',
+        '[]',
+        hugeRaw,
+        'content-hash',
+        0,
+        now,
+        now,
+        null,
+        null,
+        now,
+        now,
+        now,
+      );
+    service.db
+      .prepare(
+        `insert into documents (thread_id, title, body, raw_text, dedupe_text, updated_at)
+         values (?, ?, ?, ?, ?, ?)`,
+      )
+      .run(10, 'Gateway crash', longBody, 'raw '.repeat(50_000), 'dedupe '.repeat(50_000), now);
+    service.db
+      .prepare(
+        `insert into comments (thread_id, github_id, comment_type, author_login, author_type, body, is_bot, raw_json, created_at_gh, updated_at_gh)
+         values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(10, '200', 'issue_comment', 'bob', 'User', 'comment '.repeat(5000), 0, hugeRaw, now, now);
+    service.db
+      .prepare(
+        `insert into thread_vectors (thread_id, basis, model, dimensions, content_hash, vector_json, vector_backend, created_at, updated_at)
+         values (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(10, 'title_original', 'text-embedding-3-large', 1024, 'vector-hash', `[${Array.from({ length: 1024 }, () => 0.1).join(',')}]`, 'vectorlite', now, now);
+    service.db
+      .prepare(
+        `insert into thread_revisions (id, thread_id, source_updated_at, content_hash, title_hash, body_hash, labels_hash, created_at)
+         values (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(20, 10, now, 'content-hash', 'title-hash', 'body-hash', 'labels-hash', now);
+    service.db
+      .prepare(
+        `insert into thread_fingerprints (
+          id, thread_revision_id, algorithm_version, fingerprint_hash, fingerprint_slug, title_tokens_json, body_token_hash,
+          linked_refs_json, file_set_hash, module_buckets_json, simhash64, feature_json, created_at
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(30, 20, 'v1', 'fingerprint-hash', 'amber-river-slate-abc', '["gateway","crash"]', 'body-token-hash', '[]', 'file-set-hash', '[]', '1234', '{"signals":["gateway"]}', now);
+    service.db
+      .prepare(
+        `insert into thread_key_summaries (
+          id, thread_revision_id, summary_kind, prompt_version, provider, model, input_hash, output_hash, key_text, created_at
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(40, 20, 'key_summary', 'v1', 'openai', 'gpt-5-mini', 'input-hash', 'output-hash', 'intent: fix gateway crash\nsurface: startup\nmechanism: guard config', now);
+    service.db
+      .prepare(
+        `insert into repo_sync_state (
+          repo_id, last_full_open_scan_started_at, last_overlapping_open_scan_completed_at,
+          last_non_overlapping_scan_completed_at, last_open_close_reconciled_at, updated_at
+        ) values (?, ?, ?, ?, ?, ?)`,
+      )
+      .run(1, now, now, null, now, now);
+    service.db
+      .prepare(
+        `insert into repo_pipeline_state (
+          repo_id, summary_model, summary_prompt_version, embedding_basis, embed_model, embed_dimensions,
+          embed_pipeline_version, vector_backend, vectors_current_at, clusters_current_at, updated_at
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(1, 'gpt-5-mini', 'v1', 'title_original', 'text-embedding-3-large', 1024, 'pipeline-v1', 'vectorlite', now, now, now);
+    service.db
+      .prepare(
+        `insert into cluster_groups (
+          id, repo_id, stable_key, stable_slug, status, cluster_type, representative_thread_id, title, created_at, updated_at, closed_at
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(50, 1, 'stable-key', 'amber-river-slate-abc', 'active', 'dedupe', 10, 'Gateway crash cluster', now, now, null);
+    service.db
+      .prepare(
+        `insert into cluster_memberships (
+          cluster_id, thread_id, role, state, score_to_representative, first_seen_run_id, last_seen_run_id,
+          added_by, removed_by, added_reason_json, removed_reason_json, created_at, updated_at, removed_at
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(50, 10, 'canonical', 'active', 1, null, null, 'system', null, '{}', null, now, now, null);
+
+    const response = service.exportPortableSync({
+      owner: 'openclaw',
+      repo: 'openclaw',
+      outputPath,
+      bodyChars: 64,
+    });
+
+    assert.equal(response.ok, true);
+    assert.equal(response.repository.fullName, 'openclaw/openclaw');
+    assert.equal(response.outputPath, outputPath);
+    assert.ok(response.outputBytes < response.sourceBytes);
+    assert.ok(response.excluded.includes('documents'));
+    assert.ok(response.excluded.includes('thread_vectors'));
+    assert.equal(response.tables.find((table) => table.name === 'threads')?.rows, 1);
+
+    const portable = openDb(outputPath);
+    try {
+      const thread = portable.prepare('select body_excerpt, body_length from threads where number = 42').get() as {
+        body_excerpt: string;
+        body_length: number;
+      };
+      assert.equal(thread.body_excerpt.length, 64);
+      assert.equal(thread.body_length, longBody.length);
+      const bulkyTables = portable
+        .prepare("select name from sqlite_master where type = 'table' and name in ('documents', 'comments', 'blobs', 'thread_vectors', 'cluster_events')")
+        .all() as Array<{ name: string }>;
+      assert.deepEqual(bulkyTables, []);
+      const summaryCount = portable.prepare('select count(*) as count from thread_key_summaries').get() as { count: number };
+      const membershipCount = portable.prepare('select count(*) as count from cluster_memberships').get() as { count: number };
+      assert.equal(summaryCount.count, 1);
+      assert.equal(membershipCount.count, 1);
+    } finally {
+      portable.close();
+    }
+
+    const sourceThread = service.db.prepare('select raw_json, body from threads where id = 10').get() as {
+      raw_json: string;
+      body: string;
+    };
+    assert.equal(sourceThread.raw_json, hugeRaw);
+    assert.equal(sourceThread.body, longBody);
   } finally {
     service.close();
   }

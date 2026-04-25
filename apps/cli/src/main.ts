@@ -14,6 +14,7 @@ type CommandName =
   | 'configure'
   | 'version'
   | 'sync'
+  | 'export-sync'
   | 'refresh'
   | 'optimize'
   | 'runs'
@@ -135,6 +136,18 @@ const COMMAND_SPECS: readonly CommandSpec[] = [
       '--json  Emit machine-readable JSON output explicitly',
     ],
     examples: ['ghcrawl sync openclaw/openclaw --limit 1', 'ghcrawl sync openclaw/openclaw --since 7d --json'],
+    agentJson: true,
+  },
+  {
+    name: 'export-sync',
+    synopsis: 'export-sync <owner/repo> [--output <path>] [--body-chars <count>] [--json]',
+    description: 'Export a compact portable SQLite core for git-style file sync.',
+    options: [
+      '--output <path>  Output SQLite path; defaults to the ghcrawl config exports directory',
+      '--body-chars <count>  Maximum body excerpt characters per thread; default 2048',
+      '--json  Emit machine-readable JSON output explicitly',
+    ],
+    examples: ['ghcrawl export-sync openclaw/openclaw --output ./openclaw.sync.db --json'],
     agentJson: true,
   },
   {
@@ -601,6 +614,7 @@ export function parseRepoFlags(command: CommandName, args: string[]): ParsedRepo
       'member-limit': { type: 'string' },
       'event-limit': { type: 'string' },
       'body-chars': { type: 'string' },
+      output: { type: 'string' },
       'no-sync': { type: 'boolean' },
       'no-embed': { type: 'boolean' },
       'no-cluster': { type: 'boolean' },
@@ -1041,6 +1055,20 @@ export async function run(
           includeCode: values['include-code'] === true,
           fullReconcile: values['full-reconcile'] === true,
           onProgress: (message: string) => writeProgress(message, stderr),
+        });
+        writeJson(stdout, result);
+        return;
+      }
+      case 'export-sync': {
+        const { owner, repo, values } = parseRepoFlags('export-sync', rest);
+        const result = getService().exportPortableSync({
+          owner,
+          repo,
+          outputPath: typeof values.output === 'string' ? values.output : undefined,
+          bodyChars:
+            typeof values['body-chars'] === 'string'
+              ? parsePositiveInteger('body-chars', values['body-chars'], 'export-sync')
+              : undefined,
         });
         writeJson(stdout, result);
         return;
