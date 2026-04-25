@@ -124,6 +124,7 @@ import {
 import { finishServiceRun, listRunHistoryForRepository, startServiceRun } from './run-history.js';
 import { cosineSimilarity, dotProduct, normalizeEmbedding, rankNearestNeighbors, rankNearestNeighborsByScore } from './search/exact.js';
 import { missingVectorStoreTarget, optimizeSqliteTarget } from './storage-maintenance.js';
+import { getSyncCursorState, writeSyncCursorState } from './sync/cursor.js';
 import {
   ACTIVE_EMBED_DIMENSIONS,
   ACTIVE_EMBED_PIPELINE_VERSION,
@@ -200,7 +201,6 @@ import {
   parseLabels,
   parseObjectJson,
   parseStringArrayJson,
-  parseSyncRunStats,
   repositoryToDto,
   snippetText,
   stableContentHash,
@@ -950,7 +950,7 @@ export class GHCrawlService {
     const repoData = await github.getRepo(params.owner, params.repo, reporter);
     const repoId = this.upsertRepository(params.owner, params.repo, repoData);
     const runId = startServiceRun(this.db, 'sync_runs', repoId, `${params.owner}/${params.repo}`);
-    const syncCursor = this.getSyncCursorState(repoId);
+    const syncCursor = getSyncCursorState(this.db, repoId);
     const overlapReferenceAt = syncCursor.lastOverlappingOpenScanCompletedAt ?? syncCursor.lastFullOpenScanStartedAt;
     const effectiveSince =
       params.since ??
@@ -1104,7 +1104,7 @@ export class GHCrawlService {
           !isFullOpenScan && !isOverlappingOpenScan ? finishedAt : syncCursor.lastNonOverlappingScanCompletedAt,
         lastReconciledOpenCloseAt: reconciledOpenCloseAt ?? syncCursor.lastReconciledOpenCloseAt,
       };
-      this.writeSyncCursorState(repoId, nextSyncCursor);
+      writeSyncCursorState(this.db, repoId, nextSyncCursor);
       finishServiceRun(this.db, 'sync_runs', runId, 'completed', {
         threadsSynced,
         commentsSynced,
@@ -3323,101 +3323,6 @@ export class GHCrawlService {
         });
       }
     }
-  }
-
-  private getSyncCursorState(repoId: number): SyncCursorState {
-    const persisted = (this.db
-      .prepare(
-        `select
-            last_full_open_scan_started_at,
-            last_overlapping_open_scan_completed_at,
-            last_non_overlapping_scan_completed_at,
-            last_open_close_reconciled_at
-         from repo_sync_state
-         where repo_id = ?`,
-      )
-      .get(repoId) as
-      | {
-          last_full_open_scan_started_at: string | null;
-          last_overlapping_open_scan_completed_at: string | null;
-          last_non_overlapping_scan_completed_at: string | null;
-          last_open_close_reconciled_at: string | null;
-        }
-      | undefined) ?? null;
-    if (persisted) {
-      return {
-        lastFullOpenScanStartedAt: persisted.last_full_open_scan_started_at,
-        lastOverlappingOpenScanCompletedAt: persisted.last_overlapping_open_scan_completed_at,
-        lastNonOverlappingScanCompletedAt: persisted.last_non_overlapping_scan_completed_at,
-        lastReconciledOpenCloseAt: persisted.last_open_close_reconciled_at,
-      };
-    }
-
-    const rows = this.db
-      .prepare("select finished_at, stats_json from sync_runs where repo_id = ? and status = 'completed' order by id desc")
-      .all(repoId) as Array<{ finished_at: string | null; stats_json: string | null }>;
-    const state: SyncCursorState = {
-      lastFullOpenScanStartedAt: null,
-      lastOverlappingOpenScanCompletedAt: null,
-      lastNonOverlappingScanCompletedAt: null,
-      lastReconciledOpenCloseAt: null,
-    };
-
-    for (const row of rows) {
-      const stats = parseSyncRunStats(row.stats_json);
-      if (!stats) continue;
-      if (state.lastFullOpenScanStartedAt === null && stats.isFullOpenScan) {
-        state.lastFullOpenScanStartedAt = stats.crawlStartedAt;
-      }
-      if (state.lastOverlappingOpenScanCompletedAt === null && stats.isOverlappingOpenScan && row.finished_at) {
-        state.lastOverlappingOpenScanCompletedAt = row.finished_at;
-      }
-      if (state.lastNonOverlappingScanCompletedAt === null && !stats.isFullOpenScan && !stats.isOverlappingOpenScan && row.finished_at) {
-        state.lastNonOverlappingScanCompletedAt = row.finished_at;
-      }
-      if (state.lastReconciledOpenCloseAt === null && stats.reconciledOpenCloseAt) {
-        state.lastReconciledOpenCloseAt = stats.reconciledOpenCloseAt;
-      }
-    }
-
-    if (
-      state.lastFullOpenScanStartedAt !== null ||
-      state.lastOverlappingOpenScanCompletedAt !== null ||
-      state.lastNonOverlappingScanCompletedAt !== null ||
-      state.lastReconciledOpenCloseAt !== null
-    ) {
-      this.writeSyncCursorState(repoId, state);
-    }
-
-    return state;
-  }
-
-  private writeSyncCursorState(repoId: number, state: SyncCursorState): void {
-    this.db
-      .prepare(
-        `insert into repo_sync_state (
-            repo_id,
-            last_full_open_scan_started_at,
-            last_overlapping_open_scan_completed_at,
-            last_non_overlapping_scan_completed_at,
-            last_open_close_reconciled_at,
-            updated_at
-         ) values (?, ?, ?, ?, ?, ?)
-         on conflict(repo_id) do update set
-           last_full_open_scan_started_at = excluded.last_full_open_scan_started_at,
-           last_overlapping_open_scan_completed_at = excluded.last_overlapping_open_scan_completed_at,
-           last_non_overlapping_scan_completed_at = excluded.last_non_overlapping_scan_completed_at,
-           last_open_close_reconciled_at = excluded.last_open_close_reconciled_at,
-           updated_at = excluded.updated_at`,
-      )
-      .run(
-        repoId,
-        state.lastFullOpenScanStartedAt,
-        state.lastOverlappingOpenScanCompletedAt,
-        state.lastNonOverlappingScanCompletedAt,
-        state.lastReconciledOpenCloseAt,
-        nowIso(),
-      );
   }
 
   private getTuiRepoStats(repoId: number): TuiRepoStats {
