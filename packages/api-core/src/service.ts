@@ -63,8 +63,11 @@ import {
 
 import { buildClusters, buildRefinedClusters, buildSizeBoundedClusters } from './cluster/build.js';
 import { buildCodeSnapshotSignature } from './cluster/code-signature.js';
-import { loadLatestCodeFeatures } from './cluster/code-features.js';
 import { buildDeterministicClusterGraphFromFingerprints, extractDeterministicRefs } from './cluster/deterministic-engine.js';
+import {
+  loadDeterministicClusterableThreadMeta,
+  type DeterministicClusterableThreadMeta,
+} from './cluster/deterministic-thread-loader.js';
 import {
   collectSourceKindScores,
   edgeKey,
@@ -1109,7 +1112,8 @@ export class GHCrawlService {
         this.reconcileClusterCloseState(repoId);
       }
       if (fingerprintThreadIds.length > 0) {
-        const fingerprintItems = this.loadDeterministicClusterableThreadMeta(
+        const fingerprintItems = loadDeterministicClusterableThreadMeta(
+          this.db,
           repoId,
           Array.from(new Set(fingerprintThreadIds)),
         );
@@ -1672,7 +1676,7 @@ export class GHCrawlService {
         throw new Error(`Open thread #${params.threadNumber} was not found for ${repository.fullName}.`);
       }
       const seedThreadIds = seedThread ? [seedThread.id] : undefined;
-      const deterministicItems = this.loadDeterministicClusterableThreadMeta(repository.id);
+      const deterministicItems = loadDeterministicClusterableThreadMeta(this.db, repository.id);
       const fingerprintItems = seedThreadIds ? deterministicItems.filter((item) => seedThreadIds.includes(item.id)) : deterministicItems;
       this.materializeLatestDeterministicFingerprints(fingerprintItems, params.onProgress);
       const persistedFingerprints = this.loadLatestDeterministicFingerprints(deterministicItems.map((item) => item.id));
@@ -4432,83 +4436,8 @@ export class GHCrawlService {
     throw new Error(`Unable to shrink embedding input for #${task.threadNumber}:${task.basis} below model limits`);
   }
 
-  private loadDeterministicClusterableThreadMeta(repoId: number, threadIds?: number[]): Array<{
-    id: number;
-    number: number;
-    kind: 'issue' | 'pull_request';
-    title: string;
-    body: string | null;
-    labels: string[];
-    rawJson: string;
-    updatedAtGh: string | null;
-    changedFiles: string[];
-    hunkSignatures: string[];
-    patchIds: string[];
-  }> {
-    let sql =
-      `select id, number, kind, title, body, labels_json, raw_json, updated_at_gh
-       from threads
-       where repo_id = ?
-         and state = 'open'
-         and closed_at_local is null
-         and not exists (
-           select 1
-           from cluster_closures cc
-           join cluster_memberships cm on cm.cluster_id = cc.cluster_id
-           where cm.thread_id = threads.id
-             and cm.state <> 'removed_by_user'
-         )`;
-    const args: Array<number> = [repoId];
-    if (threadIds && threadIds.length > 0) {
-      sql += ` and id in (${threadIds.map(() => '?').join(',')})`;
-      args.push(...threadIds);
-    }
-    sql += ' order by number asc';
-
-    const rows = this.db
-      .prepare(
-        sql,
-      )
-      .all(...args) as Array<{
-      id: number;
-      number: number;
-      kind: 'issue' | 'pull_request';
-      title: string;
-      body: string | null;
-      labels_json: string;
-      raw_json: string;
-      updated_at_gh: string | null;
-    }>;
-    const codeFeaturesByThread = loadLatestCodeFeatures(this.db, rows.map((row) => row.id));
-    return rows.map((row) => ({
-      id: row.id,
-      number: row.number,
-      kind: row.kind,
-      title: row.title,
-      body: row.body,
-      labels: parseArray(row.labels_json),
-      rawJson: row.raw_json,
-      updatedAtGh: row.updated_at_gh,
-      changedFiles: codeFeaturesByThread.get(row.id)?.changedFiles ?? [],
-      hunkSignatures: codeFeaturesByThread.get(row.id)?.hunkSignatures ?? [],
-      patchIds: codeFeaturesByThread.get(row.id)?.patchIds ?? [],
-    }));
-  }
-
   private materializeLatestDeterministicFingerprints(
-    items: Array<{
-      id: number;
-      number: number;
-      kind: 'issue' | 'pull_request';
-      title: string;
-      body: string | null;
-      labels: string[];
-      rawJson: string;
-      updatedAtGh: string | null;
-      changedFiles: string[];
-      hunkSignatures: string[];
-      patchIds: string[];
-    }>,
+    items: DeterministicClusterableThreadMeta[],
     onProgress?: (message: string) => void,
   ): { computed: number; skipped: number } {
     let computed = 0;
