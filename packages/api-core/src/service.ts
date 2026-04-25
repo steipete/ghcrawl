@@ -112,6 +112,12 @@ import { blobStoreRoot, rawJsonStorage } from './db/raw-json-store.js';
 import { buildCanonicalDocument, isBotLikeAuthor } from './documents/normalize.js';
 import { buildDoctorResult } from './doctor.js';
 import { chunkEmbeddingTasks } from './embedding/chunks.js';
+import {
+  countEmbeddingsForSourceKind,
+  iterateStoredEmbeddings,
+  loadNormalizedEmbeddingsForSourceKind,
+  loadStoredEmbeddingsForThreadNumber,
+} from './embedding/queries.js';
 import { isEmbeddingContextError, parseEmbeddingContextError, shrinkEmbeddingTask } from './embedding/retry.js';
 import { activeVectorSourceKind } from './embedding/tasks.js';
 import { getEmbeddingWorkset } from './embedding/workset.js';
@@ -180,7 +186,6 @@ import type {
   NeighborsResultInternal,
   PortableSyncExportOptions,
   SearchResultInternal,
-  StoredEmbeddingRow,
   SyncCursorState,
   SyncOptions,
   SyncRunStats,
@@ -1912,12 +1917,20 @@ export class GHCrawlService {
           collectSourceKindScores(perSourceScores, edges, activeSourceKind);
           recordMemory();
         } else {
-          const totalItems = sourceKinds.reduce((sum, sourceKind) => sum + this.countEmbeddingsForSourceKind(repository.id, sourceKind), 0);
+          const totalItems = sourceKinds.reduce(
+            (sum, sourceKind) => sum + countEmbeddingsForSourceKind({ db: this.db, repoId: repository.id, sourceKind }),
+            0,
+          );
           let processedItems = 0;
 
           for (const sourceKind of sourceKinds) {
             const loadStartedAt = Date.now();
-            const normalizedRows = this.loadNormalizedEmbeddingsForSourceKind(repository.id, sourceKind);
+            const normalizedRows = loadNormalizedEmbeddingsForSourceKind({
+              db: this.db,
+              repoId: repository.id,
+              embedModel: this.config.embedModel,
+              sourceKind,
+            });
             loadMs += Date.now() - loadStartedAt;
             recordMemory();
 
@@ -1962,7 +1975,12 @@ export class GHCrawlService {
             ]
           : sourceKinds.map((sourceKind) => ({
               sourceKind,
-              rows: this.loadNormalizedEmbeddingsForSourceKind(repository.id, sourceKind).map((row) => ({
+              rows: loadNormalizedEmbeddingsForSourceKind({
+                db: this.db,
+                repoId: repository.id,
+                embedModel: this.config.embedModel,
+                sourceKind,
+              }).map((row) => ({
                 id: row.id,
                 normalizedEmbedding: row.normalizedEmbedding,
               })),
@@ -2177,7 +2195,7 @@ export class GHCrawlService {
         }
       } else if (hasLegacyEmbeddings(this.db, this.config.embedModel, repository.id)) {
         const [queryEmbedding] = await this.ai.embedTexts({ model: this.config.embedModel, texts: [params.query] });
-        for (const row of this.iterateStoredEmbeddings(repository.id)) {
+        for (const row of iterateStoredEmbeddings({ db: this.db, repoId: repository.id, embedModel: this.config.embedModel })) {
           const score = cosineSimilarity(queryEmbedding, JSON.parse(row.embedding_json) as number[]);
           if (score < 0.2) continue;
           semanticScores.set(row.id, Math.max(semanticScores.get(row.id) ?? -1, score));
@@ -2337,7 +2355,12 @@ export class GHCrawlService {
         .filter((row): row is NonNullable<typeof row> => row !== null)
         .slice(0, limit);
     } else {
-      const targetRows = this.loadStoredEmbeddingsForThreadNumber(repository.id, params.threadNumber);
+      const targetRows = loadStoredEmbeddingsForThreadNumber({
+        db: this.db,
+        repoId: repository.id,
+        threadNumber: params.threadNumber,
+        embedModel: this.config.embedModel,
+      });
       if (targetRows.length === 0) {
         throw new Error(
           `Thread #${params.threadNumber} for ${repository.fullName} was not found with an embedding. Run embed first.`,
@@ -2350,7 +2373,7 @@ export class GHCrawlService {
       }
 
       const aggregated = new Map<number, { number: number; kind: 'issue' | 'pull_request'; title: string; score: number }>();
-      for (const row of this.iterateStoredEmbeddings(repository.id)) {
+      for (const row of iterateStoredEmbeddings({ db: this.db, repoId: repository.id, embedModel: this.config.embedModel })) {
         if (row.id === responseThread.id) continue;
         const targetEmbedding = targetBySource.get(row.source_kind);
         if (!targetEmbedding) continue;
@@ -4404,103 +4427,6 @@ export class GHCrawlService {
     throw new Error(`Unable to shrink embedding input for #${task.threadNumber}:${task.basis} below model limits`);
   }
 
-  private loadStoredEmbeddings(repoId: number): StoredEmbeddingRow[] {
-    return this.db
-      .prepare(
-        `select t.id, t.repo_id, t.number, t.kind, t.state, t.closed_at_gh, t.closed_at_local, t.close_reason_local,
-                t.title, t.body, t.author_login, t.html_url, t.labels_json,
-                t.updated_at_gh, t.first_pulled_at, t.last_pulled_at, e.source_kind, e.embedding_json
-         from threads t
-         join document_embeddings e on e.thread_id = t.id
-         where t.repo_id = ? and t.state = 'open' and t.closed_at_local is null and e.model = ?
-         order by t.number asc, e.source_kind asc`,
-      )
-      .all(repoId, this.config.embedModel) as StoredEmbeddingRow[];
-  }
-
-  private loadStoredEmbeddingsForThreadNumber(repoId: number, threadNumber: number): StoredEmbeddingRow[] {
-    return this.db
-      .prepare(
-        `select t.id, t.repo_id, t.number, t.kind, t.state, t.closed_at_gh, t.closed_at_local, t.close_reason_local,
-                t.title, t.body, t.author_login, t.html_url, t.labels_json,
-                t.updated_at_gh, t.first_pulled_at, t.last_pulled_at, e.source_kind, e.embedding_json
-         from threads t
-         join document_embeddings e on e.thread_id = t.id
-         where t.repo_id = ?
-           and t.number = ?
-           and t.state = 'open'
-           and t.closed_at_local is null
-           and e.model = ?
-         order by e.source_kind asc`,
-      )
-      .all(repoId, threadNumber, this.config.embedModel) as StoredEmbeddingRow[];
-  }
-
-  private iterateStoredEmbeddings(repoId: number): IterableIterator<StoredEmbeddingRow> {
-    return this.db
-      .prepare(
-        `select t.id, t.repo_id, t.number, t.kind, t.state, t.closed_at_gh, t.closed_at_local, t.close_reason_local,
-                t.title, t.body, t.author_login, t.html_url, t.labels_json,
-                t.updated_at_gh, t.first_pulled_at, t.last_pulled_at, e.source_kind, e.embedding_json
-         from threads t
-         join document_embeddings e on e.thread_id = t.id
-         where t.repo_id = ? and t.state = 'open' and t.closed_at_local is null and e.model = ?
-         order by t.number asc, e.source_kind asc`,
-      )
-      .iterate(repoId, this.config.embedModel) as IterableIterator<StoredEmbeddingRow>;
-  }
-
-  private loadNormalizedEmbeddingForSourceKindHead(
-    repoId: number,
-    sourceKind: EmbeddingSourceKind,
-  ): { id: number; normalizedEmbedding: number[] } | null {
-    const row = this.db
-      .prepare(
-        `select t.id, e.embedding_json
-         from threads t
-         join document_embeddings e on e.thread_id = t.id
-         where t.repo_id = ?
-           and t.state = 'open'
-           and t.closed_at_local is null
-           and e.model = ?
-           and e.source_kind = ?
-         order by t.number asc
-         limit 1`,
-      )
-      .get(repoId, this.config.embedModel, sourceKind) as { id: number; embedding_json: string } | undefined;
-    if (!row) {
-      return null;
-    }
-    return {
-      id: row.id,
-      normalizedEmbedding: normalizeEmbedding(JSON.parse(row.embedding_json) as number[]).normalized,
-    };
-  }
-
-  private loadNormalizedEmbeddingsForSourceKind(
-    repoId: number,
-    sourceKind: EmbeddingSourceKind,
-  ): Array<{ id: number; normalizedEmbedding: number[] }> {
-    const rows = this.db
-      .prepare(
-        `select t.id, e.embedding_json
-         from threads t
-         join document_embeddings e on e.thread_id = t.id
-         where t.repo_id = ?
-           and t.state = 'open'
-           and t.closed_at_local is null
-           and e.model = ?
-           and e.source_kind = ?
-         order by t.number asc`,
-      )
-      .all(repoId, this.config.embedModel, sourceKind) as Array<{ id: number; embedding_json: string }>;
-
-    return rows.map((row) => ({
-      id: row.id,
-      normalizedEmbedding: normalizeEmbedding(JSON.parse(row.embedding_json) as number[]).normalized,
-    }));
-  }
-
   private loadClusterableThreadMeta(repoId: number): {
     items: Array<{ id: number; number: number; title: string }>;
     sourceKinds: EmbeddingSourceKind[];
@@ -4920,7 +4846,7 @@ export class GHCrawlService {
     params: { limit: number; minScore: number; onProgress?: (message: string) => void },
   ): Promise<Map<string, AggregatedClusterEdge>> {
     const aggregated = new Map<string, AggregatedClusterEdge>();
-    const totalItems = sourceKinds.reduce((sum, sourceKind) => sum + this.countEmbeddingsForSourceKind(repoId, sourceKind), 0);
+    const totalItems = sourceKinds.reduce((sum, sourceKind) => sum + countEmbeddingsForSourceKind({ db: this.db, repoId, sourceKind }), 0);
 
     if (sourceKinds.length === 0 || totalItems === 0) {
       return aggregated;
@@ -4931,7 +4857,12 @@ export class GHCrawlService {
     if (!shouldParallelize) {
       let processedItems = 0;
       for (const sourceKind of sourceKinds) {
-        const items = this.loadNormalizedEmbeddingsForSourceKind(repoId, sourceKind);
+        const items = loadNormalizedEmbeddingsForSourceKind({
+          db: this.db,
+          repoId,
+          embedModel: this.config.embedModel,
+          sourceKind,
+        });
         const edges = buildSourceKindEdges(items, {
           limit: params.limit,
           minScore: params.minScore,
@@ -5012,21 +4943,6 @@ export class GHCrawlService {
     }
 
     return aggregated;
-  }
-
-  private countEmbeddingsForSourceKind(repoId: number, sourceKind: EmbeddingSourceKind): number {
-    const row = this.db
-      .prepare(
-        `select count(*) as count
-         from document_embeddings e
-         join threads t on t.id = e.thread_id
-         where t.repo_id = ?
-           and t.state = 'open'
-           and t.closed_at_local is null
-           and e.source_kind = ?`,
-      )
-      .get(repoId, sourceKind) as { count: number };
-    return row.count;
   }
 
   private persistClusterRun(
