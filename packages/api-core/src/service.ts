@@ -65,6 +65,14 @@ import {
 import { buildClusters, buildRefinedClusters, buildSizeBoundedClusters } from './cluster/build.js';
 import { buildCodeSnapshotSignature } from './cluster/code-signature.js';
 import { buildDeterministicClusterGraphFromFingerprints, extractDeterministicRefs } from './cluster/deterministic-engine.js';
+import {
+  collectSourceKindScores,
+  edgeKey,
+  finalizeEdgeScores,
+  mergeSourceKindEdges,
+  pruneWeakCrossKindEdges,
+  type PerSourceScoreEntry,
+} from './cluster/edge-aggregation.js';
 import { buildSourceKindEdges } from './cluster/exact-edges.js';
 import { humanKeyForValue, humanKeyStableSlug } from './cluster/human-key.js';
 import { LLM_KEY_SUMMARY_PROMPT_VERSION, llmKeyInputHash } from './cluster/llm-key-summary.js';
@@ -169,7 +177,6 @@ import type {
   NeighborsResultInternal,
   PortableSyncExportOptions,
   SearchResultInternal,
-  SimilaritySourceKind,
   StoredEmbeddingRow,
   SyncCursorState,
   SyncOptions,
@@ -1669,7 +1676,7 @@ export class GHCrawlService {
         },
       );
       const aggregatedEdges = new Map<string, AggregatedClusterEdge>();
-      this.mergeSourceKindEdges(
+      mergeSourceKindEdges(
         aggregatedEdges,
         deterministic.edges
           .filter((edge) => edge.tier === 'strong' || edge.score >= deterministicMinScore)
@@ -1707,7 +1714,7 @@ export class GHCrawlService {
           for (const neighbor of neighbors) {
             if (!activeIds.has(neighbor.threadId)) continue;
             if (neighbor.score < minScore) continue;
-            this.mergeSourceKindEdges(
+            mergeSourceKindEdges(
               aggregatedEdges,
               [
                 {
@@ -1738,7 +1745,7 @@ export class GHCrawlService {
         });
         for (const legacyEdge of legacyEdges.values()) {
           for (const sourceKind of legacyEdge.sourceKinds) {
-            this.mergeSourceKindEdges(
+            mergeSourceKindEdges(
               aggregatedEdges,
               [{ leftThreadId: legacyEdge.leftThreadId, rightThreadId: legacyEdge.rightThreadId, score: legacyEdge.score }],
               sourceKind,
@@ -1748,7 +1755,7 @@ export class GHCrawlService {
       }
 
       const threadKinds = new Map(deterministicItems.map((item) => [item.id, item.kind]));
-      const droppedCrossKindEdges = this.pruneWeakCrossKindEdges(aggregatedEdges, threadKinds, crossKindMinScore);
+      const droppedCrossKindEdges = pruneWeakCrossKindEdges(aggregatedEdges, threadKinds, crossKindMinScore);
       if (droppedCrossKindEdges > 0) {
         params.onProgress?.(
           `[cluster] dropped ${droppedCrossKindEdges} weak issue/pr edge(s) below cross_kind_min_score=${crossKindMinScore}`,
@@ -1867,7 +1874,7 @@ export class GHCrawlService {
       `[cluster-experiment] loaded ${items.length} embedded thread(s) across ${sourceKinds.length} source kind(s) for ${repository.fullName} backend=${backend} k=${k} candidateK=${candidateK} minScore=${minScore} aggregation=${aggregation}`,
     );
 
-    const perSourceScores = new Map<string, { leftThreadId: number; rightThreadId: number; scores: Map<EmbeddingSourceKind, number> }>();
+    const perSourceScores = new Map<string, PerSourceScoreEntry>();
     let loadMs = 0;
     let setupMs = 0;
     let edgeBuildMs = 0;
@@ -1900,7 +1907,7 @@ export class GHCrawlService {
             },
           });
           edgeBuildMs += Date.now() - edgesStartedAt;
-          this.collectSourceKindScores(perSourceScores, edges, activeSourceKind);
+          collectSourceKindScores(perSourceScores, edges, activeSourceKind);
           recordMemory();
         } else {
           const totalItems = sourceKinds.reduce((sum, sourceKind) => sum + this.countEmbeddingsForSourceKind(repository.id, sourceKind), 0);
@@ -1927,7 +1934,7 @@ export class GHCrawlService {
             });
             edgeBuildMs += Date.now() - edgesStartedAt;
             processedItems += normalizedRows.length;
-            this.collectSourceKindScores(perSourceScores, edges, sourceKind);
+            collectSourceKindScores(perSourceScores, edges, sourceKind);
             recordMemory();
           }
         }
@@ -2014,7 +2021,7 @@ export class GHCrawlService {
             let addedThisRow = 0;
             for (const candidate of ranked) {
               const score = candidate.score;
-              const key = this.edgeKey(row.id, candidate.item.rowid);
+              const key = edgeKey(row.id, candidate.item.rowid);
               const existing = perSourceScores.get(key);
               if (existing) {
                 existing.scores.set(source.sourceKind, Math.max(existing.scores.get(source.sourceKind) ?? -1, score));
@@ -2049,7 +2056,7 @@ export class GHCrawlService {
       // Finalize edge scores using the configured aggregation method
       const defaultWeights: Record<EmbeddingSourceKind, number> = { dedupe_summary: 0.5, llm_key_summary: 0.5, title: 0.3, body: 0.2 };
       const weights = { ...defaultWeights, ...(params.aggregationWeights ?? {}) };
-      const aggregated = this.finalizeEdgeScores(perSourceScores, aggregation, weights, minScore);
+      const aggregated = finalizeEdgeScores(perSourceScores, aggregation, weights, minScore);
 
       params.onProgress?.(
         `[cluster-experiment] finalized ${aggregated.length} edges from ${perSourceScores.size} candidate pairs using ${aggregation} aggregation`,
@@ -5015,12 +5022,6 @@ export class GHCrawlService {
     }));
   }
 
-  private edgeKey(leftThreadId: number, rightThreadId: number): string {
-    const left = Math.min(leftThreadId, rightThreadId);
-    const right = Math.max(leftThreadId, rightThreadId);
-    return `${left}:${right}`;
-  }
-
   private async aggregateRepositoryEdges(
     repoId: number,
     sourceKinds: EmbeddingSourceKind[],
@@ -5051,7 +5052,7 @@ export class GHCrawlService {
           },
         });
         processedItems += items.length;
-        this.mergeSourceKindEdges(aggregated, edges, sourceKind);
+        mergeSourceKindEdges(aggregated, edges, sourceKind);
       }
 
       return aggregated;
@@ -5115,137 +5116,10 @@ export class GHCrawlService {
     );
 
     for (const [index, edges] of edgeSets.entries()) {
-      this.mergeSourceKindEdges(aggregated, edges, sourceKinds[index] as EmbeddingSourceKind);
+      mergeSourceKindEdges(aggregated, edges, sourceKinds[index] as EmbeddingSourceKind);
     }
 
     return aggregated;
-  }
-
-  private mergeSourceKindEdges(
-    aggregated: Map<string, AggregatedClusterEdge>,
-    edges: Array<{ leftThreadId: number; rightThreadId: number; score: number }>,
-    sourceKind: SimilaritySourceKind,
-  ): void {
-    for (const edge of edges) {
-      const key = this.edgeKey(edge.leftThreadId, edge.rightThreadId);
-      const existing = aggregated.get(key);
-      if (existing) {
-        existing.score = Math.max(existing.score, edge.score);
-        existing.sourceKinds.add(sourceKind);
-        continue;
-      }
-      aggregated.set(key, {
-        leftThreadId: edge.leftThreadId,
-        rightThreadId: edge.rightThreadId,
-        score: edge.score,
-        sourceKinds: new Set([sourceKind]),
-      });
-    }
-  }
-
-  private pruneWeakCrossKindEdges(
-    aggregated: Map<string, AggregatedClusterEdge>,
-    threadKinds: Map<number, 'issue' | 'pull_request'>,
-    crossKindMinScore: number,
-  ): number {
-    let dropped = 0;
-    for (const [key, edge] of aggregated) {
-      const leftKind = threadKinds.get(edge.leftThreadId);
-      const rightKind = threadKinds.get(edge.rightThreadId);
-      if (!leftKind || !rightKind || leftKind === rightKind) {
-        continue;
-      }
-      if (edge.sourceKinds.has('deterministic_fingerprint') || edge.score >= crossKindMinScore) {
-        continue;
-      }
-      aggregated.delete(key);
-      dropped += 1;
-    }
-    return dropped;
-  }
-
-  private collectSourceKindScores(
-    perSourceScores: Map<string, { leftThreadId: number; rightThreadId: number; scores: Map<EmbeddingSourceKind, number> }>,
-    edges: Array<{ leftThreadId: number; rightThreadId: number; score: number }>,
-    sourceKind: EmbeddingSourceKind,
-  ): void {
-    for (const edge of edges) {
-      const key = this.edgeKey(edge.leftThreadId, edge.rightThreadId);
-      const existing = perSourceScores.get(key);
-      if (existing) {
-        existing.scores.set(sourceKind, Math.max(existing.scores.get(sourceKind) ?? -1, edge.score));
-        continue;
-      }
-      const scores = new Map<EmbeddingSourceKind, number>();
-      scores.set(sourceKind, edge.score);
-      perSourceScores.set(key, {
-        leftThreadId: edge.leftThreadId,
-        rightThreadId: edge.rightThreadId,
-        scores,
-      });
-    }
-  }
-
-  private finalizeEdgeScores(
-    perSourceScores: Map<string, { leftThreadId: number; rightThreadId: number; scores: Map<EmbeddingSourceKind, number> }>,
-    aggregation: 'max' | 'mean' | 'weighted' | 'min-of-2' | 'boost',
-    weights: Record<EmbeddingSourceKind, number>,
-    minScore: number,
-  ): Array<{ leftThreadId: number; rightThreadId: number; score: number }> {
-    const result: Array<{ leftThreadId: number; rightThreadId: number; score: number }> = [];
-
-    for (const entry of perSourceScores.values()) {
-      const scoreValues = Array.from(entry.scores.values());
-      let finalScore: number;
-
-      switch (aggregation) {
-        case 'max':
-          finalScore = Math.max(...scoreValues);
-          break;
-
-        case 'mean':
-          finalScore = scoreValues.reduce((a, b) => a + b, 0) / scoreValues.length;
-          break;
-
-        case 'weighted': {
-          let weightedSum = 0;
-          let weightSum = 0;
-          for (const [kind, score] of entry.scores) {
-            const w = weights[kind] ?? 0.1;
-            weightedSum += score * w;
-            weightSum += w;
-          }
-          finalScore = weightSum > 0 ? weightedSum / weightSum : 0;
-          break;
-        }
-
-        case 'min-of-2':
-          // Require at least 2 source kinds to agree (both above minScore)
-          if (scoreValues.length < 2) {
-            continue; // Skip edges with only 1 source kind
-          }
-          finalScore = Math.max(...scoreValues);
-          break;
-
-        case 'boost': {
-          // Best score + bonus per additional agreeing source
-          const best = Math.max(...scoreValues);
-          const bonusSources = scoreValues.length - 1;
-          finalScore = Math.min(1.0, best + bonusSources * 0.05);
-          break;
-        }
-      }
-
-      if (finalScore >= minScore) {
-        result.push({
-          leftThreadId: entry.leftThreadId,
-          rightThreadId: entry.rightThreadId,
-          score: finalScore,
-        });
-      }
-    }
-
-    return result;
   }
 
   private countEmbeddingsForSourceKind(repoId: number, sourceKind: EmbeddingSourceKind): number {
@@ -5318,7 +5192,7 @@ export class GHCrawlService {
         );
         const clusterId = Number(clusterResult.lastInsertRowid);
         for (const memberId of cluster.members) {
-          const key = this.edgeKey(cluster.representativeThreadId, memberId);
+          const key = edgeKey(cluster.representativeThreadId, memberId);
           const score = memberId === cluster.representativeThreadId ? null : (aggregatedEdges.get(key)?.score ?? null);
           insertMember.run(clusterId, memberId, score, createdAt);
         }
@@ -5386,7 +5260,7 @@ export class GHCrawlService {
             .run(representativeThreadId, nowIso(), clusterId);
         }
         for (const memberId of cluster.members) {
-          const scoreKey = this.edgeKey(representativeThreadId, memberId);
+          const scoreKey = edgeKey(representativeThreadId, memberId);
           const score = memberId === representativeThreadId ? 1 : (aggregatedEdges.get(scoreKey)?.score ?? null);
           const excluded = this.db
             .prepare(
@@ -5472,7 +5346,7 @@ export class GHCrawlService {
           if (cluster.members.includes(forced.thread_id)) {
             continue;
           }
-          const scoreKey = this.edgeKey(representativeThreadId, forced.thread_id);
+          const scoreKey = edgeKey(representativeThreadId, forced.thread_id);
           const score = forced.thread_id === representativeThreadId ? 1 : (aggregatedEdges.get(scoreKey)?.score ?? null);
           upsertClusterMembership(this.db, {
             clusterId,
