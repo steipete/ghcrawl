@@ -3659,6 +3659,7 @@ export class GHCrawlService {
         cluster_id integer not null references cluster_groups(id) on delete cascade,
         thread_id integer not null references threads(id) on delete cascade,
         action text not null,
+        actor_id integer,
         reason text,
         created_at text not null,
         expires_at text,
@@ -3766,9 +3767,12 @@ export class GHCrawlService {
        join cluster_groups cg on cg.id = cm.cluster_id
        join threads t on t.id = cm.thread_id`,
     ).run();
+    const overrideActorExpr = this.attachedTableHasColumn(db, 'source', 'cluster_overrides', 'actor_id') ? 'co.actor_id' : 'null';
     db.prepare(
-      `insert into cluster_overrides
-       select co.*
+      `insert into cluster_overrides (
+        id, repo_id, cluster_id, thread_id, action, actor_id, reason, created_at, expires_at
+      )
+       select co.id, co.repo_id, co.cluster_id, co.thread_id, co.action, ${overrideActorExpr}, co.reason, co.created_at, co.expires_at
        from source.cluster_overrides co
        join cluster_groups cg on cg.id = co.cluster_id
        join threads t on t.id = co.thread_id
@@ -3791,6 +3795,11 @@ export class GHCrawlService {
   private countPortableRows(db: SqliteDatabase, tableName: string): number {
     const row = db.prepare(`select count(*) as count from "${tableName}"`).get() as { count: number };
     return row.count;
+  }
+
+  private attachedTableHasColumn(db: SqliteDatabase, schemaName: string, tableName: string, columnName: string): boolean {
+    const rows = db.prepare(`pragma ${schemaName}.table_info("${tableName}")`).all() as Array<{ name: string }>;
+    return rows.some((row) => row.name === columnName);
   }
 
   private optimizeSqliteTarget(params: {
