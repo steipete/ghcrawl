@@ -24,7 +24,6 @@ import {
   optimizeResponseSchema,
   refreshResponseSchema,
   repositoriesResponseSchema,
-  runHistoryResponseSchema,
   searchResponseSchema,
   syncResultSchema,
   threadsResponseSchema,
@@ -114,6 +113,7 @@ import {
   type PortableSyncStatusResponse,
   type PortableSyncValidationResponse,
 } from './portable/sync-store.js';
+import { finishServiceRun, listRunHistoryForRepository, startServiceRun } from './run-history.js';
 import { cosineSimilarity, dotProduct, normalizeEmbedding, rankNearestNeighbors, rankNearestNeighborsByScore } from './search/exact.js';
 import { missingVectorStoreTarget, optimizeSqliteTarget } from './storage-maintenance.js';
 import {
@@ -166,7 +166,6 @@ import type {
   NeighborsResultInternal,
   PortableSyncExportOptions,
   RepoPipelineStateRow,
-  RunTable,
   SearchResultInternal,
   SimilaritySourceKind,
   StoredEmbeddingRow,
@@ -298,45 +297,11 @@ export class GHCrawlService {
 
   listRunHistory(params: { owner: string; repo: string; kind?: RunKind; limit?: number }): RunHistoryResponse {
     const repository = this.requireRepository(params.owner, params.repo);
-    const limit = Math.min(Math.max(params.limit ?? 20, 1), 200);
-    const tables: Array<{ kind: RunKind; table: RunTable }> = [
-      { kind: 'sync', table: 'sync_runs' },
-      { kind: 'summary', table: 'summary_runs' },
-      { kind: 'embedding', table: 'embedding_runs' },
-      { kind: 'cluster', table: 'cluster_runs' },
-    ];
-    const selectedTables = params.kind ? tables.filter((entry) => entry.kind === params.kind) : tables;
-    const sql = selectedTables
-      .map(
-        (entry) =>
-          `select '${entry.kind}' as run_kind, id, scope, status, started_at, finished_at, stats_json, error_text from ${entry.table} where repo_id = ?`,
-      )
-      .join(' union all ');
-    const rows = this.db
-      .prepare(`select * from (${sql}) order by started_at desc, id desc limit ?`)
-      .all(...selectedTables.map(() => repository.id), limit) as Array<{
-      run_kind: RunKind;
-      id: number;
-      scope: string;
-      status: string;
-      started_at: string;
-      finished_at: string | null;
-      stats_json: string | null;
-      error_text: string | null;
-    }>;
-
-    return runHistoryResponseSchema.parse({
+    return listRunHistoryForRepository({
+      db: this.db,
       repository,
-      runs: rows.map((row) => ({
-        runId: row.id,
-        runKind: row.run_kind,
-        scope: row.scope,
-        status: row.status,
-        startedAt: row.started_at,
-        finishedAt: row.finished_at,
-        stats: parseObjectJson(row.stats_json),
-        errorText: row.error_text,
-      })),
+      kind: params.kind,
+      limit: params.limit,
     });
   }
 
@@ -1006,7 +971,7 @@ export class GHCrawlService {
     const reporter = params.onProgress ? (message: string) => params.onProgress?.(message.replace(/^\[github\]/, '[sync/github]')) : undefined;
     const repoData = await github.getRepo(params.owner, params.repo, reporter);
     const repoId = this.upsertRepository(params.owner, params.repo, repoData);
-    const runId = this.startRun('sync_runs', repoId, `${params.owner}/${params.repo}`);
+    const runId = startServiceRun(this.db, 'sync_runs', repoId, `${params.owner}/${params.repo}`);
     const syncCursor = this.getSyncCursorState(repoId);
     const overlapReferenceAt = syncCursor.lastOverlappingOpenScanCompletedAt ?? syncCursor.lastFullOpenScanStartedAt;
     const effectiveSince =
@@ -1162,7 +1127,7 @@ export class GHCrawlService {
         lastReconciledOpenCloseAt: reconciledOpenCloseAt ?? syncCursor.lastReconciledOpenCloseAt,
       };
       this.writeSyncCursorState(repoId, nextSyncCursor);
-      this.finishRun('sync_runs', runId, 'completed', {
+      finishServiceRun(this.db, 'sync_runs', runId, 'completed', {
         threadsSynced,
         commentsSynced,
         codeFilesSynced,
@@ -1187,7 +1152,7 @@ export class GHCrawlService {
       } satisfies SyncRunStats, undefined, finishedAt);
       return syncResultSchema.parse({ runId, threadsSynced, commentsSynced, codeFilesSynced, threadsClosed });
     } catch (error) {
-      this.finishRun('sync_runs', runId, 'failed', null, error);
+      finishServiceRun(this.db, 'sync_runs', runId, 'failed', null, error);
       throw error;
     }
   }
@@ -1201,7 +1166,7 @@ export class GHCrawlService {
   }): Promise<{ runId: number; summarized: number; inputTokens: number; outputTokens: number; totalTokens: number }> {
     const ai = this.requireAi();
     const repository = this.requireRepository(params.owner, params.repo);
-    const runId = this.startRun('summary_runs', repository.id, params.threadNumber ? `thread:${params.threadNumber}` : repository.fullName);
+    const runId = startServiceRun(this.db, 'summary_runs', repository.id, params.threadNumber ? `thread:${params.threadNumber}` : repository.fullName);
     const includeComments = params.includeComments ?? false;
 
     try {
@@ -1333,10 +1298,10 @@ export class GHCrawlService {
         summarized += 1;
       }
 
-      this.finishRun('summary_runs', runId, 'completed', { summarized, inputTokens, outputTokens, totalTokens });
+      finishServiceRun(this.db, 'summary_runs', runId, 'completed', { summarized, inputTokens, outputTokens, totalTokens });
       return { runId, summarized, inputTokens, outputTokens, totalTokens };
     } catch (error) {
-      this.finishRun('summary_runs', runId, 'failed', null, error);
+      finishServiceRun(this.db, 'summary_runs', runId, 'failed', null, error);
       throw error;
     }
   }
@@ -1364,7 +1329,7 @@ export class GHCrawlService {
     const generateKeySummary = ai.generateKeySummary.bind(ai);
     const providerName = ai.providerName ?? 'custom';
     const repository = this.requireRepository(params.owner, params.repo);
-    const runId = this.startRun('summary_runs', repository.id, params.threadNumber ? `key-summary:${params.threadNumber}` : `key-summary:${repository.fullName}`);
+    const runId = startServiceRun(this.db, 'summary_runs', repository.id, params.threadNumber ? `key-summary:${params.threadNumber}` : `key-summary:${repository.fullName}`);
 
     try {
       let sql =
@@ -1521,10 +1486,10 @@ export class GHCrawlService {
       }
 
       const payload = { runId, generated, skipped, failed, inputTokens, outputTokens, totalTokens, errorSamples };
-      this.finishRun('summary_runs', runId, 'completed', payload);
+      finishServiceRun(this.db, 'summary_runs', runId, 'completed', payload);
       return payload;
     } catch (error) {
-      this.finishRun('summary_runs', runId, 'failed', null, error);
+      finishServiceRun(this.db, 'summary_runs', runId, 'failed', null, error);
       throw error;
     }
   }
@@ -1587,7 +1552,7 @@ export class GHCrawlService {
   }): Promise<EmbedResultDto> {
     const ai = this.requireAi();
     const repository = this.requireRepository(params.owner, params.repo);
-    const runId = this.startRun('embedding_runs', repository.id, params.threadNumber ? `thread:${params.threadNumber}` : repository.fullName);
+    const runId = startServiceRun(this.db, 'embedding_runs', repository.id, params.threadNumber ? `thread:${params.threadNumber}` : repository.fullName);
 
     try {
       if (params.threadNumber === undefined) {
@@ -1646,10 +1611,10 @@ export class GHCrawlService {
       }
 
       this.markRepoVectorsCurrent(repository.id);
-      this.finishRun('embedding_runs', runId, 'completed', { embedded });
+      finishServiceRun(this.db, 'embedding_runs', runId, 'completed', { embedded });
       return embedResultSchema.parse({ runId, embedded });
     } catch (error) {
-      this.finishRun('embedding_runs', runId, 'failed', null, error);
+      finishServiceRun(this.db, 'embedding_runs', runId, 'failed', null, error);
       throw error;
     }
   }
@@ -1665,7 +1630,7 @@ export class GHCrawlService {
   }): Promise<ClusterResultDto> {
     const repository = this.requireRepository(params.owner, params.repo);
     const runSubject = params.threadNumber ? `${repository.fullName}#${params.threadNumber}` : repository.fullName;
-    const runId = this.startRun('cluster_runs', repository.id, runSubject);
+    const runId = startServiceRun(this.db, 'cluster_runs', repository.id, runSubject);
     const pipelineRunId = createPipelineRun(this.db, {
       repoId: repository.id,
       runKind: params.threadNumber ? 'cluster_incremental' : 'cluster',
@@ -1856,11 +1821,11 @@ export class GHCrawlService {
         crossKindMinScore,
         ...clusterQuality,
       };
-      this.finishRun('cluster_runs', runId, 'completed', stats);
+      finishServiceRun(this.db, 'cluster_runs', runId, 'completed', stats);
       finishPipelineRun(this.db, pipelineRunId, { status: 'completed', stats });
       return clusterResultSchema.parse({ runId, edges: edges.length, clusters: clusters.length });
     } catch (error) {
-      this.finishRun('cluster_runs', runId, 'failed', null, error);
+      finishServiceRun(this.db, 'cluster_runs', runId, 'failed', null, error);
       finishPipelineRun(this.db, pipelineRunId, { status: 'failed', errorText: error instanceof Error ? error.message : String(error) });
       throw error;
     }
@@ -6682,29 +6647,4 @@ export class GHCrawlService {
       );
   }
 
-  private startRun(table: RunTable, repoId: number, scope: string): number {
-    const result = this.db
-      .prepare(`insert into ${table} (repo_id, scope, status, started_at) values (?, ?, 'running', ?)`)
-      .run(repoId, scope, nowIso());
-    return Number(result.lastInsertRowid);
-  }
-
-  private finishRun(
-    table: RunTable,
-    runId: number,
-    status: 'completed' | 'failed',
-    stats?: unknown,
-    error?: unknown,
-    finishedAt = nowIso(),
-  ): void {
-    this.db
-      .prepare(`update ${table} set status = ?, finished_at = ?, stats_json = ?, error_text = ? where id = ?`)
-      .run(
-        status,
-        finishedAt,
-        stats === undefined ? null : asJson(stats),
-        error instanceof Error ? error.message : error ? String(error) : null,
-        runId,
-      );
-  }
 }
