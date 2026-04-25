@@ -1742,7 +1742,7 @@ export function renderDetailPane(
   const closedLabel = thread.isClosed
     ? `{bold}Closed:{/bold} ${escapeBlessedText(thread.closedAtLocal ?? thread.closedAtGh ?? 'yes')} ${thread.closeReasonLocal ? `(${escapeBlessedText(thread.closeReasonLocal)})` : ''}`.trimEnd()
     : '{bold}Closed:{/bold} no';
-  const summaries = renderSummarySections(threadDetail.summaries);
+  const summaryBlock = renderThreadSummaryBlock(threadDetail);
   const topFiles = renderTopFiles(threadDetail.topFiles);
   const neighbors =
     threadDetail.neighbors.length > 0
@@ -1760,8 +1760,8 @@ export function renderDetailPane(
     `{bold}${thread.kind === 'pull_request' ? 'PR' : 'Issue'} #${thread.number}{/bold}  ${escapeBlessedText(thread.title)}`,
     `{cyan-fg}${escapeBlessedText(clusterTitle.name)}{/cyan-fg}  C${clusterDetail.clusterId}${escapeBlessedText(representativeLabel)}`,
     '{gray-fg}' + '-'.repeat(72) + '{/gray-fg}',
-    summaries ? `{bold}LLM Summary{/bold}\n${summaries}` : '',
-    summaries ? '{gray-fg}' + '-'.repeat(72) + '{/gray-fg}' : '',
+    summaryBlock ? `{bold}LLM Summary{/bold}\n${summaryBlock}` : '',
+    summaryBlock ? '{gray-fg}' + '-'.repeat(72) + '{/gray-fg}' : '',
     `${closedLabel}  {bold}Updated:{/bold} ${escapeBlessedText(formatRelativeTime(thread.updatedAtGh))}  {bold}Author:{/bold} ${escapeBlessedText(thread.authorLogin ?? 'unknown')}`,
     `{bold}Labels:{/bold} ${labels}`,
     `{bold}URL:{/bold} ${formatTerminalLink(thread.htmlUrl, thread.htmlUrl)}`,
@@ -1883,6 +1883,16 @@ export function renderSummarySections(summaries: TuiThreadDetail['summaries']): 
   }).join('\n\n');
 }
 
+export function renderThreadSummaryBlock(threadDetail: TuiThreadDetail): string {
+  const sections = [
+    threadDetail.keySummary
+      ? `{bold}Key summary{/bold} {gray-fg}${escapeBlessedText(threadDetail.keySummary.model)}{/gray-fg}\n${renderMarkdownForTerminal(threadDetail.keySummary.text)}`
+      : '',
+    renderSummarySections(threadDetail.summaries),
+  ];
+  return sections.filter((section) => section.trim()).join('\n\n');
+}
+
 export function renderTopFiles(files: TuiThreadDetail['topFiles']): string {
   if (files.length === 0) return '';
   return files
@@ -1921,6 +1931,7 @@ export function formatThreadDetailForClipboard(threadDetail: TuiThreadDetail, cl
     `Author: ${thread.authorLogin ?? 'unknown'}`,
     `Labels: ${thread.labels.join(', ') || 'none'}`,
     `URL: ${thread.htmlUrl}`,
+    threadDetail.keySummary ? `Key summary (${threadDetail.keySummary.model}):\n${threadDetail.keySummary.text}` : '',
     formatSummariesForClipboard(threadDetail.summaries) ? `LLM Summary:\n${formatSummariesForClipboard(threadDetail.summaries)}` : '',
     threadDetail.topFiles.length > 0 ? `Top files:\n${formatTopFilesForClipboard(threadDetail.topFiles)}` : '',
     `Body:\n${thread.body ?? ''}`,

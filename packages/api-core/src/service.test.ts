@@ -3362,6 +3362,23 @@ test('tui cluster detail and thread detail expose members, summaries, and neighb
          values (?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(2000, 'README.md', 'modified', 4, 2, null, 'patch-2');
+    service.db
+      .prepare(
+        `insert into thread_key_summaries (
+           thread_revision_id, summary_kind, prompt_version, provider, model, input_hash, output_hash, key_text, created_at
+         ) values (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        1000,
+        'llm_key_3line',
+        'v1',
+        'openai',
+        'gpt-5-mini',
+        'input-hash',
+        'output-hash',
+        'intent: Fix downloader hangs\nsurface: download progress\nmechanism: align timeout handling',
+        now,
+      );
 
     const detail = service.getTuiClusterDetail({ owner: 'openclaw', repo: 'openclaw', clusterId: 100 });
     assert.equal(detail.totalCount, 2);
@@ -3377,6 +3394,8 @@ test('tui cluster detail and thread detail expose members, summaries, and neighb
     assert.equal(threadDetail.thread.htmlUrl, 'https://github.com/openclaw/openclaw/issues/42');
     assert.equal(threadDetail.summaries.problem_summary, 'Downloads hang before completion.');
     assert.equal(threadDetail.summaries.dedupe_summary, 'Transfer stalls near completion.');
+    assert.equal(threadDetail.keySummary?.text, 'intent: Fix downloader hangs\nsurface: download progress\nmechanism: align timeout handling');
+    assert.equal(threadDetail.keySummary?.model, 'gpt-5-mini');
     assert.deepEqual(threadDetail.topFiles[0], {
       path: 'apps/cli/src/tui/app.ts',
       status: 'modified',

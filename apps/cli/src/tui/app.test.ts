@@ -72,6 +72,12 @@ test('renderDetailPane escapes user-provided text before rendering into a tags-e
     summaries: {
       dedupe_summary: 'Summary {yellow-fg}text{/yellow-fg}',
     },
+    keySummary: {
+      summaryKind: 'llm_key_3line',
+      promptVersion: 'v1',
+      model: 'gpt-5-mini',
+      text: 'intent: Escape preview text\nsurface: TUI detail pane\nmechanism: Render existing summary data',
+    },
     topFiles: [
       {
         path: 'apps/cli/src/tui/app.ts',
@@ -95,6 +101,8 @@ test('renderDetailPane escapes user-provided text before rendering into a tags-e
   assert.match(rendered, /C1 \(#42 representative issue\)/);
   assert.match(rendered, /Bad \\{bold\\}title\\{\/bold\\}/);
   assert.match(rendered, /Cluster signal:/);
+  assert.match(rendered, /Key summary/);
+  assert.match(rendered, /intent: Escape preview text/);
   assert.match(rendered, /Top files/);
   assert.match(rendered, /apps\/cli\/src\/tui\/app\.ts/);
   assert.match(rendered, /Main Preview/);
@@ -143,6 +151,7 @@ test('renderDetailPane can compact very long bodies', () => {
       clusterId: 1,
     },
     summaries: {},
+    keySummary: null,
     topFiles: [],
     neighbors: [],
   };
@@ -288,6 +297,12 @@ test('clipboard formatters expose cluster and thread context without blessed tag
       clusterId: 7,
     },
     summaries: { problem_summary: 'Retries fail' },
+    keySummary: {
+      summaryKind: 'llm_key_3line',
+      promptVersion: 'v1',
+      model: 'gpt-5-mini',
+      text: 'intent: Fix retries\nsurface: retry worker\nmechanism: update retry path',
+    },
     topFiles: [{ path: 'src/retry.ts', status: 'modified', additions: 3, deletions: 1 }],
     neighbors: [],
   };
@@ -295,6 +310,7 @@ test('clipboard formatters expose cluster and thread context without blessed tag
   assert.match(formatClusterForClipboard(cluster), /Name: alpha-bravo-charlie/);
   assert.match(formatClusterMembersForClipboard(cluster), /Issue #42 \[open\] Fix retries/);
   assert.match(formatThreadDetailForClipboard(detail, cluster), /LLM Summary:\nPurpose:\nRetries fail/);
+  assert.match(formatThreadDetailForClipboard(detail, cluster), /Key summary \(gpt-5-mini\):\nintent: Fix retries/);
   assert.match(formatThreadDetailForClipboard(detail, cluster), /Top files:\nsrc\/retry\.ts modified \+3\/-1/);
   assert.match(formatVisibleClustersForClipboard([{ ...cluster, searchText: '' }]), /C7 \[open\] 1 items alpha-bravo-charlie/);
 });
@@ -349,6 +365,7 @@ test('buildThreadContextMenuItems exposes thread actions for right-click menus',
       clusterId: 1,
     },
     summaries: {},
+    keySummary: null,
     topFiles: [],
     neighbors: [],
   });
@@ -397,6 +414,7 @@ test('getThreadReferenceLinks extracts unique body and summary links', () => {
     summaries: {
       dedupe_summary: 'same as https://example.com/raw and https://example.com/summary',
     },
+    keySummary: null,
     topFiles: [],
     neighbors: [],
   });

@@ -360,6 +360,12 @@ export type TuiClusterDetail = {
 export type TuiThreadDetail = {
   thread: ThreadDto;
   summaries: Partial<Record<'problem_summary' | 'solution_summary' | 'maintainer_signal_summary' | 'dedupe_summary', string>>;
+  keySummary: {
+    summaryKind: string;
+    promptVersion: string;
+    model: string;
+    text: string;
+  } | null;
   topFiles: Array<{
     path: string;
     status: string | null;
@@ -602,6 +608,14 @@ function stableContentHash(input: string): string {
 
 function normalizeSummaryText(value: string): string {
   return value.replace(/\r/g, '\n').replace(/\s+/g, ' ').trim();
+}
+
+function normalizeKeySummaryDisplayText(value: string): string {
+  return value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join('\n');
 }
 
 function snippetText(value: string | null | undefined, maxChars: number): string | null {
@@ -3511,6 +3525,7 @@ export class GHCrawlService {
       }
     }
     const topFiles = this.getTopChangedFiles(row.id, 5);
+    const keySummary = this.getLatestKeySummary(row.id);
 
     let neighbors: SearchHitDto['neighbors'] = [];
     if (params.includeNeighbors !== false) {
@@ -3533,8 +3548,42 @@ export class GHCrawlService {
     return {
       thread: threadToDto(row, clusterMembership?.cluster_id ?? null),
       summaries,
+      keySummary,
       topFiles,
       neighbors,
+    };
+  }
+
+  private getLatestKeySummary(threadId: number): TuiThreadDetail['keySummary'] {
+    const row = this.db
+      .prepare(
+        `select ks.summary_kind, ks.prompt_version, ks.model, ks.key_text
+         from thread_key_summaries ks
+         join thread_revisions tr on tr.id = ks.thread_revision_id
+         where tr.thread_id = ?
+           and ks.summary_kind = 'llm_key_3line'
+         order by
+           case when ks.model = ? then 0 else 1 end,
+           tr.id desc,
+           ks.created_at desc
+         limit 1`,
+      )
+      .get(threadId, this.config.summaryModel) as
+      | {
+          summary_kind: string;
+          prompt_version: string;
+          model: string;
+          key_text: string;
+        }
+      | undefined;
+    if (!row) return null;
+    const text = normalizeKeySummaryDisplayText(row.key_text);
+    if (!text) return null;
+    return {
+      summaryKind: row.summary_kind,
+      promptVersion: row.prompt_version,
+      model: row.model,
+      text,
     };
   }
 
