@@ -76,6 +76,7 @@ import {
 import { buildSourceKindEdges } from './cluster/exact-edges.js';
 import { humanKeyForValue, humanKeyStableSlug } from './cluster/human-key.js';
 import { LLM_KEY_SUMMARY_PROMPT_VERSION, llmKeyInputHash } from './cluster/llm-key-summary.js';
+import { summarizeClusterQuality, summarizeClusterSizes } from './cluster/quality.js';
 import {
   createPipelineRun,
   finishPipelineRun,
@@ -168,7 +169,6 @@ import type {
   ActiveVectorTask,
   AggregatedClusterEdge,
   ClusterExperimentResult,
-  ClusterExperimentClusterSizeStats,
   CommentSeed,
   DoctorResult,
   DurableTuiClosure,
@@ -1784,7 +1784,7 @@ export class GHCrawlService {
         edges,
         { maxClusterSize },
       );
-      const clusterQuality = this.summarizeClusterQuality(clusters, threadKinds, maxClusterSize);
+      const clusterQuality = summarizeClusterQuality(clusters, threadKinds, maxClusterSize);
       if (!seedThreadIds) {
         this.persistClusterRun(repository.id, runId, aggregatedEdges, clusters);
       }
@@ -2111,7 +2111,7 @@ export class GHCrawlService {
           heapUsedAfterBytes: memoryAfter.heapUsed,
           peakHeapUsedBytes,
         },
-        clusterSizes: this.summarizeClusterSizes(clusters),
+        clusterSizes: summarizeClusterSizes(clusters),
         clustersDetail: params.includeClusters
           ? clusters.map((cluster) => ({
               representativeThreadId: cluster.representativeThreadId,
@@ -5457,77 +5457,6 @@ export class GHCrawlService {
 
   private pruneOldClusterRuns(repoId: number, keepRunId: number): void {
     this.db.prepare('delete from cluster_runs where repo_id = ? and id <> ?').run(repoId, keepRunId);
-  }
-
-  private summarizeClusterSizes(
-    clusters: Array<{ representativeThreadId: number; members: number[] }>,
-  ): ClusterExperimentClusterSizeStats {
-    const histogramCounts = new Map<number, number>();
-    const topClusterSizes = clusters.map((cluster) => cluster.members.length).sort((left, right) => right - left);
-    let soloClusters = 0;
-
-    for (const cluster of clusters) {
-      const size = cluster.members.length;
-      histogramCounts.set(size, (histogramCounts.get(size) ?? 0) + 1);
-      if (size === 1) {
-        soloClusters += 1;
-      }
-    }
-
-    return {
-      soloClusters,
-      maxClusterSize: topClusterSizes[0] ?? 0,
-      topClusterSizes: topClusterSizes.slice(0, 50),
-      histogram: Array.from(histogramCounts.entries())
-        .map(([size, count]) => ({ size, count }))
-        .sort((left, right) => left.size - right.size),
-    };
-  }
-
-  private summarizeClusterQuality(
-    clusters: Array<{ representativeThreadId: number; members: number[] }>,
-    threadKinds: Map<number, 'issue' | 'pull_request'>,
-    maxClusterSize: number,
-  ): {
-    maxClusterSize: number;
-    maxObservedClusterSize: number;
-    maxedClusterCount: number;
-    mixedKindClusterCount: number;
-    singletonClusterCount: number;
-    nonSingletonClusterCount: number;
-  } {
-    let maxObservedClusterSize = 0;
-    let maxedClusterCount = 0;
-    let mixedKindClusterCount = 0;
-    let singletonClusterCount = 0;
-
-    for (const cluster of clusters) {
-      const size = cluster.members.length;
-      maxObservedClusterSize = Math.max(maxObservedClusterSize, size);
-      if (size >= maxClusterSize) maxedClusterCount += 1;
-      if (size === 1) singletonClusterCount += 1;
-
-      let hasIssue = false;
-      let hasPullRequest = false;
-      for (const memberId of cluster.members) {
-        const kind = threadKinds.get(memberId);
-        hasIssue ||= kind === 'issue';
-        hasPullRequest ||= kind === 'pull_request';
-        if (hasIssue && hasPullRequest) {
-          mixedKindClusterCount += 1;
-          break;
-        }
-      }
-    }
-
-    return {
-      maxClusterSize,
-      maxObservedClusterSize,
-      maxedClusterCount,
-      mixedKindClusterCount,
-      singletonClusterCount,
-      nonSingletonClusterCount: clusters.length - singletonClusterCount,
-    };
   }
 
   private upsertSummary(threadId: number, contentHash: string, summaryKind: string, summaryText: string): void {
