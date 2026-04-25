@@ -144,7 +144,13 @@ import { cosineSimilarity, dotProduct, rankNearestNeighbors, rankNearestNeighbor
 import { missingVectorStoreTarget, optimizeSqliteTarget } from './storage-maintenance.js';
 import { getSyncCursorState, writeSyncCursorState } from './sync/cursor.js';
 import { buildKeySummaryInputText, buildSummarySource } from './summary/source.js';
-import { clusterDisplayTitle, collapseOverlappingClosedDurableRows, compareTuiClusterSummary, durableClosureReason } from './tui/cluster-format.js';
+import {
+  clusterDisplayTitle,
+  collapseOverlappingClosedDurableRows,
+  compareTuiClusterSummary,
+  durableClosureReason,
+  durableTuiSummaryFromRow,
+} from './tui/cluster-format.js';
 import { getTuiRepoStats } from './tui/repo-stats.js';
 import { getLatestTuiKeySummary, getTopChangedFiles, getTuiThreadSummaries } from './tui/thread-detail.js';
 import {
@@ -3509,7 +3515,7 @@ export class GHCrawlService {
       rows.filter((row) => row.representative_thread_id === null || !representedThreadIds.has(row.representative_thread_id)),
     )
       .map((row) =>
-        this.durableTuiSummaryFromRow({
+        durableTuiSummaryFromRow({
           ...row,
           representative_title: row.representative_title ?? row.title,
         }),
@@ -3577,59 +3583,10 @@ export class GHCrawlService {
         }
       | undefined;
     if (!row) return null;
-    return this.durableTuiSummaryFromRow({
+    return durableTuiSummaryFromRow({
       ...row,
       representative_title: row.representative_title ?? row.title,
     });
-  }
-
-  private durableTuiSummaryFromRow(row: {
-    cluster_id: number;
-    stable_slug: string;
-    status: 'active' | 'closed' | 'merged' | 'split';
-    closed_at: string | null;
-    closure_reason?: string | null;
-    representative_thread_id: number | null;
-    representative_number: number | null;
-    representative_kind: 'issue' | 'pull_request' | null;
-    representative_title: string | null;
-    member_count: number;
-    latest_updated_at: string | null;
-    issue_count: number;
-    pull_request_count: number;
-    closed_member_count: number;
-    search_text: string | null;
-  }): TuiClusterSummary {
-    const closure: DurableTuiClosure = {
-      clusterId: row.cluster_id,
-      status: row.status,
-      closedAt: row.closed_at,
-      reason: row.closure_reason ?? null,
-    };
-    const lifecycleClosed = row.status === 'merged' || row.status === 'split';
-    const manuallyClosed = row.closure_reason !== undefined && row.closure_reason !== null;
-    const isClosed = manuallyClosed || lifecycleClosed || row.closed_member_count >= row.member_count;
-    const closeReasonLocal =
-      manuallyClosed || lifecycleClosed
-        ? durableClosureReason(closure)
-        : row.closed_member_count >= row.member_count
-          ? 'all_members_closed'
-          : null;
-    return {
-      clusterId: row.cluster_id,
-      displayTitle: clusterDisplayTitle(row.stable_slug, row.representative_title, row.cluster_id),
-      isClosed,
-      closedAtLocal: manuallyClosed || lifecycleClosed ? row.closed_at : null,
-      closeReasonLocal,
-      totalCount: row.member_count,
-      issueCount: row.issue_count,
-      pullRequestCount: row.pull_request_count,
-      latestUpdatedAt: row.latest_updated_at,
-      representativeThreadId: row.representative_thread_id,
-      representativeNumber: row.representative_number,
-      representativeKind: row.representative_kind,
-      searchText: `${row.stable_slug} ${(row.representative_title ?? '').toLowerCase()} ${row.search_text ?? ''}`.trim(),
-    };
   }
 
   private listRawTuiClusters(repoId: number, clusterRunId: number, minSize: number): TuiClusterSummary[] {
