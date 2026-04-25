@@ -101,6 +101,7 @@ import { readTextBlob } from './db/blob-store.js';
 import { blobStoreRoot, rawJsonStorage } from './db/raw-json-store.js';
 import { buildCanonicalDocument, isBotLikeAuthor } from './documents/normalize.js';
 import { buildDoctorResult } from './doctor.js';
+import { chunkEmbeddingTasks } from './embedding/chunks.js';
 import { isEmbeddingContextError, parseEmbeddingContextError, shrinkEmbeddingTask } from './embedding/retry.js';
 import {
   activeVectorSourceKind,
@@ -1559,7 +1560,7 @@ export class GHCrawlService {
       );
 
       let embedded = 0;
-      const batches = this.chunkEmbeddingTasks(pending, this.config.embedBatchSize, EMBED_MAX_BATCH_TOKENS);
+      const batches = chunkEmbeddingTasks(pending, this.config.embedBatchSize, EMBED_MAX_BATCH_TOKENS);
       const mapper = new IterableMapper(
         batches,
         async (batch: ActiveVectorTask[]) => {
@@ -4551,30 +4552,6 @@ export class GHCrawlService {
     }
 
     throw new Error(`Unable to shrink embedding input for #${task.threadNumber}:${task.basis} below model limits`);
-  }
-
-  private chunkEmbeddingTasks(items: ActiveVectorTask[], maxItems: number, maxEstimatedTokens: number): ActiveVectorTask[][] {
-    const chunks: ActiveVectorTask[][] = [];
-    let current: ActiveVectorTask[] = [];
-    let currentEstimatedTokens = 0;
-
-    for (const item of items) {
-      const wouldExceedItemCount = current.length >= maxItems;
-      const wouldExceedTokenBudget = current.length > 0 && currentEstimatedTokens + item.estimatedTokens > maxEstimatedTokens;
-      if (wouldExceedItemCount || wouldExceedTokenBudget) {
-        chunks.push(current);
-        current = [];
-        currentEstimatedTokens = 0;
-      }
-
-      current.push(item);
-      currentEstimatedTokens += item.estimatedTokens;
-    }
-
-    if (current.length > 0) {
-      chunks.push(current);
-    }
-    return chunks;
   }
 
   private loadStoredEmbeddings(repoId: number): StoredEmbeddingRow[] {
