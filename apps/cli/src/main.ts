@@ -26,6 +26,7 @@ type CommandName =
   | 'export-sync'
   | 'validate-sync'
   | 'portable-size'
+  | 'sync-status'
   | 'refresh'
   | 'optimize'
   | 'runs'
@@ -177,6 +178,14 @@ const COMMAND_SPECS: readonly CommandSpec[] = [
     description: 'Report portable git-sync SQLite table sizes.',
     options: ['--json  Emit machine-readable JSON output explicitly'],
     examples: ['ghcrawl portable-size ./openclaw.sync.db --json'],
+    agentJson: true,
+  },
+  {
+    name: 'sync-status',
+    synopsis: 'sync-status <owner/repo> --portable <path> [--json]',
+    description: 'Compare the live repository store against a portable git-sync SQLite database.',
+    options: ['--portable <path>  Portable SQLite path to compare', '--json  Emit machine-readable JSON output explicitly'],
+    examples: ['ghcrawl sync-status openclaw/openclaw --portable ./openclaw.sync.db --json'],
     agentJson: true,
   },
   {
@@ -646,6 +655,7 @@ export function parseRepoFlags(command: CommandName, args: string[]): ParsedRepo
       output: { type: 'string' },
       profile: { type: 'string' },
       manifest: { type: 'boolean' },
+      portable: { type: 'string' },
       'no-sync': { type: 'boolean' },
       'no-embed': { type: 'boolean' },
       'no-cluster': { type: 'boolean' },
@@ -1121,6 +1131,19 @@ export async function run(
           throw new CliUsageError('portable-size requires exactly one portable database path', 'portable-size');
         }
         const result = portableSyncSizeReport(parsed.positionals[0]);
+        writeJson(stdout, result);
+        return;
+      }
+      case 'sync-status': {
+        const { owner, repo, values } = parseRepoFlags('sync-status', rest);
+        if (typeof values.portable !== 'string') {
+          throw new CliUsageError('Missing --portable', 'sync-status');
+        }
+        const result = getService().portableSyncStatus({
+          owner,
+          repo,
+          portablePath: values.portable,
+        });
         writeJson(stdout, result);
         return;
       }

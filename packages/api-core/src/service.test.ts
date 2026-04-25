@@ -333,6 +333,18 @@ test('exportPortableSync writes a compact sync database without bulky cache tabl
     assert.ok(size.totalBytes > 0);
     assert.ok((size.tables.find((table) => table.name === 'threads')?.bytes ?? 0) > 0);
 
+    const status = service.portableSyncStatus({
+      owner: 'openclaw',
+      repo: 'openclaw',
+      portablePath: outputPath,
+    });
+    assert.equal(status.portableRepositoryFound, true);
+    assert.equal(status.live.threads.total, 1);
+    assert.equal(status.portable.threads.total, 1);
+    assert.equal(status.drift.liveOnlyThreads, 0);
+    assert.equal(status.drift.portableOnlyThreads, 0);
+    assert.equal(status.drift.changedThreads, 0);
+
     const portable = openDb(outputPath);
     try {
       const thread = portable.prepare('select body_excerpt, body_length from threads where number = 42').get() as {

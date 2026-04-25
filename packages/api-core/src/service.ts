@@ -108,10 +108,12 @@ import { OpenAiProvider, type AiProvider } from './openai/provider.js';
 import {
   exportPortableSyncDatabase,
   portableSyncSizeReport,
+  portableSyncStatusReport,
   validatePortableSyncDatabase,
   type PortableSyncExportResponse,
   type PortableSyncProfile,
   type PortableSyncSizeResponse,
+  type PortableSyncStatusResponse,
   type PortableSyncValidationResponse,
 } from './portable/sync-store.js';
 import { cosineSimilarity, dotProduct, normalizeEmbedding, rankNearestNeighbors, rankNearestNeighborsByScore } from './search/exact.js';
@@ -3423,6 +3425,15 @@ export class GHCrawlService {
 
   portableSyncSize(dbPath: string): PortableSyncSizeResponse {
     return portableSyncSizeReport(dbPath);
+  }
+
+  portableSyncStatus(params: { owner: string; repo: string; portablePath: string }): PortableSyncStatusResponse {
+    const repository = this.requireRepository(params.owner, params.repo);
+    return portableSyncStatusReport({
+      liveDb: this.db,
+      repository,
+      portablePath: params.portablePath,
+    });
   }
 
   private optimizeSqliteTarget(params: {
