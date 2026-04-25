@@ -452,6 +452,7 @@ const SYNC_BATCH_SIZE = 100;
 const SYNC_BATCH_DELAY_MS = 5000;
 const STALE_CLOSED_SWEEP_LIMIT = 1000;
 const CLUSTER_PROGRESS_INTERVAL_MS = 5000;
+const DURABLE_CLUSTER_REUSE_MIN_OVERLAP = 0.8;
 const RAW_JSON_INLINE_THRESHOLD_BYTES = 4096;
 const CLUSTER_PARALLEL_MIN_EMBEDDINGS = 5000;
 const EMBED_ESTIMATED_CHARS_PER_TOKEN = 3;
@@ -896,8 +897,8 @@ export class GHCrawlService {
     }
 
     const row = this.db
-      .prepare('select id, representative_thread_id from clusters where repo_id = ? and cluster_run_id = ? and id = ? limit 1')
-      .get(repository.id, latestRun.id, params.clusterId) as { id: number; representative_thread_id: number | null } | undefined;
+      .prepare('select id from clusters where repo_id = ? and cluster_run_id = ? and id = ? limit 1')
+      .get(repository.id, latestRun.id, params.clusterId) as { id: number } | undefined;
     if (!row) {
       throw new Error(`Cluster ${params.clusterId} was not found for ${repository.fullName}.`);
     }
@@ -911,7 +912,6 @@ export class GHCrawlService {
          where id = ?`,
       )
       .run(closedAt, row.id);
-    this.markDurableClusterClosedByRepresentative(repository.id, row.representative_thread_id ?? null, closedAt, 'manual');
 
     return closeResponseSchema.parse({
       ok: true,
@@ -4339,10 +4339,6 @@ export class GHCrawlService {
       if (row.member_count > 0 && row.closed_member_count >= row.member_count) {
         const closedAt = nowIso();
         const result = markClosed.run(closedAt, clusterId);
-        const cluster = this.db.prepare('select representative_thread_id from clusters where id = ? limit 1').get(clusterId) as
-          | { representative_thread_id: number | null }
-          | undefined;
-        this.markDurableClusterClosedByRepresentative(repoId, cluster?.representative_thread_id ?? null, closedAt, 'all_members_closed');
         changed += result.changes;
         continue;
       }
@@ -4353,41 +4349,8 @@ export class GHCrawlService {
     return changed;
   }
 
-  private markDurableClusterClosedByRepresentative(
-    repoId: number,
-    representativeThreadId: number | null,
-    closedAt: string,
-    reason: string,
-  ): void {
-    if (representativeThreadId === null) return;
-    const identity = humanKeyForValue(`repo:${repoId}:cluster-representative:${representativeThreadId}`);
-    const durable = this.db
-      .prepare('select id from cluster_groups where repo_id = ? and stable_key = ? limit 1')
-      .get(repoId, identity.hash) as { id: number } | undefined;
-    if (!durable) return;
-
-    this.db
-      .prepare(
-        `update cluster_groups
-         set status = 'closed',
-             closed_at = coalesce(closed_at, ?),
-             updated_at = ?
-         where id = ?`,
-      )
-      .run(closedAt, closedAt, durable.id);
-    recordClusterEvent(this.db, {
-      clusterId: durable.id,
-      eventType: 'close_cluster',
-      actorKind: reason === 'manual' ? 'user' : 'algo',
-      payload: {
-        representativeThreadId,
-        reason,
-      },
-    });
-  }
-
-  private durableClosureReason(closure: DurableTuiClosure): string {
-    return closure.status === 'active' ? 'closed' : closure.status;
+  private durableClosureReason(closure: DurableTuiClosure): string | null {
+    return closure.status === 'merged' || closure.status === 'split' ? closure.status : null;
   }
 
   private getDurableClosuresByRepresentative(repoId: number, representativeThreadIds: number[]): Map<number, DurableTuiClosure> {
@@ -4407,7 +4370,7 @@ export class GHCrawlService {
          from cluster_groups
          where repo_id = ?
            and stable_key in (${placeholders})
-           and (status <> 'active' or closed_at is not null)`,
+           and status in ('merged', 'split')`,
       )
       .all(repoId, ...identities.map((identity) => identity.stableKey)) as Array<{
       id: number;
@@ -4447,6 +4410,7 @@ export class GHCrawlService {
             sum(case when t.kind = 'issue' then 1 else 0 end) as issue_count,
             sum(case when t.kind = 'pull_request' then 1 else 0 end) as pull_request_count,
             sum(case when t.state != 'open' or t.closed_at_local is not null then 1 else 0 end) as closed_member_count,
+            group_concat(t.id, ',') as member_thread_ids,
             group_concat(lower(coalesce(t.title, '')), ' ') as search_text
          from cluster_groups cg
          left join threads rt on rt.id = cg.representative_thread_id
@@ -4463,8 +4427,7 @@ export class GHCrawlService {
            rt.number,
            rt.kind,
            rt.title
-         having cg.status <> 'active'
-            or cg.closed_at is not null
+         having cg.status in ('merged', 'split')
             or closed_member_count >= member_count`,
       )
       .all(repoId) as Array<{
@@ -4482,17 +4445,63 @@ export class GHCrawlService {
       issue_count: number;
       pull_request_count: number;
       closed_member_count: number;
+      member_thread_ids: string | null;
       search_text: string | null;
     }>;
 
-    return rows
-      .filter((row) => row.representative_thread_id === null || !representedThreadIds.has(row.representative_thread_id))
+    return this.collapseOverlappingClosedDurableRows(
+      rows.filter((row) => row.representative_thread_id === null || !representedThreadIds.has(row.representative_thread_id)),
+    )
       .map((row) =>
         this.durableTuiSummaryFromRow({
           ...row,
           representative_title: row.representative_title ?? row.title,
         }),
       );
+  }
+
+  private collapseOverlappingClosedDurableRows<
+    T extends {
+      cluster_id: number;
+      member_count: number;
+      latest_updated_at: string | null;
+      member_thread_ids: string | null;
+    },
+  >(rows: T[]): T[] {
+    const sortedRows = [...rows].sort((left, right) => {
+      const leftTime = left.latest_updated_at ? Date.parse(left.latest_updated_at) : 0;
+      const rightTime = right.latest_updated_at ? Date.parse(right.latest_updated_at) : 0;
+      return right.member_count - left.member_count || rightTime - leftTime || left.cluster_id - right.cluster_id;
+    });
+    const selected: Array<{ row: T; memberIds: Set<number> }> = [];
+
+    for (const row of sortedRows) {
+      const memberIds = this.parseMemberThreadIdSet(row.member_thread_ids);
+      const duplicate = selected.some((entry) => {
+        const smallerSize = Math.min(memberIds.size, entry.memberIds.size);
+        if (smallerSize === 0) return false;
+        let overlap = 0;
+        for (const memberId of memberIds) {
+          if (entry.memberIds.has(memberId)) overlap += 1;
+        }
+        return overlap / smallerSize >= 0.8;
+      });
+      if (!duplicate) {
+        selected.push({ row, memberIds });
+      }
+    }
+
+    return selected.map((entry) => entry.row);
+  }
+
+  private parseMemberThreadIdSet(value: string | null): Set<number> {
+    if (!value) return new Set();
+    return new Set(
+      value
+        .split(',')
+        .map((part) => Number(part))
+        .filter((memberId) => Number.isSafeInteger(memberId) && memberId > 0),
+    );
   }
 
   private getDurableTuiClusterSummary(repoId: number, clusterId: number): TuiClusterSummary | null {
@@ -4578,9 +4587,10 @@ export class GHCrawlService {
       status: row.status,
       closedAt: row.closed_at,
     };
-    const isClosed = row.status !== 'active' || row.closed_at !== null || row.closed_member_count >= row.member_count;
+    const lifecycleClosed = row.status === 'merged' || row.status === 'split';
+    const isClosed = lifecycleClosed || row.closed_member_count >= row.member_count;
     const closeReasonLocal =
-      row.status !== 'active' || row.closed_at !== null
+      lifecycleClosed
         ? this.durableClosureReason(closure)
         : row.closed_member_count >= row.member_count
           ? 'all_members_closed'
@@ -4589,7 +4599,7 @@ export class GHCrawlService {
       clusterId: row.cluster_id,
       displayTitle: this.clusterDisplayTitle(row.stable_slug, row.representative_title, row.cluster_id),
       isClosed,
-      closedAtLocal: row.closed_at,
+      closedAtLocal: lifecycleClosed ? row.closed_at : null,
       closeReasonLocal,
       totalCount: row.member_count,
       issueCount: row.issue_count,
@@ -6559,6 +6569,7 @@ export class GHCrawlService {
     clusters: Array<{ representativeThreadId: number; members: number[] }>,
   ): void {
     this.db.transaction(() => {
+      const claimedDurableClusterIds = new Set<number>();
       for (const edge of aggregatedEdges.values()) {
         upsertSimilarityEdgeEvidence(this.db, {
           repoId,
@@ -6579,15 +6590,17 @@ export class GHCrawlService {
 
       for (const cluster of clusters) {
         const identity = humanKeyForValue(`repo:${repoId}:cluster-representative:${cluster.representativeThreadId}`);
+        const durableIdentity = this.resolveDurableClusterIdentity(repoId, identity.hash, cluster.members, claimedDurableClusterIds);
         const clusterId = upsertClusterGroup(this.db, {
           repoId,
-          stableKey: identity.hash,
-          stableSlug: humanKeyStableSlug(identity),
+          stableKey: durableIdentity?.stable_key ?? identity.hash,
+          stableSlug: durableIdentity?.stable_slug ?? humanKeyStableSlug(identity),
           status: 'active',
           clusterType: cluster.members.length > 1 ? 'duplicate_candidate' : 'singleton_orphan',
           representativeThreadId: cluster.representativeThreadId,
           title: `Cluster ${identity.slug}`,
         });
+        claimedDurableClusterIds.add(clusterId);
         const forcedCanonical = this.db
           .prepare(
             `select thread_id
@@ -6729,6 +6742,79 @@ export class GHCrawlService {
         }
       }
     })();
+  }
+
+  private resolveDurableClusterIdentity(
+    repoId: number,
+    representativeStableKey: string,
+    memberIds: number[],
+    claimedClusterIds: Set<number>,
+  ): { id: number; stable_key: string; stable_slug: string } | null {
+    const exact = this.db
+      .prepare(
+        `select id, stable_key, stable_slug
+         from cluster_groups
+         where repo_id = ?
+           and stable_key = ?
+           and status <> 'merged'
+         limit 1`,
+      )
+      .get(repoId, representativeStableKey) as { id: number; stable_key: string; stable_slug: string } | undefined;
+    if (exact && !claimedClusterIds.has(exact.id)) {
+      return exact;
+    }
+
+    const uniqueMemberIds = Array.from(new Set(memberIds));
+    if (uniqueMemberIds.length === 0) {
+      return null;
+    }
+
+    const placeholders = uniqueMemberIds.map(() => '?').join(',');
+    const rows = this.db
+      .prepare(
+        `select
+            cg.id,
+            cg.stable_key,
+            cg.stable_slug,
+            count(*) as member_count,
+            sum(case when cm.thread_id in (${placeholders}) then 1 else 0 end) as overlap_count,
+            max(cm.updated_at) as latest_membership_updated_at
+         from cluster_groups cg
+         join cluster_memberships cm on cm.cluster_id = cg.id and cm.state <> 'removed_by_user'
+         where cg.repo_id = ?
+           and cg.status <> 'merged'
+         group by cg.id, cg.stable_key, cg.stable_slug
+         having overlap_count > 0`,
+      )
+      .all(...uniqueMemberIds, repoId) as Array<{
+      id: number;
+      stable_key: string;
+      stable_slug: string;
+      member_count: number;
+      overlap_count: number;
+      latest_membership_updated_at: string | null;
+    }>;
+
+    return (
+      rows
+        .filter((row) => !claimedClusterIds.has(row.id))
+        .map((row) => {
+          const overlapBase = Math.min(uniqueMemberIds.length, row.member_count);
+          return {
+            row,
+            overlapScore: overlapBase > 0 ? row.overlap_count / overlapBase : 0,
+            latestMembershipTime: row.latest_membership_updated_at ? Date.parse(row.latest_membership_updated_at) : 0,
+          };
+        })
+        .filter((entry) => entry.overlapScore >= DURABLE_CLUSTER_REUSE_MIN_OVERLAP)
+        .sort(
+          (left, right) =>
+            right.overlapScore - left.overlapScore ||
+            right.row.overlap_count - left.row.overlap_count ||
+            right.latestMembershipTime - left.latestMembershipTime ||
+            left.row.id - right.row.id,
+        )[0]?.row ?? null
+    );
   }
 
   private pruneOldClusterRuns(repoId: number, keepRunId: number): void {

@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
+import { humanKeyForValue } from './cluster/human-key.js';
 import { GHCrawlService } from './service.js';
 import type { VectorStore } from './vector/store.js';
 
@@ -2227,6 +2228,76 @@ test('clusterRepository rebuilds a corrupted active vector store and retries', a
   }
 });
 
+test('durable cluster identity survives representative changes by member overlap', () => {
+  const service = makeTestService({
+    getRepo: async () => ({}),
+    listRepositoryIssues: async () => [],
+    getIssue: async () => ({}),
+    getPull: async () => ({}),
+    listIssueComments: async () => [],
+    listPullReviews: async () => [],
+    listPullReviewComments: async () => [],
+    listPullFiles: async () => [],
+  });
+
+  try {
+    const now = '2026-03-09T00:00:00Z';
+    service.db
+      .prepare(
+        `insert into repositories (id, owner, name, full_name, github_repo_id, raw_json, updated_at)
+         values (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(1, 'openclaw', 'openclaw', 'openclaw/openclaw', '1', '{}', now);
+    service.db
+      .prepare("insert into pipeline_runs (id, repo_id, run_kind, status, started_at) values (?, ?, 'cluster', 'completed', ?)")
+      .run(1, 1, now);
+    service.db
+      .prepare("insert into pipeline_runs (id, repo_id, run_kind, status, started_at) values (?, ?, 'cluster', 'completed', ?)")
+      .run(2, 1, now);
+    const insertThread = service.db.prepare(
+      `insert into threads (
+        id, repo_id, github_id, number, kind, state, title, body, author_login, author_type, html_url,
+        labels_json, assignees_json, raw_json, content_hash, is_draft, created_at_gh, updated_at_gh, closed_at_gh,
+        merged_at_gh, first_pulled_at, last_pulled_at, updated_at
+      ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    insertThread.run(10, 1, '100', 42, 'issue', 'open', 'Gateway crash', 'body', 'alice', 'User', 'https://github.com/openclaw/openclaw/issues/42', '[]', '[]', '{}', 'hash-42', 0, now, now, null, null, now, now, now);
+    insertThread.run(11, 1, '101', 43, 'issue', 'open', 'Gateway crash duplicate', 'body', 'bob', 'User', 'https://github.com/openclaw/openclaw/issues/43', '[]', '[]', '{}', 'hash-43', 0, now, now, null, null, now, now, now);
+    insertThread.run(12, 1, '102', 44, 'issue', 'open', 'Gateway crash follow-up', 'body', 'carol', 'User', 'https://github.com/openclaw/openclaw/issues/44', '[]', '[]', '{}', 'hash-44', 0, now, now, null, null, now, now, now);
+
+    const durable = service as unknown as {
+      persistDurableClusterState(
+        repoId: number,
+        pipelineRunId: number,
+        aggregatedEdges: Map<string, { leftThreadId: number; rightThreadId: number; score: number; sourceKinds: Set<never> }>,
+        clusters: Array<{ representativeThreadId: number; members: number[] }>,
+      ): void;
+    };
+    const noEdges = new Map<string, { leftThreadId: number; rightThreadId: number; score: number; sourceKinds: Set<never> }>();
+
+    durable.persistDurableClusterState(1, 1, noEdges, [{ representativeThreadId: 10, members: [10, 11] }]);
+    const first = service.db.prepare('select id, stable_slug from cluster_groups limit 1').get() as { id: number; stable_slug: string };
+
+    durable.persistDurableClusterState(1, 2, noEdges, [{ representativeThreadId: 11, members: [10, 11, 12] }]);
+    const groups = service.db.prepare('select id, stable_slug, representative_thread_id from cluster_groups order by id asc').all() as Array<{
+      id: number;
+      stable_slug: string;
+      representative_thread_id: number;
+    }>;
+    const members = service.db
+      .prepare('select thread_id from cluster_memberships where cluster_id = ? order by thread_id asc')
+      .all(first.id) as Array<{ thread_id: number }>;
+
+    assert.deepEqual(groups, [{ id: first.id, stable_slug: first.stable_slug, representative_thread_id: 11 }]);
+    assert.deepEqual(
+      members.map((member) => member.thread_id),
+      [10, 11, 12],
+    );
+  } finally {
+    service.close();
+  }
+});
+
 test('clusterRepository falls back to deterministic fingerprints when vectors are missing', async () => {
   const service = new GHCrawlService({
     config: makeTestConfig(),
@@ -3970,6 +4041,14 @@ test('manual cluster closure is shown by default and can be hidden from JSON sum
         ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(10, 1, '100', 42, 'issue', 'open', 'Issue one', 'body', 'alice', 'User', 'https://github.com/openclaw/openclaw/issues/42', '[]', '[]', '{}', 'hash-42', 0, now, now, null, null, now, now, now);
+    const durableIdentity = humanKeyForValue('repo:1:cluster-representative:10');
+    service.db
+      .prepare(
+        `insert into cluster_groups (
+          id, repo_id, stable_key, stable_slug, status, cluster_type, representative_thread_id, title, created_at, updated_at, closed_at
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(7, 1, durableIdentity.hash, durableIdentity.slug, 'active', 'duplicate_candidate', 10, 'Durable cluster', now, now, null);
     service.db
       .prepare(`insert into cluster_runs (id, repo_id, scope, status, started_at, finished_at) values (?, ?, ?, ?, ?, ?)`)
       .run(1, 1, 'openclaw/openclaw', 'completed', now, now);
@@ -3986,6 +4065,11 @@ test('manual cluster closure is shown by default and can be hidden from JSON sum
     const response = service.closeClusterLocally({ owner: 'openclaw', repo: 'openclaw', clusterId: 100 });
     assert.equal(response.ok, true);
     assert.equal(response.clusterClosed, true);
+    const durable = service.db.prepare('select status, closed_at from cluster_groups where id = ?').get(7) as {
+      status: string;
+      closed_at: string | null;
+    };
+    assert.deepEqual(durable, { status: 'active', closed_at: null });
 
     assert.equal(service.listClusterSummaries({ owner: 'openclaw', repo: 'openclaw', minSize: 0, includeClosed: false }).clusters.length, 0);
     assert.equal(service.listClusterSummaries({ owner: 'openclaw', repo: 'openclaw', minSize: 0 }).clusters.length, 1);
@@ -4064,6 +4148,13 @@ test('tui snapshot includes durable closed clusters missing from the latest run'
       .run(8, 1, 'stable-key-archived', 'archive-blue-harbor', 'active', 'duplicate_candidate', 11, 'Archived durable cluster', now, now, null);
     service.db
       .prepare(
+        `insert into cluster_groups (
+          id, repo_id, stable_key, stable_slug, status, cluster_type, representative_thread_id, title, created_at, updated_at, closed_at
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(9, 1, 'stable-key-duplicate-archived', 'archive-blue-duplicate', 'active', 'duplicate_candidate', 11, 'Duplicate archived durable cluster', now, now, null);
+    service.db
+      .prepare(
         `insert into cluster_memberships (
           cluster_id, thread_id, role, state, score_to_representative, first_seen_run_id, last_seen_run_id,
           added_by, removed_by, added_reason_json, removed_reason_json, created_at, updated_at, removed_at
@@ -4078,6 +4169,14 @@ test('tui snapshot includes durable closed clusters missing from the latest run'
         ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(8, 11, 'canonical', 'active', 1, null, null, 'algo', null, '{}', null, now, now, null);
+    service.db
+      .prepare(
+        `insert into cluster_memberships (
+          cluster_id, thread_id, role, state, score_to_representative, first_seen_run_id, last_seen_run_id,
+          added_by, removed_by, added_reason_json, removed_reason_json, created_at, updated_at, removed_at
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(9, 11, 'canonical', 'active', 1, null, null, 'algo', null, '{}', null, now, now, null);
 
     const hidden = service.getTuiSnapshot({ owner: 'openclaw', repo: 'openclaw', minSize: 0, includeClosedClusters: false });
     assert.equal(hidden.clusters.length, 0);
@@ -4086,7 +4185,7 @@ test('tui snapshot includes durable closed clusters missing from the latest run'
     assert.equal(snapshot.clusters.length, 2);
     assert.equal(snapshot.clusters[0]?.clusterId, 7);
     assert.equal(snapshot.clusters[0]?.isClosed, true);
-    assert.equal(snapshot.clusters[0]?.closeReasonLocal, 'closed');
+    assert.equal(snapshot.clusters[0]?.closeReasonLocal, 'all_members_closed');
     assert.equal(snapshot.clusters[1]?.clusterId, 8);
     assert.equal(snapshot.clusters[1]?.isClosed, true);
     assert.equal(snapshot.clusters[1]?.closeReasonLocal, 'all_members_closed');
