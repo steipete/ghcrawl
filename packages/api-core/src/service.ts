@@ -126,7 +126,7 @@ import { finishServiceRun, listRunHistoryForRepository, startServiceRun } from '
 import { cosineSimilarity, dotProduct, normalizeEmbedding, rankNearestNeighbors, rankNearestNeighborsByScore } from './search/exact.js';
 import { missingVectorStoreTarget, optimizeSqliteTarget } from './storage-maintenance.js';
 import { getSyncCursorState, writeSyncCursorState } from './sync/cursor.js';
-import { buildSummarySource } from './summary/source.js';
+import { buildKeySummaryInputText, buildSummarySource } from './summary/source.js';
 import { getLatestTuiKeySummary, getTopChangedFiles, getTuiThreadSummaries } from './tui/thread-detail.js';
 import {
   ACTIVE_EMBED_DIMENSIONS,
@@ -1354,7 +1354,7 @@ export class GHCrawlService {
 
       for (const row of rows) {
         const labels = parseArray(row.labels_json);
-        const text = this.buildKeySummaryInputText({
+        const text = buildKeySummaryInputText({
           title: row.title,
           labels,
           body: row.body,
@@ -1477,15 +1477,6 @@ export class GHCrawlService {
       finishServiceRun(this.db, 'summary_runs', runId, 'failed', null, error);
       throw error;
     }
-  }
-
-  private buildKeySummaryInputText(params: { title: string; labels: string[]; body: string | null }): string {
-    const body = normalizeSummaryText(params.body ?? '');
-    const truncatedBody =
-      body.length > KEY_SUMMARY_MAX_BODY_CHARS
-        ? `${body.slice(0, KEY_SUMMARY_MAX_BODY_CHARS)}\n\n[truncated for key summary]`
-        : body;
-    return [`title: ${params.title}`, `labels: ${params.labels.join(', ')}`, `body: ${truncatedBody}`].join('\n');
   }
 
   purgeComments(params: {

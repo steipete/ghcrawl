@@ -1,7 +1,16 @@
 import type { SqliteDatabase } from '../db/sqlite.js';
 import { isBotLikeAuthor } from '../documents/normalize.js';
-import { SUMMARY_PROMPT_VERSION } from '../service-constants.js';
+import { KEY_SUMMARY_MAX_BODY_CHARS, SUMMARY_PROMPT_VERSION } from '../service-constants.js';
 import { normalizeSummaryText, stableContentHash } from '../service-utils.js';
+
+export function buildKeySummaryInputText(params: { title: string; labels: string[]; body: string | null }): string {
+  const body = normalizeSummaryText(params.body ?? '');
+  const truncatedBody =
+    body.length > KEY_SUMMARY_MAX_BODY_CHARS
+      ? `${body.slice(0, KEY_SUMMARY_MAX_BODY_CHARS)}\n\n[truncated for key summary]`
+      : body;
+  return [`title: ${params.title}`, `labels: ${params.labels.join(', ')}`, `body: ${truncatedBody}`].join('\n');
+}
 
 export function buildSummarySource(
   db: SqliteDatabase,
