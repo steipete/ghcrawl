@@ -313,6 +313,10 @@ test('exportPortableSync writes a compact sync database without bulky cache tabl
     assert.equal(response.repository.fullName, 'openclaw/openclaw');
     assert.equal(response.outputPath, outputPath);
     assert.ok(response.outputBytes < response.sourceBytes);
+    assert.equal(response.profile, 'default');
+    assert.equal(response.manifestPath, null);
+    assert.equal(response.manifest.validationOk, true);
+    assert.equal(response.manifest.sha256.length, 64);
     assert.ok(response.excluded.includes('documents'));
     assert.ok(response.excluded.includes('thread_vectors'));
     assert.equal(response.tables.find((table) => table.name === 'threads')?.rows, 1);
@@ -355,6 +359,19 @@ test('exportPortableSync writes a compact sync database without bulky cache tabl
     };
     assert.equal(sourceThread.raw_json, hugeRaw);
     assert.equal(sourceThread.body, longBody);
+
+    const leanOutputPath = path.join(config.configDir, 'portable-lean.sync.db');
+    const leanResponse = service.exportPortableSync({
+      owner: 'openclaw',
+      repo: 'openclaw',
+      outputPath: leanOutputPath,
+      profile: 'lean',
+      writeManifest: true,
+    });
+    assert.equal(leanResponse.bodyChars, 256);
+    assert.equal(leanResponse.profile, 'lean');
+    assert.equal(leanResponse.manifestPath, `${leanOutputPath}.manifest.json`);
+    assert.equal(fs.existsSync(leanResponse.manifestPath), true);
   } finally {
     service.close();
   }

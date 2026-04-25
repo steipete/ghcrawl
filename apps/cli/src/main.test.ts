@@ -803,6 +803,42 @@ test('sync command forwards include-code hydration flag', async () => {
   assert.match(stdout.read(), /"codeFilesSynced": 1/);
 });
 
+test('export-sync command forwards profile and manifest options', async () => {
+  const stdout = createWritableCapture();
+  const context = makeRunContext();
+  const original = GHCrawlService.prototype.exportPortableSync;
+  let received: unknown;
+
+  GHCrawlService.prototype.exportPortableSync = function exportPortableSyncStub(params: unknown) {
+    received = params;
+    return {
+      ok: true,
+      profile: 'lean',
+      manifestPath: '/tmp/openclaw.sync.db.manifest.json',
+    } as never;
+  };
+
+  try {
+    await run(['export-sync', 'openclaw/openclaw', '--profile', 'lean', '--manifest', '--output', '/tmp/openclaw.sync.db'], stdout.stream, {
+      env: context.env,
+      cwd: context.cwd,
+    });
+  } finally {
+    GHCrawlService.prototype.exportPortableSync = original;
+    context.cleanup();
+  }
+
+  assert.deepEqual(received, {
+    owner: 'openclaw',
+    repo: 'openclaw',
+    outputPath: '/tmp/openclaw.sync.db',
+    profile: 'lean',
+    writeManifest: true,
+    bodyChars: undefined,
+  });
+  assert.match(stdout.read(), /"profile": "lean"/);
+});
+
 test('refresh command forwards include-code hydration flag', async () => {
   const stdout = createWritableCapture();
   const context = makeRunContext();

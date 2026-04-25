@@ -151,14 +151,16 @@ const COMMAND_SPECS: readonly CommandSpec[] = [
   },
   {
     name: 'export-sync',
-    synopsis: 'export-sync <owner/repo> [--output <path>] [--body-chars <count>] [--json]',
+    synopsis: 'export-sync <owner/repo> [--output <path>] [--profile lean|review] [--manifest] [--body-chars <count>] [--json]',
     description: 'Export a compact portable SQLite core for git-style file sync.',
     options: [
       '--output <path>  Output SQLite path; defaults to the ghcrawl config exports directory',
+      '--profile lean|review  Use a preset body excerpt budget for git sync',
+      '--manifest  Write a JSON sidecar with counts, SHA256, and validation status',
       '--body-chars <count>  Maximum body excerpt characters per thread; default 512',
       '--json  Emit machine-readable JSON output explicitly',
     ],
-    examples: ['ghcrawl export-sync openclaw/openclaw --output ./openclaw.sync.db --json'],
+    examples: ['ghcrawl export-sync openclaw/openclaw --profile lean --manifest --output ./openclaw.sync.db --json'],
     agentJson: true,
   },
   {
@@ -642,6 +644,8 @@ export function parseRepoFlags(command: CommandName, args: string[]): ParsedRepo
       'event-limit': { type: 'string' },
       'body-chars': { type: 'string' },
       output: { type: 'string' },
+      profile: { type: 'string' },
+      manifest: { type: 'boolean' },
       'no-sync': { type: 'boolean' },
       'no-embed': { type: 'boolean' },
       'no-cluster': { type: 'boolean' },
@@ -1092,6 +1096,8 @@ export async function run(
           owner,
           repo,
           outputPath: typeof values.output === 'string' ? values.output : undefined,
+          profile: parseEnum('export-sync', 'profile', values.profile, ['lean', 'review']),
+          writeManifest: values.manifest === true,
           bodyChars:
             typeof values['body-chars'] === 'string'
               ? parsePositiveInteger('body-chars', values['body-chars'], 'export-sync')

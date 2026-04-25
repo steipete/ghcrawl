@@ -106,11 +106,11 @@ import { buildCanonicalDocument, isBotLikeAuthor } from './documents/normalize.j
 import { makeGitHubClient, type GitHubClient } from './github/client.js';
 import { OpenAiProvider, type AiProvider } from './openai/provider.js';
 import {
-  DEFAULT_PORTABLE_BODY_CHARS,
   exportPortableSyncDatabase,
   portableSyncSizeReport,
   validatePortableSyncDatabase,
   type PortableSyncExportResponse,
+  type PortableSyncProfile,
   type PortableSyncSizeResponse,
   type PortableSyncValidationResponse,
 } from './portable/sync-store.js';
@@ -462,6 +462,8 @@ type PortableSyncExportOptions = {
   repo: string;
   outputPath?: string;
   bodyChars?: number;
+  profile?: PortableSyncProfile;
+  writeManifest?: boolean;
 };
 
 type SearchResultInternal = SearchResponse;
@@ -3409,7 +3411,9 @@ export class GHCrawlService {
       sourceDb: this.db,
       sourcePath,
       outputPath,
-      bodyChars: params.bodyChars ?? DEFAULT_PORTABLE_BODY_CHARS,
+      bodyChars: params.bodyChars,
+      profile: params.profile,
+      writeManifest: params.writeManifest,
     });
   }
 

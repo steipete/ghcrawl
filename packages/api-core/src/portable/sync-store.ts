@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 import path from 'node:path';
 
 import BetterSqlite3 from 'better-sqlite3';
@@ -8,6 +9,7 @@ import { checkpointWal, openDb, type SqliteDatabase } from '../db/sqlite.js';
 
 export const PORTABLE_SYNC_SCHEMA_VERSION = 'ghcrawl-portable-sync-v1';
 export const DEFAULT_PORTABLE_BODY_CHARS = 512;
+export type PortableSyncProfile = 'lean' | 'review';
 
 export const PORTABLE_SYNC_TABLES = [
   'repositories',
@@ -50,6 +52,27 @@ export type PortableSyncExportOptions = {
   sourcePath: string;
   outputPath: string;
   bodyChars?: number;
+  profile?: PortableSyncProfile;
+  writeManifest?: boolean;
+};
+
+export type PortableSyncManifest = {
+  schema: string;
+  profile: PortableSyncProfile | 'default';
+  exportedAt: string;
+  outputPath: string;
+  outputBytes: number;
+  sha256: string;
+  repository: {
+    id: number;
+    owner: string;
+    name: string;
+    fullName: string;
+  };
+  bodyChars: number;
+  tables: Array<{ name: string; rows: number }>;
+  excluded: string[];
+  validationOk: boolean;
 };
 
 export type PortableSyncExportResponse = {
@@ -66,8 +89,11 @@ export type PortableSyncExportResponse = {
   outputBytes: number;
   compressionRatio: number;
   bodyChars: number;
+  profile: PortableSyncProfile | 'default';
   tables: Array<{ name: string; rows: number }>;
   excluded: string[];
+  manifestPath: string | null;
+  manifest: PortableSyncManifest;
 };
 
 export type PortableSyncValidationResponse = {
@@ -93,7 +119,8 @@ export type PortableSyncSizeResponse = {
 };
 
 export function exportPortableSyncDatabase(params: PortableSyncExportOptions): PortableSyncExportResponse {
-  const bodyChars = params.bodyChars ?? DEFAULT_PORTABLE_BODY_CHARS;
+  const profile: PortableSyncProfile | 'default' = params.profile ?? 'default';
+  const bodyChars = params.bodyChars ?? bodyCharsForProfile(params.profile);
   if (!Number.isSafeInteger(bodyChars) || bodyChars < 0) {
     throw new Error('bodyChars must be a non-negative integer');
   }
@@ -150,7 +177,7 @@ export function exportPortableSyncDatabase(params: PortableSyncExportOptions): P
   try {
     verify.pragma('journal_mode = DELETE');
     const tables = PORTABLE_SYNC_TABLES.map((name) => ({ name, rows: countRows(verify, name) }));
-    return {
+    const responseBase: Omit<PortableSyncExportResponse, 'manifest' | 'manifestPath'> = {
       ok: true,
       repository: {
         id: params.repository.id,
@@ -164,12 +191,52 @@ export function exportPortableSyncDatabase(params: PortableSyncExportOptions): P
       outputBytes,
       compressionRatio: sourceBytes > 0 ? outputBytes / sourceBytes : 0,
       bodyChars,
+      profile,
       tables,
       excluded: [...PORTABLE_SYNC_EXCLUDED_TABLES],
+    };
+    const validation = validatePortableSyncDatabase(outputPath);
+    const manifest = buildPortableSyncManifest(responseBase, validation.ok);
+    const manifestPath = params.writeManifest ? writePortableSyncManifest(outputPath, manifest) : null;
+    return {
+      ...responseBase,
+      manifestPath,
+      manifest,
     };
   } finally {
     verify.close();
   }
+}
+
+function bodyCharsForProfile(profile: PortableSyncProfile | undefined): number {
+  if (profile === 'lean') return 256;
+  if (profile === 'review') return 1024;
+  return DEFAULT_PORTABLE_BODY_CHARS;
+}
+
+function buildPortableSyncManifest(
+  response: Omit<PortableSyncExportResponse, 'manifest' | 'manifestPath'>,
+  validationOk: boolean,
+): PortableSyncManifest {
+  return {
+    schema: PORTABLE_SYNC_SCHEMA_VERSION,
+    profile: response.profile,
+    exportedAt: nowIso(),
+    outputPath: response.outputPath,
+    outputBytes: response.outputBytes,
+    sha256: sha256File(response.outputPath),
+    repository: response.repository,
+    bodyChars: response.bodyChars,
+    tables: response.tables,
+    excluded: response.excluded,
+    validationOk,
+  };
+}
+
+function writePortableSyncManifest(outputPath: string, manifest: PortableSyncManifest): string {
+  const manifestPath = `${outputPath}.manifest.json`;
+  fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  return manifestPath;
 }
 
 export function createPortableSyncSchema(db: SqliteDatabase): void {
@@ -575,6 +642,12 @@ function fileSize(filePath: string): number {
   } catch {
     return 0;
   }
+}
+
+function sha256File(filePath: string): string {
+  const hash = crypto.createHash('sha256');
+  hash.update(fs.readFileSync(filePath));
+  return hash.digest('hex');
 }
 
 function nowIso(): string {
