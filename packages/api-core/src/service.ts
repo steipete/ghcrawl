@@ -76,6 +76,7 @@ import { resolveEdgeWorkerRuntime } from './cluster/edge-worker-runtime.js';
 import { buildSourceKindEdges } from './cluster/exact-edges.js';
 import { humanKeyForValue, humanKeyStableSlug } from './cluster/human-key.js';
 import { LLM_KEY_SUMMARY_PROMPT_VERSION, llmKeyInputHash } from './cluster/llm-key-summary.js';
+import { listStoredClusterNeighbors } from './cluster/neighbor-queries.js';
 import { summarizeClusterQuality, summarizeClusterSizes } from './cluster/quality.js';
 import { getLatestClusterRun, getLatestRunClusterIdsForThread } from './cluster/run-queries.js';
 import {
@@ -3233,7 +3234,7 @@ export class GHCrawlService {
 
     let neighbors: SearchHitDto['neighbors'] = [];
     if (params.includeNeighbors !== false) {
-      neighbors = this.listStoredClusterNeighbors(repository.id, row.id, 8);
+      neighbors = listStoredClusterNeighbors({ db: this.db, repoId: repository.id, threadId: row.id, limit: 8 });
       if (neighbors.length === 0) {
         try {
           neighbors = this.listNeighbors({
@@ -4706,62 +4707,6 @@ export class GHCrawlService {
       });
     }
     return fingerprints;
-  }
-
-  private listStoredClusterNeighbors(repoId: number, threadId: number, limit: number): SearchHitDto['neighbors'] {
-    const latestRun = getLatestClusterRun(this.db, repoId);
-    if (!latestRun) {
-      return [];
-    }
-
-    const rows = this.db
-      .prepare(
-        `select
-            case
-              when se.left_thread_id = ? then se.right_thread_id
-              else se.left_thread_id
-            end as neighbor_thread_id,
-            case
-              when se.left_thread_id = ? then t2.number
-              else t1.number
-            end as neighbor_number,
-            case
-              when se.left_thread_id = ? then t2.kind
-              else t1.kind
-            end as neighbor_kind,
-            case
-              when se.left_thread_id = ? then t2.title
-              else t1.title
-            end as neighbor_title,
-            se.score
-         from similarity_edges se
-         join threads t1 on t1.id = se.left_thread_id
-         join threads t2 on t2.id = se.right_thread_id
-         where se.repo_id = ?
-           and se.cluster_run_id = ?
-           and (se.left_thread_id = ? or se.right_thread_id = ?)
-           and t1.state = 'open'
-           and t1.closed_at_local is null
-           and t2.state = 'open'
-           and t2.closed_at_local is null
-         order by se.score desc
-         limit ?`,
-      )
-      .all(threadId, threadId, threadId, threadId, repoId, latestRun.id, threadId, threadId, limit) as Array<{
-      neighbor_thread_id: number;
-      neighbor_number: number;
-      neighbor_kind: 'issue' | 'pull_request';
-      neighbor_title: string;
-      score: number;
-    }>;
-
-    return rows.map((row) => ({
-      threadId: row.neighbor_thread_id,
-      number: row.neighbor_number,
-      kind: row.neighbor_kind,
-      title: row.neighbor_title,
-      score: row.score,
-    }));
   }
 
   private async aggregateRepositoryEdges(
