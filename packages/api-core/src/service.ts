@@ -75,6 +75,7 @@ import {
 } from './cluster/edge-aggregation.js';
 import { resolveEdgeWorkerRuntime } from './cluster/edge-worker-runtime.js';
 import { buildSourceKindEdges } from './cluster/exact-edges.js';
+import { loadLatestDeterministicFingerprints } from './cluster/fingerprint-loader.js';
 import { materializeLatestDeterministicFingerprints } from './cluster/fingerprint-materializer.js';
 import { humanKeyForValue, humanKeyStableSlug } from './cluster/human-key.js';
 import { LLM_KEY_SUMMARY_PROMPT_VERSION, llmKeyInputHash } from './cluster/llm-key-summary.js';
@@ -93,10 +94,6 @@ import {
   upsertThreadKeySummary,
 } from './cluster/persistent-store.js';
 import {
-  THREAD_FINGERPRINT_ALGORITHM_VERSION,
-  type DeterministicThreadFingerprint,
-} from './cluster/thread-fingerprint.js';
-import {
   ensureRuntimeDirs,
   loadConfig,
   requireGithubToken,
@@ -107,7 +104,6 @@ import {
 } from './config.js';
 import { migrate } from './db/migrate.js';
 import { checkpointWal, openDb, type SqliteDatabase } from './db/sqlite.js';
-import { readTextBlob } from './db/blob-store.js';
 import { blobStoreRoot, rawJsonStorage } from './db/raw-json-store.js';
 import { buildCanonicalDocument, isBotLikeAuthor } from './documents/normalize.js';
 import { buildDoctorResult } from './doctor.js';
@@ -211,7 +207,6 @@ import {
   parseIso,
   parseLabels,
   parseObjectJson,
-  parseStringArrayJson,
   repositoryToDto,
   snippetText,
   stableContentHash,
@@ -1674,7 +1669,11 @@ export class GHCrawlService {
       const deterministicItems = loadDeterministicClusterableThreadMeta(this.db, repository.id);
       const fingerprintItems = seedThreadIds ? deterministicItems.filter((item) => seedThreadIds.includes(item.id)) : deterministicItems;
       materializeLatestDeterministicFingerprints(this.db, fingerprintItems, params.onProgress);
-      const persistedFingerprints = this.loadLatestDeterministicFingerprints(deterministicItems.map((item) => item.id));
+      const persistedFingerprints = loadLatestDeterministicFingerprints({
+        db: this.db,
+        dbPath: this.config.dbPath,
+        threadIds: deterministicItems.map((item) => item.id),
+      });
       const deterministic = buildDeterministicClusterGraphFromFingerprints(
         deterministicItems.map((item) => ({ id: item.id, number: item.number, title: item.title })),
         persistedFingerprints,
@@ -4429,83 +4428,6 @@ export class GHCrawlService {
     }
 
     throw new Error(`Unable to shrink embedding input for #${task.threadNumber}:${task.basis} below model limits`);
-  }
-
-  private loadLatestDeterministicFingerprints(threadIds: number[]): Map<number, DeterministicThreadFingerprint> {
-    if (threadIds.length === 0) return new Map();
-    const placeholders = threadIds.map(() => '?').join(',');
-    const rows = this.db
-      .prepare(
-        `select
-           tr.thread_id,
-           tf.fingerprint_hash,
-           tf.fingerprint_slug,
-           tf.title_tokens_json,
-           tf.linked_refs_json,
-           tf.module_buckets_json,
-           tf.minhash_signature_blob_id,
-           tf.simhash64,
-           tf.winnow_hashes_blob_id,
-           tf.feature_json
-         from thread_revisions tr
-         join (
-           select thread_id, max(id) as revision_id
-           from thread_revisions
-           where thread_id in (${placeholders})
-           group by thread_id
-         ) latest on latest.revision_id = tr.id
-         join thread_fingerprints tf on tf.thread_revision_id = tr.id
-         where tf.algorithm_version = ?`,
-      )
-      .all(...threadIds, THREAD_FINGERPRINT_ALGORITHM_VERSION) as Array<{
-      thread_id: number;
-      fingerprint_hash: string;
-      fingerprint_slug: string;
-      title_tokens_json: string;
-      linked_refs_json: string;
-      module_buckets_json: string;
-      minhash_signature_blob_id: number | null;
-      simhash64: string;
-      winnow_hashes_blob_id: number | null;
-      feature_json: string;
-    }>;
-
-    const fingerprints = new Map<number, DeterministicThreadFingerprint>();
-    for (const row of rows) {
-      const feature = (() => {
-        try {
-          return JSON.parse(row.feature_json) as Record<string, unknown>;
-        } catch {
-          return {};
-        }
-      })();
-      const stringFeature = (key: string): string[] => {
-        const value = feature[key];
-        return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : [];
-      };
-      fingerprints.set(row.thread_id, {
-        algorithmVersion: THREAD_FINGERPRINT_ALGORITHM_VERSION,
-        fingerprintHash: row.fingerprint_hash,
-        fingerprintSlug: row.fingerprint_slug,
-        titleTokens: parseStringArrayJson(row.title_tokens_json),
-        salientTitleTokens: stringFeature('salientTitleTokens'),
-        bodyTokens: [],
-        linkedRefs: parseStringArrayJson(row.linked_refs_json),
-        moduleBuckets: parseStringArrayJson(row.module_buckets_json),
-        changedFiles: stringFeature('changedFiles'),
-        hunkSignatures: stringFeature('hunkSignatures'),
-        patchIds: stringFeature('patchIds'),
-        featureHash: typeof feature.featureHash === 'string' ? feature.featureHash : '',
-        minhashSignature: row.minhash_signature_blob_id
-          ? parseStringArrayJson(readTextBlob(this.db, blobStoreRoot(this.config.dbPath), row.minhash_signature_blob_id))
-          : [],
-        simhash64: row.simhash64,
-        winnowHashes: row.winnow_hashes_blob_id
-          ? parseStringArrayJson(readTextBlob(this.db, blobStoreRoot(this.config.dbPath), row.winnow_hashes_blob_id))
-          : [],
-      });
-    }
-    return fingerprints;
   }
 
   private async aggregateRepositoryEdges(
