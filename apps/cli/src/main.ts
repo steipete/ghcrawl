@@ -144,7 +144,7 @@ const COMMAND_SPECS: readonly CommandSpec[] = [
     description: 'Export a compact portable SQLite core for git-style file sync.',
     options: [
       '--output <path>  Output SQLite path; defaults to the ghcrawl config exports directory',
-      '--body-chars <count>  Maximum body excerpt characters per thread; default 2048',
+      '--body-chars <count>  Maximum body excerpt characters per thread; default 512',
       '--json  Emit machine-readable JSON output explicitly',
     ],
     examples: ['ghcrawl export-sync openclaw/openclaw --output ./openclaw.sync.db --json'],

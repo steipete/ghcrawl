@@ -3412,7 +3412,7 @@ export class GHCrawlService {
     }
 
     const repository = this.requireRepository(params.owner, params.repo);
-    const bodyChars = params.bodyChars ?? 2048;
+    const bodyChars = params.bodyChars ?? 512;
     if (!Number.isSafeInteger(bodyChars) || bodyChars < 0) {
       throw new Error('bodyChars must be a non-negative integer');
     }
