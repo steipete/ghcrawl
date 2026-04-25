@@ -141,7 +141,7 @@ export async function startTui(params: StartTuiParams): Promise<void> {
     : {
         sortMode: 'size' as TuiClusterSortMode,
         memberSortMode: 'kind' as TuiMemberSortMode,
-        minClusterSize: 1 as TuiMinSizeFilter,
+        minClusterSize: 5 as TuiMinSizeFilter,
         wideLayout: 'columns' as TuiWideLayoutPreference,
       };
   let sortMode: TuiClusterSortMode = initialPreference.sortMode;
@@ -1106,6 +1106,7 @@ export async function startTui(params: StartTuiParams): Promise<void> {
       { label: 'Member sort number', run: () => setMemberSortMode('number') },
       { label: 'Member sort state', run: () => setMemberSortMode('state') },
       { label: 'Min size 1+', run: () => setMinSize(1) },
+      { label: 'Min size 5+', run: () => setMinSize(5) },
       { label: 'Min size 10+', run: () => setMinSize(10) },
       { label: 'Min size all', run: () => setMinSize(0) },
       { label: showClosed ? 'Hide closed' : 'Show closed', run: () => toggleClosedVisibility() },
@@ -1129,6 +1130,7 @@ export async function startTui(params: StartTuiParams): Promise<void> {
     { label: 'Member sort grouped', run: () => setMemberSortMode('kind') },
     { label: 'Member sort recent', run: () => setMemberSortMode('recent') },
     { label: 'Min size 1+', run: () => setMinSize(1) },
+    { label: 'Min size 5+', run: () => setMinSize(5) },
     { label: 'Min size 10+', run: () => setMinSize(10) },
     { label: 'Min size all', run: () => setMinSize(0) },
     { label: showClosed ? 'Hide closed' : 'Show closed', run: () => toggleClosedVisibility() },
@@ -1306,7 +1308,7 @@ export async function startTui(params: StartTuiParams): Promise<void> {
           return;
         }
         setRepositoryPending(target, {
-          minClusterSize: 1,
+          minClusterSize: 5,
           status: `No local data for ${target.owner}/${target.repo}; run sync/embed/cluster in the CLI, then press r`,
         });
         pushActivity(`[repo] selected ${target.owner}/${target.repo}; run ghcrawl sync/embed/cluster from the shell`);
@@ -1346,7 +1348,7 @@ export async function startTui(params: StartTuiParams): Promise<void> {
         return false;
       }
       setRepositoryPending(target, {
-        minClusterSize: 1,
+        minClusterSize: 5,
         status: `No local data for ${target.owner}/${target.repo}; run sync/embed/cluster in the CLI, then press r`,
       });
       pushActivity(`[repo] selected ${target.owner}/${target.repo}; run ghcrawl sync/embed/cluster from the shell`);

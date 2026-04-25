@@ -23,12 +23,13 @@ test('cycleSortMode toggles size and recent', () => {
 });
 
 test('cycleMinSizeFilter rotates through presets', () => {
-  assert.equal(cycleMinSizeFilter(1), 2);
-  assert.equal(cycleMinSizeFilter(2), 10);
+  assert.equal(cycleMinSizeFilter(5), 10);
   assert.equal(cycleMinSizeFilter(10), 20);
   assert.equal(cycleMinSizeFilter(20), 50);
   assert.equal(cycleMinSizeFilter(50), 0);
   assert.equal(cycleMinSizeFilter(0), 1);
+  assert.equal(cycleMinSizeFilter(1), 2);
+  assert.equal(cycleMinSizeFilter(2), 5);
 });
 
 test('cycleMemberSortMode rotates through member sort modes', () => {

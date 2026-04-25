@@ -1,7 +1,7 @@
 import type { TuiClusterDetail, TuiClusterSortMode, TuiClusterSummary, TuiMemberSortPreference } from '@ghcrawl/api-core';
 
 export type TuiFocusPane = 'clusters' | 'members' | 'detail';
-export type TuiMinSizeFilter = 0 | 1 | 2 | 10 | 20 | 50;
+export type TuiMinSizeFilter = 0 | 1 | 2 | 5 | 10 | 20 | 50;
 export type TuiMemberSortMode = TuiMemberSortPreference;
 
 export type MemberListRow =
@@ -10,7 +10,7 @@ export type MemberListRow =
 
 export const SORT_MODE_ORDER: TuiClusterSortMode[] = ['size', 'recent'];
 export const MEMBER_SORT_MODE_ORDER: TuiMemberSortMode[] = ['kind', 'recent', 'number', 'state', 'title'];
-export const MIN_SIZE_FILTER_ORDER: TuiMinSizeFilter[] = [1, 2, 10, 20, 50, 0];
+export const MIN_SIZE_FILTER_ORDER: TuiMinSizeFilter[] = [5, 10, 20, 50, 0, 1, 2];
 export const FOCUS_PANE_ORDER: TuiFocusPane[] = ['clusters', 'members', 'detail'];
 
 const MEMBER_NUMBER_WIDTH = 8;
