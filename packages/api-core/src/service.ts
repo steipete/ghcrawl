@@ -4477,32 +4477,6 @@ export class GHCrawlService {
     };
   }
 
-  private *iterateNormalizedEmbeddingsForSourceKind(
-    repoId: number,
-    sourceKind: EmbeddingSourceKind,
-  ): IterableIterator<{ id: number; normalizedEmbedding: number[] }> {
-    const rows = this.db
-      .prepare(
-        `select t.id, e.embedding_json
-         from threads t
-         join document_embeddings e on e.thread_id = t.id
-         where t.repo_id = ?
-           and t.state = 'open'
-           and t.closed_at_local is null
-           and e.model = ?
-           and e.source_kind = ?
-         order by t.number asc`,
-      )
-      .iterate(repoId, this.config.embedModel, sourceKind) as IterableIterator<{ id: number; embedding_json: string }>;
-
-    for (const row of rows) {
-      yield {
-        id: row.id,
-        normalizedEmbedding: normalizeEmbedding(JSON.parse(row.embedding_json) as number[]).normalized,
-      };
-    }
-  }
-
   private loadNormalizedEmbeddingsForSourceKind(
     repoId: number,
     sourceKind: EmbeddingSourceKind,
