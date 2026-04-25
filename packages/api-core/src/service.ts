@@ -305,7 +305,9 @@ type SyncRunStats = {
   codeFilesSynced: number;
   threadsClosed: number;
   threadsClosedFromClosedSweep?: number;
+  threadsClosedFromClosedBackfill?: number;
   threadsClosedFromDirectReconcile?: number;
+  directReconcileSkippedStaleThreadCount?: number;
   crawlStartedAt: string;
   requestedSince: string | null;
   effectiveSince: string | null;
@@ -452,6 +454,8 @@ type NeighborsResultInternal = NeighborsResponse;
 const SYNC_BATCH_SIZE = 100;
 const SYNC_BATCH_DELAY_MS = 5000;
 const STALE_CLOSED_SWEEP_LIMIT = 1000;
+const STALE_CLOSED_BACKFILL_LIMIT = 5000;
+const MAX_DIRECT_RECONCILE_THREADS = 500;
 const CLUSTER_PROGRESS_INTERVAL_MS = 5000;
 const DURABLE_CLUSTER_REUSE_MIN_OVERLAP = 0.8;
 const RAW_JSON_INLINE_THRESHOLD_BYTES = 4096;
@@ -1577,12 +1581,33 @@ export class GHCrawlService {
             onProgress: params.onProgress,
           })
         : 0;
+      const canFullReconcile = params.fullReconcile === true && params.limit === undefined && (isFullOpenScan || isOverlappingOpenScan);
+      const threadsClosedFromClosedBackfill = canFullReconcile
+        ? await this.applyClosedOverlapSweep({
+            repoId,
+            owner: params.owner,
+            repo: params.repo,
+            crawlStartedAt,
+            closedSweepSince: undefined,
+            closedSweepLimit: STALE_CLOSED_BACKFILL_LIMIT,
+            sweepLabel: 'closed backfill',
+            reporter,
+            onProgress: params.onProgress,
+          })
+        : 0;
+      const staleOpenThreadCountForDirectReconcile = canFullReconcile
+        ? this.countStaleOpenThreads(repoId, crawlStartedAt)
+        : 0;
       const shouldReconcileMissingOpenThreads =
-        params.fullReconcile === true && params.limit === undefined && (isFullOpenScan || isOverlappingOpenScan);
-      if (!shouldReconcileMissingOpenThreads && params.fullReconcile !== true) {
+        canFullReconcile && staleOpenThreadCountForDirectReconcile <= MAX_DIRECT_RECONCILE_THREADS;
+      if (!canFullReconcile && params.fullReconcile !== true) {
         params.onProgress?.('[sync] skipping full stale-open reconciliation by default; use --full-reconcile to force direct checks of all unseen open items');
-      } else if (!shouldReconcileMissingOpenThreads) {
+      } else if (!canFullReconcile) {
         params.onProgress?.('[sync] skipping full stale-open reconciliation because this scan did not overlap a confirmed full/overlap cursor');
+      } else if (!shouldReconcileMissingOpenThreads) {
+        params.onProgress?.(
+          `[sync] skipping direct stale-open reconciliation because ${staleOpenThreadCountForDirectReconcile} thread(s) remain; closed backfill already checked the latest ${STALE_CLOSED_BACKFILL_LIMIT} closed items`,
+        );
       }
       const threadsClosedFromDirectReconcile = shouldReconcileMissingOpenThreads
         ? await this.reconcileMissingOpenThreads({
@@ -1594,7 +1619,7 @@ export class GHCrawlService {
             onProgress: params.onProgress,
           })
         : 0;
-      const threadsClosed = threadsClosedFromClosedSweep + threadsClosedFromDirectReconcile;
+      const threadsClosed = threadsClosedFromClosedSweep + threadsClosedFromClosedBackfill + threadsClosedFromDirectReconcile;
       if (threadsClosed > 0) {
         this.reconcileClusterCloseState(repoId);
       }
@@ -1631,7 +1656,11 @@ export class GHCrawlService {
         isOverlappingOpenScan,
         overlapReferenceAt,
         threadsClosedFromClosedSweep,
+        threadsClosedFromClosedBackfill,
         threadsClosedFromDirectReconcile,
+        directReconcileSkippedStaleThreadCount: canFullReconcile && !shouldReconcileMissingOpenThreads
+          ? staleOpenThreadCountForDirectReconcile
+          : 0,
         reconciledOpenCloseAt,
       } satisfies SyncRunStats, undefined, finishedAt);
       return syncResultSchema.parse({ runId, threadsSynced, commentsSynced, codeFilesSynced, threadsClosed });
@@ -5117,7 +5146,9 @@ export class GHCrawlService {
     owner: string;
     repo: string;
     crawlStartedAt: string;
-    closedSweepSince: string;
+    closedSweepSince?: string;
+    closedSweepLimit?: number;
+    sweepLabel?: string;
     reporter?: (message: string) => void;
     onProgress?: (message: string) => void;
   }): Promise<number> {
@@ -5137,9 +5168,11 @@ export class GHCrawlService {
       return 0;
     }
 
-    params.onProgress?.(
-      `[sync] scanning ${staleRows.length} unseen previously-open thread(s) against recently-updated closed items since ${params.closedSweepSince}`,
-    );
+    const sweepLabel = params.sweepLabel ?? 'recent closed sweep';
+    const sweepWindow = params.closedSweepSince
+      ? `since ${params.closedSweepSince}`
+      : `from the latest ${params.closedSweepLimit ?? STALE_CLOSED_SWEEP_LIMIT} closed items`;
+    params.onProgress?.(`[sync] ${sweepLabel}: scanning ${staleRows.length} unseen previously-open thread(s) against closed items ${sweepWindow}`);
 
     const github = this.requireGithub();
     const staleByNumber = new Map<number, { id: number; number: number; kind: 'issue' | 'pull_request' }>(
@@ -5149,7 +5182,7 @@ export class GHCrawlService {
       params.owner,
       params.repo,
       params.closedSweepSince,
-      STALE_CLOSED_SWEEP_LIMIT,
+      params.closedSweepLimit ?? STALE_CLOSED_SWEEP_LIMIT,
       params.reporter,
       'closed',
     );
@@ -5188,11 +5221,23 @@ export class GHCrawlService {
       threadsClosed += 1;
     }
 
-    params.onProgress?.(
-      `[sync] recent closed sweep matched ${threadsClosed} stale thread(s); ${staleByNumber.size} remain open locally`,
-    );
+    params.onProgress?.(`[sync] ${sweepLabel} matched ${threadsClosed} stale thread(s); ${staleByNumber.size} remain open locally`);
 
     return threadsClosed;
+  }
+
+  private countStaleOpenThreads(repoId: number, crawlStartedAt: string): number {
+    const row = this.db
+      .prepare(
+        `select count(*) as count
+         from threads
+         where repo_id = ?
+           and state = 'open'
+           and closed_at_local is null
+           and (last_pulled_at is null or last_pulled_at < ?)`,
+      )
+      .get(repoId, crawlStartedAt) as { count: number };
+    return row.count;
   }
 
   private async reconcileMissingOpenThreads(params: {

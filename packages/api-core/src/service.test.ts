@@ -4977,6 +4977,95 @@ test('syncRepository performs direct stale-open reconciliation when fullReconcil
   }
 });
 
+test('syncRepository fullReconcile backfills stale closed items from closed pages before direct checks', async () => {
+  let getIssueCalls = 0;
+  let openListCalls = 0;
+  const closedSinceValues: Array<string | undefined> = [];
+
+  const service = makeTestService({
+    getRepo: async () => ({ id: 1, full_name: 'openclaw/openclaw' }),
+    listRepositoryIssues: async (_owner, _repo, since, _limit, _reporter, state = 'open') => {
+      if (state === 'closed') {
+        closedSinceValues.push(since);
+        return since === undefined
+          ? [
+              {
+                id: 100,
+                number: 42,
+                state: 'closed',
+                title: 'Downloader hangs',
+                body: 'The transfer never finishes.',
+                html_url: 'https://github.com/openclaw/openclaw/issues/42',
+                labels: [{ name: 'bug' }],
+                assignees: [],
+                user: { login: 'alice', type: 'User' },
+                updated_at: '2026-03-10T00:00:00Z',
+                closed_at: '2026-03-10T00:00:00Z',
+              },
+            ]
+          : [];
+      }
+      openListCalls += 1;
+      return openListCalls === 1
+        ? [
+            {
+              id: 100,
+              number: 42,
+              state: 'open',
+              title: 'Downloader hangs',
+              body: 'The transfer never finishes.',
+              html_url: 'https://github.com/openclaw/openclaw/issues/42',
+              labels: [{ name: 'bug' }],
+              assignees: [],
+              user: { login: 'alice', type: 'User' },
+              updated_at: '2026-03-09T00:00:00Z',
+            },
+          ]
+        : [];
+    },
+    getIssue: async () => {
+      getIssueCalls += 1;
+      throw new Error('not expected');
+    },
+    getPull: async () => {
+      throw new Error('not expected');
+    },
+    listIssueComments: async () => [],
+    listPullReviews: async () => [],
+    listPullReviewComments: async () => [],
+    listPullFiles: async () => [],
+  });
+
+  try {
+    await service.syncRepository({
+      owner: 'openclaw',
+      repo: 'openclaw',
+      startedAt: '2026-03-09T13:13:00.000Z',
+    });
+    const result = await service.syncRepository({
+      owner: 'openclaw',
+      repo: 'openclaw',
+      fullReconcile: true,
+      startedAt: '2026-03-09T14:13:01.000Z',
+    });
+    const after = service.db
+      .prepare("select state from threads where number = 42 and kind = 'issue'")
+      .get() as { state: string };
+    const statsRow = service.db
+      .prepare("select stats_json from sync_runs where status = 'completed' order by id desc limit 1")
+      .get() as { stats_json: string };
+    const stats = JSON.parse(statsRow.stats_json) as { threadsClosedFromClosedBackfill?: number };
+
+    assert.equal(result.threadsClosed, 1);
+    assert.equal(getIssueCalls, 0);
+    assert.deepEqual(closedSinceValues, ['2026-03-09T12:13:01.000Z', undefined]);
+    assert.equal(after.state, 'closed');
+    assert.equal(stats.threadsClosedFromClosedBackfill, 1);
+  } finally {
+    service.close();
+  }
+});
+
 test('syncRepository derives the default overlapping since window from the last completed full scan', async () => {
   const openSinceValues: Array<string | undefined> = [];
   const closedSinceValues: Array<string | undefined> = [];
