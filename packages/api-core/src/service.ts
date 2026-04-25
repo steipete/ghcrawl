@@ -103,10 +103,8 @@ import { buildCanonicalDocument, isBotLikeAuthor } from './documents/normalize.j
 import { buildDoctorResult } from './doctor.js';
 import { chunkEmbeddingTasks } from './embedding/chunks.js';
 import { isEmbeddingContextError, parseEmbeddingContextError, shrinkEmbeddingTask } from './embedding/retry.js';
-import {
-  activeVectorSourceKind,
-  buildActiveVectorTask,
-} from './embedding/tasks.js';
+import { activeVectorSourceKind } from './embedding/tasks.js';
+import { getEmbeddingWorkset } from './embedding/workset.js';
 import { makeGitHubClient, type GitHubClient } from './github/client.js';
 import { OpenAiProvider, type AiProvider } from './openai/provider.js';
 import {
@@ -167,7 +165,6 @@ import type {
   DoctorResult,
   DurableTuiClosure,
   EmbeddingSourceKind,
-  EmbeddingWorkset,
   KeySummaryTask,
   NeighborsResultInternal,
   PortableSyncExportOptions,
@@ -193,7 +190,6 @@ import {
   isEffectivelyClosed,
   isMissingGitHubResourceError,
   isPullRequestPayload,
-  normalizeSummaryText,
   nowIso,
   parseArray,
   parseAssignees,
@@ -1548,7 +1544,12 @@ export class GHCrawlService {
         }
       }
 
-      const { rows, tasks, pending, missingSummaryThreadNumbers } = this.getEmbeddingWorkset(repository.id, params.threadNumber);
+      const { rows, tasks, pending, missingSummaryThreadNumbers } = getEmbeddingWorkset({
+        db: this.db,
+        config: this.config,
+        repoId: repository.id,
+        threadNumber: params.threadNumber,
+      });
       const skipped = tasks.length - pending.length;
       const truncated = tasks.filter((task) => task.wasTruncated).length;
 
@@ -3270,7 +3271,7 @@ export class GHCrawlService {
     const latestEmbed = (this.db
       .prepare("select finished_at from embedding_runs where repo_id = ? and status = 'completed' order by id desc limit 1")
       .get(repoId) as { finished_at: string | null } | undefined) ?? null;
-    const embeddingWorkset = this.getEmbeddingWorkset(repoId);
+    const embeddingWorkset = getEmbeddingWorkset({ db: this.db, config: this.config, repoId });
     const staleThreadIds = new Set<number>(embeddingWorkset.pending.map((task) => task.threadId));
     return {
       openIssueCount: counts.find((row) => row.kind === 'issue')?.count ?? 0,
@@ -5012,145 +5013,6 @@ export class GHCrawlService {
       title: row.neighbor_title,
       score: row.score,
     }));
-  }
-
-  private getEmbeddingWorkset(repoId: number, threadNumber?: number): EmbeddingWorkset {
-    let sql =
-      `select t.id, t.number, t.title, t.body
-       from threads t
-       where t.repo_id = ? and t.state = 'open' and t.closed_at_local is null
-         and not exists (
-           select 1
-           from cluster_closures cc
-           join cluster_memberships cm on cm.cluster_id = cc.cluster_id
-           where cm.thread_id = t.id
-             and cm.state <> 'removed_by_user'
-         )`;
-    const args: Array<string | number> = [repoId];
-    if (threadNumber) {
-      sql += ' and t.number = ?';
-      args.push(threadNumber);
-    }
-    sql += ' order by t.number asc';
-    const rows = this.db.prepare(sql).all(...args) as Array<{
-      id: number;
-      number: number;
-      title: string;
-      body: string | null;
-    }>;
-    const pipelineCurrent = isRepoVectorStateCurrent(this.db, this.config, repoId);
-    const existingRows = this.db
-      .prepare(
-        `select tv.thread_id, tv.content_hash
-         from thread_vectors tv
-         join threads t on t.id = tv.thread_id
-         where t.repo_id = ?
-           and tv.model = ?
-           and tv.basis = ?
-           and tv.dimensions = ?`,
-      )
-      .all(repoId, this.config.embedModel, this.config.embeddingBasis, ACTIVE_EMBED_DIMENSIONS) as Array<{
-        thread_id: number;
-        content_hash: string;
-      }>;
-    const existing = new Map<string, string>();
-    for (const row of existingRows) {
-      existing.set(String(row.thread_id), row.content_hash);
-    }
-    const summaryTexts = this.loadDedupeSummaryTextMap(repoId, threadNumber);
-    const keySummaryTexts = this.loadKeySummaryTextMap(repoId, threadNumber);
-    const missingSummaryThreadNumbers: number[] = [];
-    const tasks = rows.flatMap((row) => {
-      const task = buildActiveVectorTask({
-        threadId: row.id,
-        threadNumber: row.number,
-        title: row.title,
-        body: row.body,
-        dedupeSummary: summaryTexts.get(row.id) ?? null,
-        keySummary: keySummaryTexts.get(row.id) ?? null,
-        embeddingBasis: this.config.embeddingBasis,
-        embedModel: this.config.embedModel,
-      });
-      if (task) {
-        return [task];
-      }
-      if (
-        (this.config.embeddingBasis === 'title_summary' || this.config.embeddingBasis === 'llm_key_summary') &&
-        (!pipelineCurrent || !existing.has(String(row.id)))
-      ) {
-        missingSummaryThreadNumbers.push(row.number);
-      }
-      return [];
-    });
-    const pending = pipelineCurrent
-      ? tasks.filter((task) => existing.get(String(task.threadId)) !== task.contentHash)
-      : tasks;
-    return { rows, tasks, existing, pending, missingSummaryThreadNumbers };
-  }
-
-  private loadDedupeSummaryTextMap(repoId: number, threadNumber?: number): Map<number, string> {
-    let sql =
-      `select s.thread_id, s.summary_text
-       from document_summaries s
-       join threads t on t.id = s.thread_id
-       where t.repo_id = ?
-         and t.state = 'open'
-         and t.closed_at_local is null
-         and s.model = ?
-         and s.summary_kind = 'dedupe_summary'
-         and s.prompt_version = ?`;
-    const args: Array<number | string> = [repoId, this.config.summaryModel, SUMMARY_PROMPT_VERSION];
-    if (threadNumber) {
-      sql += ' and t.number = ?';
-      args.push(threadNumber);
-    }
-    sql += ' order by t.number asc';
-
-    const rows = this.db.prepare(sql).all(...args) as Array<{
-      thread_id: number;
-      summary_text: string;
-    }>;
-    const combined = new Map<number, string>();
-    for (const row of rows) {
-      const text = normalizeSummaryText(row.summary_text);
-      if (text) {
-        combined.set(row.thread_id, text);
-      }
-    }
-    return combined;
-  }
-
-  private loadKeySummaryTextMap(repoId: number, threadNumber?: number): Map<number, string> {
-    let sql =
-      `select tr.thread_id, ks.key_text
-       from thread_key_summaries ks
-       join thread_revisions tr on tr.id = ks.thread_revision_id
-       join threads t on t.id = tr.thread_id
-       where t.repo_id = ?
-         and t.state = 'open'
-         and t.closed_at_local is null
-         and ks.summary_kind = 'llm_key_3line'
-         and ks.prompt_version = ?
-         and ks.model = ?`;
-    const args: Array<number | string> = [repoId, LLM_KEY_SUMMARY_PROMPT_VERSION, this.config.summaryModel];
-    if (threadNumber) {
-      sql += ' and t.number = ?';
-      args.push(threadNumber);
-    }
-    sql += ' order by tr.id asc';
-
-    const rows = this.db.prepare(sql).all(...args) as Array<{
-      thread_id: number;
-      key_text: string;
-    }>;
-    const combined = new Map<number, string>();
-    for (const row of rows) {
-      const text = normalizeSummaryText(row.key_text);
-      if (text) {
-        combined.set(row.thread_id, text);
-      }
-    }
-    return combined;
   }
 
   private edgeKey(leftThreadId: number, rightThreadId: number): string {
