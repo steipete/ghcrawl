@@ -3988,6 +3988,15 @@ test('tui snapshot includes durable closed clusters missing from the latest run'
       )
       .run(10, 1, '100', 42, 'issue', 'closed', 'Closed durable issue', 'body', 'alice', 'User', 'https://github.com/openclaw/openclaw/issues/42', '[]', '[]', '{}', 'hash-42', 0, now, now, now, null, now, now, now);
     service.db
+      .prepare(
+        `insert into threads (
+          id, repo_id, github_id, number, kind, state, title, body, author_login, author_type, html_url,
+          labels_json, assignees_json, raw_json, content_hash, is_draft, created_at_gh, updated_at_gh, closed_at_gh,
+          merged_at_gh, first_pulled_at, last_pulled_at, updated_at
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(11, 1, '101', 43, 'pull_request', 'closed', 'Archived durable PR', 'body', 'bob', 'User', 'https://github.com/openclaw/openclaw/pull/43', '[]', '[]', '{}', 'hash-43', 0, now, now, now, now, now, now, now);
+    service.db
       .prepare(`insert into cluster_runs (id, repo_id, scope, status, started_at, finished_at) values (?, ?, ?, ?, ?, ?)`)
       .run(1, 1, 'openclaw/openclaw', 'completed', now, now);
     service.db
@@ -3999,21 +4008,39 @@ test('tui snapshot includes durable closed clusters missing from the latest run'
       .run(7, 1, 'stable-key', 'trace-alpha-river', 'closed', 'duplicate_candidate', 10, 'Closed durable cluster', now, now, now);
     service.db
       .prepare(
+        `insert into cluster_groups (
+          id, repo_id, stable_key, stable_slug, status, cluster_type, representative_thread_id, title, created_at, updated_at, closed_at
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(8, 1, 'stable-key-archived', 'archive-blue-harbor', 'active', 'duplicate_candidate', 11, 'Archived durable cluster', now, now, null);
+    service.db
+      .prepare(
         `insert into cluster_memberships (
           cluster_id, thread_id, role, state, score_to_representative, first_seen_run_id, last_seen_run_id,
           added_by, removed_by, added_reason_json, removed_reason_json, created_at, updated_at, removed_at
         ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(7, 10, 'canonical', 'active', 1, null, null, 'algo', null, '{}', null, now, now, null);
+    service.db
+      .prepare(
+        `insert into cluster_memberships (
+          cluster_id, thread_id, role, state, score_to_representative, first_seen_run_id, last_seen_run_id,
+          added_by, removed_by, added_reason_json, removed_reason_json, created_at, updated_at, removed_at
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(8, 11, 'canonical', 'active', 1, null, null, 'algo', null, '{}', null, now, now, null);
 
     const hidden = service.getTuiSnapshot({ owner: 'openclaw', repo: 'openclaw', minSize: 0, includeClosedClusters: false });
     assert.equal(hidden.clusters.length, 0);
 
     const snapshot = service.getTuiSnapshot({ owner: 'openclaw', repo: 'openclaw', minSize: 0 });
-    assert.equal(snapshot.clusters.length, 1);
+    assert.equal(snapshot.clusters.length, 2);
     assert.equal(snapshot.clusters[0]?.clusterId, 7);
     assert.equal(snapshot.clusters[0]?.isClosed, true);
     assert.equal(snapshot.clusters[0]?.closeReasonLocal, 'closed');
+    assert.equal(snapshot.clusters[1]?.clusterId, 8);
+    assert.equal(snapshot.clusters[1]?.isClosed, true);
+    assert.equal(snapshot.clusters[1]?.closeReasonLocal, 'all_members_closed');
 
     const detail = service.getTuiClusterDetail({
       owner: 'openclaw',
@@ -4023,6 +4050,14 @@ test('tui snapshot includes durable closed clusters missing from the latest run'
     });
     assert.equal(detail.members.length, 1);
     assert.equal(detail.members[0]?.number, 42);
+    const archivedDetail = service.getTuiClusterDetail({
+      owner: 'openclaw',
+      repo: 'openclaw',
+      clusterId: 8,
+      clusterRunId: snapshot.clusterRunId ?? undefined,
+    });
+    assert.equal(archivedDetail.members.length, 1);
+    assert.equal(archivedDetail.members[0]?.number, 43);
   } finally {
     service.close();
   }

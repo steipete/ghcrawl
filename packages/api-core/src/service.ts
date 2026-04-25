@@ -4266,13 +4266,13 @@ export class GHCrawlService {
             max(coalesce(t.updated_at_gh, t.updated_at)) as latest_updated_at,
             sum(case when t.kind = 'issue' then 1 else 0 end) as issue_count,
             sum(case when t.kind = 'pull_request' then 1 else 0 end) as pull_request_count,
+            sum(case when t.state != 'open' or t.closed_at_local is not null then 1 else 0 end) as closed_member_count,
             group_concat(lower(coalesce(t.title, '')), ' ') as search_text
          from cluster_groups cg
          left join threads rt on rt.id = cg.representative_thread_id
          join cluster_memberships cm on cm.cluster_id = cg.id and cm.state <> 'removed_by_user'
          join threads t on t.id = cm.thread_id
          where cg.repo_id = ?
-           and (cg.status <> 'active' or cg.closed_at is not null)
          group by
            cg.id,
            cg.stable_slug,
@@ -4282,7 +4282,10 @@ export class GHCrawlService {
            cg.title,
            rt.number,
            rt.kind,
-           rt.title`,
+           rt.title
+         having cg.status <> 'active'
+            or cg.closed_at is not null
+            or closed_member_count >= member_count`,
       )
       .all(repoId) as Array<{
       cluster_id: number;
@@ -4298,6 +4301,7 @@ export class GHCrawlService {
       latest_updated_at: string | null;
       issue_count: number;
       pull_request_count: number;
+      closed_member_count: number;
       search_text: string | null;
     }>;
 
@@ -4328,6 +4332,7 @@ export class GHCrawlService {
             max(coalesce(t.updated_at_gh, t.updated_at)) as latest_updated_at,
             sum(case when t.kind = 'issue' then 1 else 0 end) as issue_count,
             sum(case when t.kind = 'pull_request' then 1 else 0 end) as pull_request_count,
+            sum(case when t.state != 'open' or t.closed_at_local is not null then 1 else 0 end) as closed_member_count,
             group_concat(lower(coalesce(t.title, '')), ' ') as search_text
          from cluster_groups cg
          left join threads rt on rt.id = cg.representative_thread_id
@@ -4361,6 +4366,7 @@ export class GHCrawlService {
           latest_updated_at: string | null;
           issue_count: number;
           pull_request_count: number;
+          closed_member_count: number;
           search_text: string | null;
         }
       | undefined;
@@ -4384,6 +4390,7 @@ export class GHCrawlService {
     latest_updated_at: string | null;
     issue_count: number;
     pull_request_count: number;
+    closed_member_count: number;
     search_text: string | null;
   }): TuiClusterSummary {
     const closure: DurableTuiClosure = {
@@ -4391,13 +4398,19 @@ export class GHCrawlService {
       status: row.status,
       closedAt: row.closed_at,
     };
-    const isClosed = row.status !== 'active' || row.closed_at !== null;
+    const isClosed = row.status !== 'active' || row.closed_at !== null || row.closed_member_count >= row.member_count;
+    const closeReasonLocal =
+      row.status !== 'active' || row.closed_at !== null
+        ? this.durableClosureReason(closure)
+        : row.closed_member_count >= row.member_count
+          ? 'all_members_closed'
+          : null;
     return {
       clusterId: row.cluster_id,
       displayTitle: this.clusterDisplayTitle(row.stable_slug, row.representative_title, row.cluster_id),
       isClosed,
       closedAtLocal: row.closed_at,
-      closeReasonLocal: isClosed ? this.durableClosureReason(closure) : null,
+      closeReasonLocal,
       totalCount: row.member_count,
       issueCount: row.issue_count,
       pullRequestCount: row.pull_request_count,
