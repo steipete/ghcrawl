@@ -78,7 +78,7 @@ import { humanKeyForValue, humanKeyStableSlug } from './cluster/human-key.js';
 import { LLM_KEY_SUMMARY_PROMPT_VERSION, llmKeyInputHash } from './cluster/llm-key-summary.js';
 import { listStoredClusterNeighbors } from './cluster/neighbor-queries.js';
 import { summarizeClusterQuality, summarizeClusterSizes } from './cluster/quality.js';
-import { getLatestClusterRun, getLatestRunClusterIdsForThread } from './cluster/run-queries.js';
+import { getLatestClusterRun } from './cluster/run-queries.js';
 import {
   createPipelineRun,
   finishPipelineRun,
@@ -143,6 +143,7 @@ import { persistThreadCodeSnapshot, upsertRepository, upsertThread } from './syn
 import { applyClosedOverlapSweep, countStaleOpenThreads, reconcileMissingOpenThreads } from './sync/reconcile.js';
 import { buildKeySummaryInputText, buildSummarySource } from './summary/source.js';
 import { compareTuiClusterSummary } from './tui/cluster-format.js';
+import { closeRepositoryThreadLocally } from './threads/close.js';
 import { listRepositoryThreads } from './threads/list.js';
 import {
   getDurableTuiClusterSummary,
@@ -310,35 +311,7 @@ export class GHCrawlService {
 
   closeThreadLocally(params: { owner: string; repo: string; threadNumber: number }): CloseResponse {
     const repository = this.requireRepository(params.owner, params.repo);
-    const row = this.db
-      .prepare('select * from threads where repo_id = ? and number = ? limit 1')
-      .get(repository.id, params.threadNumber) as ThreadRow | undefined;
-    if (!row) {
-      throw new Error(`Thread #${params.threadNumber} was not found for ${repository.fullName}.`);
-    }
-
-    const closedAt = nowIso();
-    this.db
-      .prepare(
-        `update threads
-         set closed_at_local = ?,
-             close_reason_local = 'manual',
-             updated_at = ?
-         where id = ?`,
-      )
-      .run(closedAt, closedAt, row.id);
-    const clusterIds = getLatestRunClusterIdsForThread(this.db, repository.id, row.id);
-    const clusterClosed = reconcileClusterCloseState(this.db, repository.id, clusterIds) > 0;
-    const updated = this.db.prepare('select * from threads where id = ? limit 1').get(row.id) as ThreadRow;
-
-    return closeResponseSchema.parse({
-      ok: true,
-      repository,
-      thread: threadToDto(updated),
-      clusterId: clusterIds[0] ?? null,
-      clusterClosed,
-      message: `Marked ${updated.kind} #${updated.number} closed locally.`,
-    });
+    return closeRepositoryThreadLocally(this.db, repository, params.threadNumber);
   }
 
   closeClusterLocally(params: { owner: string; repo: string; clusterId: number }): CloseResponse {
