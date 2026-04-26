@@ -25,7 +25,6 @@ import {
   repositoriesResponseSchema,
   searchResponseSchema,
   syncResultSchema,
-  threadsResponseSchema,
   type ActionRequest,
   type ActionResponse,
   type CloseResponse,
@@ -57,7 +56,6 @@ import {
   type SetClusterCanonicalRequest,
   type SplitClusterRequest,
   type SyncResultDto,
-  type ThreadDto,
   type ThreadsResponse,
 } from '@ghcrawl/api-contract';
 
@@ -145,6 +143,7 @@ import { persistThreadCodeSnapshot, upsertRepository, upsertThread } from './syn
 import { applyClosedOverlapSweep, countStaleOpenThreads, reconcileMissingOpenThreads } from './sync/reconcile.js';
 import { buildKeySummaryInputText, buildSummarySource } from './summary/source.js';
 import { compareTuiClusterSummary } from './tui/cluster-format.js';
+import { listRepositoryThreads } from './threads/list.js';
 import {
   getDurableTuiClusterSummary,
   getRawTuiClusterSummary,
@@ -302,52 +301,11 @@ export class GHCrawlService {
 
   listThreads(params: { owner: string; repo: string; kind?: 'issue' | 'pull_request'; numbers?: number[]; includeClosed?: boolean }): ThreadsResponse {
     const repository = this.requireRepository(params.owner, params.repo);
-    const clusterIds = new Map<number, number>();
-    const clusterRows = this.db
-      .prepare(
-        `select cm.thread_id, cm.cluster_id
-         from cluster_members cm
-         join clusters c on c.id = cm.cluster_id
-         where c.repo_id = ? and c.cluster_run_id = (
-           select id from cluster_runs where repo_id = ? and status = 'completed' order by id desc limit 1
-         )`,
-      )
-      .all(repository.id, repository.id) as Array<{ thread_id: number; cluster_id: number }>;
-    for (const row of clusterRows) clusterIds.set(row.thread_id, row.cluster_id);
-
-    let sql = 'select * from threads where repo_id = ?';
-    const args: Array<string | number> = [repository.id];
-    if (!params.includeClosed) {
-      sql += " and state = 'open' and closed_at_local is null";
-    }
-    if (params.kind) {
-      sql += ' and kind = ?';
-      args.push(params.kind);
-    }
-    if (params.numbers && params.numbers.length > 0) {
-      const uniqueNumbers = Array.from(new Set(params.numbers.filter((value) => Number.isSafeInteger(value) && value > 0)));
-      if (uniqueNumbers.length === 0) {
-        return threadsResponseSchema.parse({
-          repository,
-          threads: [],
-        });
-      }
-      sql += ` and number in (${uniqueNumbers.map(() => '?').join(', ')})`;
-      args.push(...uniqueNumbers);
-    }
-    sql += ' order by updated_at_gh desc, number desc';
-    const rows = this.db.prepare(sql).all(...args) as ThreadRow[];
-    const orderedRows =
-      params.numbers && params.numbers.length > 0
-        ? (() => {
-            const byNumber = new Map(rows.map((row) => [row.number, row] as const));
-            const uniqueRequested = Array.from(new Set(params.numbers));
-            return uniqueRequested.map((number) => byNumber.get(number)).filter((row): row is ThreadRow => row !== undefined);
-          })()
-        : rows;
-    return threadsResponseSchema.parse({
+    return listRepositoryThreads(this.db, {
       repository,
-      threads: orderedRows.map((row) => threadToDto(row, clusterIds.get(row.id) ?? null)),
+      kind: params.kind,
+      numbers: params.numbers,
+      includeClosed: params.includeClosed,
     });
   }
 
