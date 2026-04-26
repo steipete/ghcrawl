@@ -7,12 +7,8 @@ import {
   buildThreadContextMenuItems,
   buildHelpContent,
   escapeBlessedText,
-  formatClusterDateColumn,
   formatClusterForClipboard,
-  formatClusterListHeader,
-  formatClusterListLabel,
   formatClusterMembersForClipboard,
-  formatClusterShortName,
   formatLinkChoiceLabel,
   formatSummariesForClipboard,
   formatThreadDetailForClipboard,
@@ -24,10 +20,16 @@ import {
   renderMarkdownForTerminal,
   renderDetailPane,
   resolveBlessedTerminal,
-  resolveClusterHeaderSortFromClick,
   renderSummarySections,
-  splitClusterDisplayTitle,
 } from './app.js';
+import {
+  formatClusterDateColumn,
+  formatClusterListHeader,
+  formatClusterListLabel,
+  formatClusterShortName,
+  resolveClusterHeaderSortFromClick,
+  splitClusterDisplayTitle,
+} from './cluster-render.js';
 
 test('escapeBlessedText escapes blessed tag delimiters', () => {
   assert.equal(escapeBlessedText('{bold}wow{/bold}'), '\\{bold\\}wow\\{/bold\\}');
