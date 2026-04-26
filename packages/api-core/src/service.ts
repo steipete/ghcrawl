@@ -361,19 +361,8 @@ export class GHCrawlService {
 
   excludeThreadFromCluster(params: ExcludeClusterMemberRequest): ClusterOverrideResponse {
     const repository = this.requireRepository(params.owner, params.repo);
-    const cluster = this.db
-      .prepare('select id from cluster_groups where repo_id = ? and id = ? limit 1')
-      .get(repository.id, params.clusterId) as { id: number } | undefined;
-    if (!cluster) {
-      throw new Error(`Durable cluster ${params.clusterId} was not found for ${repository.fullName}.`);
-    }
-
-    const thread = this.db
-      .prepare('select * from threads where repo_id = ? and number = ? limit 1')
-      .get(repository.id, params.threadNumber) as ThreadRow | undefined;
-    if (!thread) {
-      throw new Error(`Thread #${params.threadNumber} was not found for ${repository.fullName}.`);
-    }
+    const cluster = this.requireDurableCluster(repository, params.clusterId);
+    const thread = this.requireThread(repository, params.threadNumber);
 
     const existingMembership = this.db
       .prepare('select role, score_to_representative from cluster_memberships where cluster_id = ? and thread_id = ? limit 1')
@@ -431,19 +420,8 @@ export class GHCrawlService {
 
   includeThreadInCluster(params: IncludeClusterMemberRequest): ClusterOverrideResponse {
     const repository = this.requireRepository(params.owner, params.repo);
-    const cluster = this.db
-      .prepare('select id from cluster_groups where repo_id = ? and id = ? limit 1')
-      .get(repository.id, params.clusterId) as { id: number } | undefined;
-    if (!cluster) {
-      throw new Error(`Durable cluster ${params.clusterId} was not found for ${repository.fullName}.`);
-    }
-
-    const thread = this.db
-      .prepare('select * from threads where repo_id = ? and number = ? limit 1')
-      .get(repository.id, params.threadNumber) as ThreadRow | undefined;
-    if (!thread) {
-      throw new Error(`Thread #${params.threadNumber} was not found for ${repository.fullName}.`);
-    }
+    const cluster = this.requireDurableCluster(repository, params.clusterId);
+    const thread = this.requireThread(repository, params.threadNumber);
 
     const timestamp = nowIso();
     this.db.transaction(() => {
@@ -500,19 +478,8 @@ export class GHCrawlService {
 
   setClusterCanonicalThread(params: SetClusterCanonicalRequest): ClusterOverrideResponse {
     const repository = this.requireRepository(params.owner, params.repo);
-    const cluster = this.db
-      .prepare('select id from cluster_groups where repo_id = ? and id = ? limit 1')
-      .get(repository.id, params.clusterId) as { id: number } | undefined;
-    if (!cluster) {
-      throw new Error(`Durable cluster ${params.clusterId} was not found for ${repository.fullName}.`);
-    }
-
-    const thread = this.db
-      .prepare('select * from threads where repo_id = ? and number = ? limit 1')
-      .get(repository.id, params.threadNumber) as ThreadRow | undefined;
-    if (!thread) {
-      throw new Error(`Thread #${params.threadNumber} was not found for ${repository.fullName}.`);
-    }
+    const cluster = this.requireDurableCluster(repository, params.clusterId);
+    const thread = this.requireThread(repository, params.threadNumber);
 
     const membership = this.db
       .prepare('select score_to_representative from cluster_memberships where cluster_id = ? and thread_id = ? limit 1')
@@ -2871,6 +2838,26 @@ export class GHCrawlService {
       throw new Error(`Repository ${fullName} not found. Run sync first.`);
     }
     return repositoryToDto(row);
+  }
+
+  private requireDurableCluster(repository: RepositoryDto, clusterId: number): { id: number } {
+    const cluster = this.db
+      .prepare('select id from cluster_groups where repo_id = ? and id = ? limit 1')
+      .get(repository.id, clusterId) as { id: number } | undefined;
+    if (!cluster) {
+      throw new Error(`Durable cluster ${clusterId} was not found for ${repository.fullName}.`);
+    }
+    return cluster;
+  }
+
+  private requireThread(repository: RepositoryDto, threadNumber: number): ThreadRow {
+    const thread = this.db
+      .prepare('select * from threads where repo_id = ? and number = ? limit 1')
+      .get(repository.id, threadNumber) as ThreadRow | undefined;
+    if (!thread) {
+      throw new Error(`Thread #${threadNumber} was not found for ${repository.fullName}.`);
+    }
+    return thread;
   }
 
   private async aggregateRepositoryEdges(
