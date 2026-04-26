@@ -1,7 +1,47 @@
+import { getLatestClusterRun } from '../cluster/run-queries.js';
 import type { SqliteDatabase } from '../db/sqlite.js';
 import { SUMMARY_PROMPT_VERSION } from '../service-constants.js';
-import type { TuiThreadDetail } from '../service-types.js';
+import type { ThreadRow, TuiThreadDetail } from '../service-types.js';
 import { normalizeKeySummaryDisplayText } from '../service-utils.js';
+
+export function getTuiThreadRow(params: {
+  db: SqliteDatabase;
+  repoId: number;
+  threadId?: number;
+  threadNumber?: number;
+}): ThreadRow | null {
+  if (params.threadId) {
+    return (
+      (params.db
+        .prepare('select * from threads where repo_id = ? and id = ? limit 1')
+        .get(params.repoId, params.threadId) as ThreadRow | undefined) ?? null
+    );
+  }
+  if (params.threadNumber) {
+    return (
+      (params.db
+        .prepare('select * from threads where repo_id = ? and number = ? limit 1')
+        .get(params.repoId, params.threadNumber) as ThreadRow | undefined) ?? null
+    );
+  }
+  return null;
+}
+
+export function getLatestTuiThreadClusterId(db: SqliteDatabase, repoId: number, threadId: number): number | null {
+  const latestRun = getLatestClusterRun(db, repoId);
+  const clusterMembership = latestRun
+    ? ((db
+        .prepare(
+          `select cm.cluster_id
+           from cluster_members cm
+           join clusters c on c.id = cm.cluster_id
+           where c.cluster_run_id = ? and cm.thread_id = ?
+           limit 1`,
+        )
+        .get(latestRun.id, threadId) as { cluster_id: number } | undefined) ?? null)
+    : null;
+  return clusterMembership?.cluster_id ?? null;
+}
 
 export function getTuiThreadSummaries(db: SqliteDatabase, threadId: number, summaryModel: string): TuiThreadDetail['summaries'] {
   const rows = db

@@ -153,7 +153,13 @@ import {
   listRawTuiClusters,
 } from './tui/cluster-queries.js';
 import { getTuiRepoStats, getTuiRepositoryRefreshState } from './tui/repo-stats.js';
-import { getLatestTuiKeySummary, getTopChangedFiles, getTuiThreadSummaries } from './tui/thread-detail.js';
+import {
+  getLatestTuiKeySummary,
+  getLatestTuiThreadClusterId,
+  getTopChangedFiles,
+  getTuiThreadRow,
+  getTuiThreadSummaries,
+} from './tui/thread-detail.js';
 import {
   ACTIVE_EMBED_DIMENSIONS,
   ACTIVE_EMBED_PIPELINE_VERSION,
@@ -3097,33 +3103,18 @@ export class GHCrawlService {
     includeNeighbors?: boolean;
   }): TuiThreadDetail {
     const repository = this.requireRepository(params.owner, params.repo);
-    const row = params.threadId
-      ? ((this.db
-          .prepare('select * from threads where repo_id = ? and id = ? limit 1')
-          .get(repository.id, params.threadId) as ThreadRow | undefined) ?? null)
-      : params.threadNumber
-        ? ((this.db
-            .prepare('select * from threads where repo_id = ? and number = ? limit 1')
-            .get(repository.id, params.threadNumber) as ThreadRow | undefined) ?? null)
-        : null;
+    const row = getTuiThreadRow({
+      db: this.db,
+      repoId: repository.id,
+      threadId: params.threadId,
+      threadNumber: params.threadNumber,
+    });
 
     if (!row) {
       throw new Error(`Thread was not found for ${repository.fullName}.`);
     }
 
-    const latestRun = getLatestClusterRun(this.db, repository.id);
-    const clusterMembership = latestRun
-      ? ((this.db
-          .prepare(
-            `select cm.cluster_id
-             from cluster_members cm
-             join clusters c on c.id = cm.cluster_id
-             where c.cluster_run_id = ? and cm.thread_id = ?
-             limit 1`,
-          )
-          .get(latestRun.id, row.id) as { cluster_id: number } | undefined) ?? null)
-      : null;
-
+    const clusterId = getLatestTuiThreadClusterId(this.db, repository.id, row.id);
     const summaries = getTuiThreadSummaries(this.db, row.id, this.config.summaryModel);
     const topFiles = getTopChangedFiles(this.db, row.id, 5);
     const keySummary = getLatestTuiKeySummary(this.db, row.id, this.config.summaryModel);
@@ -3147,7 +3138,7 @@ export class GHCrawlService {
     }
 
     return {
-      thread: threadToDto(row, clusterMembership?.cluster_id ?? null),
+      thread: threadToDto(row, clusterId),
       summaries,
       keySummary,
       topFiles,
