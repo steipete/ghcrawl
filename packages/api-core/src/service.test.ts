@@ -412,6 +412,67 @@ test('exportPortableSync writes a compact sync database without bulky cache tabl
     } finally {
       importService.close();
     }
+
+    const richImportService = new GHCrawlService({
+      config: {
+        ...config,
+        dbPath: path.join(config.configDir, 'rich-import-target.db'),
+      },
+      github: service.github,
+    });
+    try {
+      const richerBody = `${longBody}\nextra locally hydrated body`;
+      const richerRaw = JSON.stringify({ payload: 'already-hydrated' });
+      richImportService.db
+        .prepare(
+          `insert into repositories (id, owner, name, full_name, github_repo_id, raw_json, updated_at)
+           values (?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(1, 'openclaw', 'openclaw', 'openclaw/openclaw', '1', richerRaw, now);
+      richImportService.db
+        .prepare(
+          `insert into threads (
+            repo_id, github_id, number, kind, state, title, body, author_login, author_type, html_url,
+            labels_json, assignees_json, raw_json, content_hash, is_draft, created_at_gh, updated_at_gh,
+            closed_at_gh, merged_at_gh, first_pulled_at, last_pulled_at, updated_at
+          ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          1,
+          '100',
+          42,
+          'issue',
+          'open',
+          'Gateway crash',
+          richerBody,
+          'alice',
+          'User',
+          'https://github.com/openclaw/openclaw/issues/42',
+          '["bug"]',
+          '[]',
+          richerRaw,
+          'content-hash',
+          0,
+          now,
+          now,
+          null,
+          null,
+          now,
+          now,
+          now,
+        );
+
+      const importResult = richImportService.importPortableSync(outputPath);
+      assert.equal(importResult.ok, true);
+      const importedThread = richImportService.db.prepare('select body, raw_json from threads where number = 42').get() as {
+        body: string;
+        raw_json: string;
+      };
+      assert.equal(importedThread.body, richerBody);
+      assert.equal(importedThread.raw_json, richerRaw);
+    } finally {
+      richImportService.close();
+    }
   } finally {
     service.close();
   }
