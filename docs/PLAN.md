@@ -166,7 +166,7 @@ Decision note:
 - [x] Tune cluster quality on real output and validate in the TUI.
 - [x] Capture operator docs for refresh, manual pipeline control, closed clusters, durable overrides, portable git-sync export, and optimize.
 - [ ] Finish service decomposition so `service.ts`, `apps/cli/src/main.ts`, and `apps/cli/src/tui/app.ts` stay small enough to maintain.
-- [ ] Add focused tests around portable import conflict handling and sync drift reporting.
+- [x] Add focused tests around portable import conflict handling and sync drift reporting.
 - [ ] Add a release-readiness pass for packaged `vectorlite` installs across supported Node versions.
 
 ## Recommended Execution Order
