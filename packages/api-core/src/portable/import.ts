@@ -492,6 +492,8 @@ function upsertImportedClusterMembership(
   liveThreadId: number,
   row: PortableClusterMembershipRow,
 ): void {
+  // Portable sync excludes pipeline_runs, so imported membership run pointers
+  // cannot be valid in the target live DB.
   db.prepare(
     `insert into cluster_memberships (
        cluster_id, thread_id, role, state, score_to_representative, first_seen_run_id, last_seen_run_id,
@@ -515,8 +517,8 @@ function upsertImportedClusterMembership(
     row.role,
     row.state,
     row.score_to_representative,
-    row.first_seen_run_id,
-    row.last_seen_run_id,
+    null,
+    null,
     row.added_by,
     row.removed_by,
     row.added_reason_json,

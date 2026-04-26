@@ -296,6 +296,7 @@ test('exportPortableSync writes a compact sync database without bulky cache tabl
         ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(50, 1, 'stable-key', 'amber-river-slate-abc', 'active', 'dedupe', 10, 'Gateway crash cluster', now, now, null);
+    service.db.prepare("insert into pipeline_runs (id, repo_id, run_kind, status, started_at) values (?, ?, 'cluster', 'completed', ?)").run(60, 1, now);
     service.db
       .prepare(
         `insert into cluster_memberships (
@@ -303,7 +304,7 @@ test('exportPortableSync writes a compact sync database without bulky cache tabl
           added_by, removed_by, added_reason_json, removed_reason_json, created_at, updated_at, removed_at
         ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(50, 10, 'canonical', 'active', 1, null, null, 'system', null, '{}', null, now, now, null);
+      .run(50, 10, 'canonical', 'active', 1, 60, 60, 'system', null, '{}', null, now, now, null);
 
     const response = service.exportPortableSync({
       owner: 'openclaw',
@@ -515,6 +516,11 @@ test('exportPortableSync writes a compact sync database without bulky cache tabl
       assert.equal(importedPortableOnlyThread.state, 'closed');
       assert.equal(importedPortableOnlyThread.body, 'old portable row');
       assert.equal(importedPortableOnlyThread.raw_json, '{}');
+      const importedMembership = importService.db
+        .prepare('select first_seen_run_id, last_seen_run_id from cluster_memberships where cluster_id = 1 and thread_id = 1')
+        .get() as { first_seen_run_id: number | null; last_seen_run_id: number | null };
+      assert.equal(importedMembership.first_seen_run_id, null);
+      assert.equal(importedMembership.last_seen_run_id, null);
     } finally {
       importService.close();
     }
