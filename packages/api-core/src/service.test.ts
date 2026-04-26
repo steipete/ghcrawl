@@ -171,6 +171,8 @@ test('exportPortableSync writes a compact sync database without bulky cache tabl
   const config = makeTestConfig();
   const sourcePath = path.join(config.configDir, 'source.db');
   const outputPath = path.join(config.configDir, 'openclaw.sync.db');
+  fs.writeFileSync(`${outputPath}-wal`, 'stale wal');
+  fs.writeFileSync(`${outputPath}-shm`, 'stale shm');
   const service = new GHCrawlService({
     config: {
       ...config,
@@ -320,6 +322,8 @@ test('exportPortableSync writes a compact sync database without bulky cache tabl
     assert.ok(response.excluded.includes('documents'));
     assert.ok(response.excluded.includes('thread_vectors'));
     assert.equal(response.tables.find((table) => table.name === 'threads')?.rows, 1);
+    assert.equal(fs.existsSync(`${outputPath}-wal`), false);
+    assert.equal(fs.existsSync(`${outputPath}-shm`), false);
 
     const validation = service.validatePortableSync(outputPath);
     assert.equal(validation.ok, true);

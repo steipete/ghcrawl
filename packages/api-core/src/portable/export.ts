@@ -65,9 +65,10 @@ export function exportPortableSyncDatabase(params: PortableSyncExportOptions): P
   }
   out.close();
 
+  removeSqliteSidecars(outputPath);
   fs.renameSync(tmpPath, outputPath);
-  fs.rmSync(`${tmpPath}-wal`, { force: true });
-  fs.rmSync(`${tmpPath}-shm`, { force: true });
+  removeSqliteSidecars(tmpPath);
+  removeSqliteSidecars(outputPath);
 
   const outputBytes = fs.statSync(outputPath).size;
   const sourceBytes = fs.statSync(sourcePath).size + fileSize(`${sourcePath}-wal`) + fileSize(`${sourcePath}-shm`);
@@ -239,4 +240,9 @@ function writePortableSyncManifest(outputPath: string, manifest: PortableSyncMan
   const manifestPath = `${outputPath}.manifest.json`;
   fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
   return manifestPath;
+}
+
+function removeSqliteSidecars(dbPath: string): void {
+  fs.rmSync(`${dbPath}-wal`, { force: true });
+  fs.rmSync(`${dbPath}-shm`, { force: true });
 }
