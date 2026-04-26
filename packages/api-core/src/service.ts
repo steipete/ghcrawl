@@ -151,6 +151,7 @@ import {
   durableClosureReason,
   durableTuiSummaryFromRow,
 } from './tui/cluster-format.js';
+import { clusterHumanName, getDurableClosuresByRepresentative } from './tui/cluster-queries.js';
 import { getTuiRepoStats } from './tui/repo-stats.js';
 import { getLatestTuiKeySummary, getTopChangedFiles, getTuiThreadSummaries } from './tui/thread-detail.js';
 import {
@@ -184,7 +185,6 @@ import type {
   ClusterExperimentResult,
   CommentSeed,
   DoctorResult,
-  DurableTuiClosure,
   EmbeddingSourceKind,
   KeySummaryTask,
   NeighborsResultInternal,
@@ -3405,48 +3405,6 @@ export class GHCrawlService {
     return durableClusterId;
   }
 
-  private getDurableClosuresByRepresentative(repoId: number, representativeThreadIds: number[]): Map<number, DurableTuiClosure> {
-    const uniqueThreadIds = Array.from(new Set(representativeThreadIds));
-    if (uniqueThreadIds.length === 0) {
-      return new Map();
-    }
-
-    const identities = uniqueThreadIds.map((threadId) => ({
-      threadId,
-      stableKey: humanKeyForValue(`repo:${repoId}:cluster-representative:${threadId}`).hash,
-    }));
-    const placeholders = identities.map(() => '?').join(',');
-    const rows = this.db
-      .prepare(
-        `select cg.id, cg.stable_key, cg.status, coalesce(cc.updated_at, cg.closed_at) as closed_at, cc.reason
-         from cluster_groups cg
-         left join cluster_closures cc on cc.cluster_id = cg.id
-         where cg.repo_id = ?
-           and cg.stable_key in (${placeholders})
-           and (cc.cluster_id is not null or cg.status in ('merged', 'split'))`,
-      )
-      .all(repoId, ...identities.map((identity) => identity.stableKey)) as Array<{
-      id: number;
-      stable_key: string;
-      status: 'active' | 'closed' | 'merged' | 'split';
-      closed_at: string | null;
-      reason: string | null;
-    }>;
-    const threadIdByStableKey = new Map(identities.map((identity) => [identity.stableKey, identity.threadId]));
-    const closures = new Map<number, DurableTuiClosure>();
-    for (const row of rows) {
-      const threadId = threadIdByStableKey.get(row.stable_key);
-      if (threadId === undefined) continue;
-      closures.set(threadId, {
-        clusterId: row.id,
-        status: row.status,
-        closedAt: row.closed_at,
-        reason: row.reason,
-      });
-    }
-    return closures;
-  }
-
   private listClosedDurableTuiClusters(repoId: number, representedThreadIds: Set<number>, minSize: number): TuiClusterSummary[] {
     const rows = this.db
       .prepare(
@@ -3637,7 +3595,8 @@ export class GHCrawlService {
         closed_member_count: number;
         search_text: string | null;
       }>;
-    const durableClosures = this.getDurableClosuresByRepresentative(
+    const durableClosures = getDurableClosuresByRepresentative(
+      this.db,
       repoId,
       rows
         .map((row) => row.representative_thread_id)
@@ -3645,7 +3604,7 @@ export class GHCrawlService {
     );
 
     return rows.map((row) => {
-      const clusterName = this.clusterHumanName(repoId, row.representative_thread_id, row.cluster_id);
+      const clusterName = clusterHumanName(repoId, row.representative_thread_id, row.cluster_id);
       const durableClosure =
         row.representative_thread_id === null ? null : (durableClosures.get(row.representative_thread_id) ?? null);
       return {
@@ -3720,11 +3679,11 @@ export class GHCrawlService {
       return null;
     }
 
-    const clusterName = this.clusterHumanName(repoId, row.representative_thread_id, row.cluster_id);
+    const clusterName = clusterHumanName(repoId, row.representative_thread_id, row.cluster_id);
     const durableClosure =
       row.representative_thread_id === null
         ? null
-        : (this.getDurableClosuresByRepresentative(repoId, [row.representative_thread_id]).get(row.representative_thread_id) ?? null);
+        : (getDurableClosuresByRepresentative(this.db, repoId, [row.representative_thread_id]).get(row.representative_thread_id) ?? null);
     return {
       clusterId: row.cluster_id,
       displayTitle: clusterDisplayTitle(clusterName, row.representative_title, row.cluster_id),
@@ -3740,14 +3699,6 @@ export class GHCrawlService {
       representativeKind: row.representative_kind,
       searchText: `${clusterName} ${(row.representative_title ?? '').toLowerCase()} ${row.search_text ?? ''}`.trim(),
     };
-  }
-
-  private clusterHumanName(repoId: number, representativeThreadId: number | null, clusterId: number): string {
-    return humanKeyForValue(
-      representativeThreadId === null
-        ? `repo:${repoId}:cluster:${clusterId}`
-        : `repo:${repoId}:cluster-representative:${representativeThreadId}`,
-    ).slug;
   }
 
   private async fetchThreadComments(
