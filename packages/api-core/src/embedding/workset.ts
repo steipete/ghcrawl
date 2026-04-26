@@ -55,8 +55,14 @@ export function getEmbeddingWorkset(params: {
   for (const row of existingRows) {
     existing.set(String(row.thread_id), row.content_hash);
   }
-  const summaryTexts = loadDedupeSummaryTextMap(params);
-  const keySummaryTexts = loadKeySummaryTextMap(params);
+  const summaryTexts =
+    params.config.embeddingBasis === 'title_summary'
+      ? loadDedupeSummaryTextMap(params)
+      : new Map<number, string>();
+  const keySummaryTexts =
+    params.config.embeddingBasis === 'llm_key_summary'
+      ? loadKeySummaryTextMap(params)
+      : new Map<number, string>();
   const missingSummaryThreadNumbers: number[] = [];
   const tasks = rows.flatMap((row) => {
     const task = buildActiveVectorTask({
