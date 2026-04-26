@@ -4,8 +4,13 @@ import assert from 'node:assert/strict';
 import type { TuiClusterDetail, TuiThreadDetail } from '@ghcrawl/api-core';
 
 import {
-  buildThreadContextMenuItems,
   buildHelpContent,
+  getRepositoryChoices,
+  parseOwnerRepoValue,
+  resolveBlessedTerminal,
+} from './app.js';
+import {
+  buildThreadContextMenuItems,
   escapeBlessedText,
   formatClusterForClipboard,
   formatClusterMembersForClipboard,
@@ -15,13 +20,10 @@ import {
   formatVisibleClustersForClipboard,
   getThreadReferenceLinks,
   limitRenderedLines,
-  getRepositoryChoices,
-  parseOwnerRepoValue,
-  renderMarkdownForTerminal,
   renderDetailPane,
-  resolveBlessedTerminal,
+  renderMarkdownForTerminal,
   renderSummarySections,
-} from './app.js';
+} from './detail-render.js';
 import {
   formatClusterDateColumn,
   formatClusterListHeader,
