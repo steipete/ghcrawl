@@ -349,6 +349,21 @@ test('exportPortableSync writes a compact sync database without bulky cache tabl
     assert.equal(status.drift.portableOnlyThreads, 0);
     assert.equal(status.drift.changedThreads, 0);
 
+    const driftDb = openDb(outputPath);
+    try {
+      driftDb.prepare("update threads set title = 'Gateway crash from stale portable copy' where number = 42").run();
+    } finally {
+      driftDb.close();
+    }
+    const driftStatus = service.portableSyncStatus({
+      owner: 'openclaw',
+      repo: 'openclaw',
+      portablePath: outputPath,
+    });
+    assert.equal(driftStatus.drift.liveOnlyThreads, 0);
+    assert.equal(driftStatus.drift.portableOnlyThreads, 0);
+    assert.equal(driftStatus.drift.changedThreads, 1);
+
     const portable = openDb(outputPath);
     try {
       const thread = portable.prepare('select body_excerpt, body_length from threads where number = 42').get() as {
