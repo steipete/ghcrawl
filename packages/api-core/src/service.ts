@@ -2108,17 +2108,18 @@ export class GHCrawlService {
     const semanticScores = new Map<number, number>();
 
     if (mode !== 'semantic') {
+      const keywordQuery = buildFtsKeywordQuery(params.query);
       const rows = this.db
         .prepare(
           `select d.thread_id, bm25(documents_fts) as rank
            from documents_fts
            join documents d on d.id = documents_fts.rowid
            join threads t on t.id = d.thread_id
-         where t.repo_id = ? and t.state = 'open' and t.closed_at_local is null and documents_fts match ?
+         where t.repo_id = ? and t.state = 'open' and t.closed_at_local is null and ? <> '' and documents_fts match ?
            order by rank
            limit ?`,
         )
-        .all(repository.id, params.query, limit * 2) as Array<{ thread_id: number; rank: number }>;
+        .all(repository.id, keywordQuery, keywordQuery, limit * 2) as Array<{ thread_id: number; rank: number }>;
       for (const row of rows) {
         keywordScores.set(row.thread_id, 1 / (1 + Math.abs(row.rank)));
       }
@@ -3361,4 +3362,13 @@ export class GHCrawlService {
       );
   }
 
+}
+
+function buildFtsKeywordQuery(query: string): string {
+  return query
+    .trim()
+    .split(/\s+/)
+    .filter((term) => /[\p{L}\p{N}_]/u.test(term))
+    .map((term) => `"${term.replaceAll('"', '""')}"`)
+    .join(' ');
 }

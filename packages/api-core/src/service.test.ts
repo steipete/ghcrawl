@@ -1435,6 +1435,56 @@ test('generateKeySummaries stores cached structured key summaries', async () => 
   }
 });
 
+test('searchRepository treats hyphenated and dotted keyword terms as literals', async () => {
+  const service = makeTestService({
+    getRepo: async () => ({}),
+    listRepositoryIssues: async () => [],
+    getIssue: async () => ({}),
+    getPull: async () => ({}),
+    listIssueComments: async () => [],
+    listPullReviews: async () => [],
+    listPullReviewComments: async () => [],
+    listPullFiles: async () => [],
+  });
+
+  try {
+    const now = '2026-03-09T00:00:00Z';
+    service.db
+      .prepare(
+        `insert into repositories (id, owner, name, full_name, github_repo_id, raw_json, updated_at)
+         values (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(1, 'openclaw', 'openclaw', 'openclaw/openclaw', '1', '{}', now);
+    service.db
+      .prepare(
+        `insert into threads (
+          id, repo_id, github_id, number, kind, state, title, body, author_login, author_type, html_url,
+          labels_json, assignees_json, raw_json, content_hash, is_draft, created_at_gh, updated_at_gh, closed_at_gh,
+          merged_at_gh, first_pulled_at, last_pulled_at, updated_at
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(10, 1, '100', 42, 'issue', 'open', 'gateway-client operator.read failure', 'The gateway-client cannot call operator.read.', 'alice', 'User', 'https://github.com/openclaw/openclaw/issues/42', '[]', '[]', '{}', 'hash-42', 0, now, now, null, null, now, now, now);
+    service.db
+      .prepare(
+        `insert into documents (thread_id, title, body, raw_text, dedupe_text, updated_at)
+         values (?, ?, ?, ?, ?, ?)`,
+      )
+      .run(10, 'gateway-client operator.read failure', 'The gateway-client cannot call operator.read.', 'gateway-client operator.read failure', 'gateway-client operator.read failure', now);
+
+    const result = await service.searchRepository({
+      owner: 'openclaw',
+      repo: 'openclaw',
+      query: 'gateway-client operator.read',
+      mode: 'keyword',
+    });
+
+    assert.equal(result.hits.length, 1);
+    assert.equal(result.hits[0]?.thread.number, 42);
+  } finally {
+    service.close();
+  }
+});
+
 test('purgeComments removes hydrated comments and refreshes canonical documents', () => {
   const service = makeTestService({
     getRepo: async () => ({ id: 1, full_name: 'openclaw/openclaw' }),
