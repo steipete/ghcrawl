@@ -2,9 +2,11 @@
 .local/
 node_modules/
 dist/
+**/dist/
 coverage/
 data/
 tmp/
+packages/api-core/.ghcrawl-store/
 ui/dist/
 packages/*/src/**/*.js
 packages/*/src/**/*.js.map

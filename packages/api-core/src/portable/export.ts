@@ -1,10 +1,17 @@
-import fs from 'node:fs';
-import path from 'node:path';
+import fs from "node:fs";
+import path from "node:path";
 
-import { checkpointWal, openDb, type SqliteDatabase } from '../db/sqlite.js';
-import { validatePortableSyncDatabase } from './inspect.js';
-import { createPortableSyncSchema } from './schema.js';
-import { attachedTableHasColumn, countRows, fileSize, nowIso, sha256File, sqlStringLiteral } from './sqlite-utils.js';
+import { checkpointWal, openDb, type SqliteDatabase } from "../db/sqlite.js";
+import { validatePortableSyncDatabase } from "./inspect.js";
+import { createPortableSyncSchema } from "./schema.js";
+import {
+  attachedTableHasColumn,
+  countRows,
+  fileSize,
+  nowIso,
+  sha256File,
+  sqlStringLiteral,
+} from "./sqlite-utils.js";
 import {
   DEFAULT_PORTABLE_BODY_CHARS,
   PORTABLE_SYNC_EXCLUDED_TABLES,
@@ -14,19 +21,21 @@ import {
   type PortableSyncExportResponse,
   type PortableSyncManifest,
   type PortableSyncProfile,
-} from './types.js';
+} from "./types.js";
 
-export function exportPortableSyncDatabase(params: PortableSyncExportOptions): PortableSyncExportResponse {
-  const profile: PortableSyncProfile | 'default' = params.profile ?? 'default';
+export function exportPortableSyncDatabase(
+  params: PortableSyncExportOptions,
+): PortableSyncExportResponse {
+  const profile: PortableSyncProfile | "default" = params.profile ?? "default";
   const bodyChars = params.bodyChars ?? bodyCharsForProfile(params.profile);
   if (!Number.isSafeInteger(bodyChars) || bodyChars < 0) {
-    throw new Error('bodyChars must be a non-negative integer');
+    throw new Error("bodyChars must be a non-negative integer");
   }
 
   const sourcePath = path.resolve(params.sourcePath);
   const outputPath = path.resolve(params.outputPath);
   if (outputPath === sourcePath) {
-    throw new Error('Refusing to export portable sync database over the source database');
+    throw new Error("Refusing to export portable sync database over the source database");
   }
 
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
@@ -38,8 +47,8 @@ export function exportPortableSyncDatabase(params: PortableSyncExportOptions): P
   checkpointWal(params.sourceDb);
   const out = openDb(tmpPath);
   try {
-    out.pragma('journal_mode = DELETE');
-    out.exec('pragma foreign_keys = OFF');
+    out.pragma("journal_mode = DELETE");
+    out.exec("pragma foreign_keys = OFF");
     createPortableSyncSchema(out);
     out.exec(`attach database ${sqlStringLiteral(sourcePath)} as source`);
     populatePortableSyncDb(out, {
@@ -47,11 +56,11 @@ export function exportPortableSyncDatabase(params: PortableSyncExportOptions): P
       sourcePath,
       bodyChars,
     });
-    out.exec('detach database source');
-    out.exec('pragma foreign_keys = ON');
-    out.exec('analyze');
-    out.exec('pragma optimize');
-    out.exec('vacuum');
+    out.exec("detach database source");
+    out.exec("pragma foreign_keys = ON");
+    out.exec("analyze");
+    out.exec("pragma optimize");
+    out.exec("vacuum");
   } catch (error) {
     try {
       out.close();
@@ -71,12 +80,13 @@ export function exportPortableSyncDatabase(params: PortableSyncExportOptions): P
   removeSqliteSidecars(outputPath);
 
   const outputBytes = fs.statSync(outputPath).size;
-  const sourceBytes = fs.statSync(sourcePath).size + fileSize(`${sourcePath}-wal`) + fileSize(`${sourcePath}-shm`);
+  const sourceBytes =
+    fs.statSync(sourcePath).size + fileSize(`${sourcePath}-wal`) + fileSize(`${sourcePath}-shm`);
   const verify = openDb(outputPath);
   try {
-    verify.pragma('journal_mode = DELETE');
+    verify.pragma("journal_mode = DELETE");
     const tables = PORTABLE_SYNC_TABLES.map((name) => ({ name, rows: countRows(verify, name) }));
-    const responseBase: Omit<PortableSyncExportResponse, 'manifest' | 'manifestPath'> = {
+    const responseBase: Omit<PortableSyncExportResponse, "manifest" | "manifestPath"> = {
       ok: true,
       repository: {
         id: params.repository.id,
@@ -96,7 +106,9 @@ export function exportPortableSyncDatabase(params: PortableSyncExportOptions): P
     };
     const validation = validatePortableSyncDatabase(outputPath);
     const manifest = buildPortableSyncManifest(responseBase, validation.ok);
-    const manifestPath = params.writeManifest ? writePortableSyncManifest(outputPath, manifest) : null;
+    const manifestPath = params.writeManifest
+      ? writePortableSyncManifest(outputPath, manifest)
+      : null;
 
     return {
       ...responseBase,
@@ -108,14 +120,20 @@ export function exportPortableSyncDatabase(params: PortableSyncExportOptions): P
   }
 }
 
-export function populatePortableSyncDb(db: SqliteDatabase, params: { repoId: number; sourcePath: string; bodyChars: number }): void {
+export function populatePortableSyncDb(
+  db: SqliteDatabase,
+  params: { repoId: number; sourcePath: string; bodyChars: number },
+): void {
   const exportedAt = nowIso();
-  const insertMetadata = db.prepare('insert into portable_metadata (key, value) values (?, ?)');
-  insertMetadata.run('schema', PORTABLE_SYNC_SCHEMA_VERSION);
-  insertMetadata.run('exported_at', exportedAt);
-  insertMetadata.run('source_path', params.sourcePath);
-  insertMetadata.run('body_chars', String(params.bodyChars));
-  insertMetadata.run('excluded', 'raw_json,comments,documents,fts,vectors,code_snapshots,cluster_events,run_history,similarity_edges,blobs');
+  const insertMetadata = db.prepare("insert into portable_metadata (key, value) values (?, ?)");
+  insertMetadata.run("schema", PORTABLE_SYNC_SCHEMA_VERSION);
+  insertMetadata.run("exported_at", exportedAt);
+  insertMetadata.run("source_path", params.sourcePath);
+  insertMetadata.run("body_chars", String(params.bodyChars));
+  insertMetadata.run(
+    "excluded",
+    "raw_json,comments,documents,fts,vectors,code_snapshots,cluster_events,run_history,similarity_edges,blobs",
+  );
 
   db.prepare(
     `insert into repositories (id, owner, name, full_name, github_repo_id, updated_at)
@@ -176,9 +194,15 @@ export function populatePortableSyncDb(db: SqliteDatabase, params: { repoId: num
     join thread_revisions tr on tr.id = tks.thread_revision_id`,
   ).run();
 
-  db.prepare('insert into repo_sync_state select * from source.repo_sync_state where repo_id = ?').run(params.repoId);
-  db.prepare('insert into repo_pipeline_state select * from source.repo_pipeline_state where repo_id = ?').run(params.repoId);
-  db.prepare('insert into cluster_groups select * from source.cluster_groups where repo_id = ?').run(params.repoId);
+  db.prepare(
+    "insert into repo_sync_state select * from source.repo_sync_state where repo_id = ?",
+  ).run(params.repoId);
+  db.prepare(
+    "insert into repo_pipeline_state select * from source.repo_pipeline_state where repo_id = ?",
+  ).run(params.repoId);
+  db.prepare(
+    "insert into cluster_groups select * from source.cluster_groups where repo_id = ?",
+  ).run(params.repoId);
   db.prepare(
     `insert into cluster_memberships
      select cm.*
@@ -186,7 +210,9 @@ export function populatePortableSyncDb(db: SqliteDatabase, params: { repoId: num
      join cluster_groups cg on cg.id = cm.cluster_id
      join threads t on t.id = cm.thread_id`,
   ).run();
-  const overrideActorExpr = attachedTableHasColumn(db, 'source', 'cluster_overrides', 'actor_id') ? 'co.actor_id' : 'null';
+  const overrideActorExpr = attachedTableHasColumn(db, "source", "cluster_overrides", "actor_id")
+    ? "co.actor_id"
+    : "null";
   db.prepare(
     `insert into cluster_overrides (
       id, repo_id, cluster_id, thread_id, action, actor_id, reason, created_at, expires_at
@@ -212,13 +238,13 @@ export function populatePortableSyncDb(db: SqliteDatabase, params: { repoId: num
 }
 
 function bodyCharsForProfile(profile: PortableSyncProfile | undefined): number {
-  if (profile === 'lean') return 256;
-  if (profile === 'review') return 1024;
+  if (profile === "lean") return 256;
+  if (profile === "review") return 1024;
   return DEFAULT_PORTABLE_BODY_CHARS;
 }
 
 function buildPortableSyncManifest(
-  response: Omit<PortableSyncExportResponse, 'manifest' | 'manifestPath'>,
+  response: Omit<PortableSyncExportResponse, "manifest" | "manifestPath">,
   validationOk: boolean,
 ): PortableSyncManifest {
   return {

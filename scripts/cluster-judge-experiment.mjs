@@ -18,17 +18,17 @@
  *
  * Requires OPENAI_API_KEY in environment.
  */
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { createRequire } from 'node:module';
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const serviceModulePath = path.join(repoRoot, 'packages', 'api-core', 'dist', 'service.js');
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const serviceModulePath = path.join(repoRoot, "packages", "api-core", "dist", "service.js");
 const { GHCrawlService } = await import(serviceModulePath);
 
-const apiCoreRequire = createRequire(path.join(repoRoot, 'packages', 'api-core', 'package.json'));
-const { default: OpenAI } = await import(apiCoreRequire.resolve('openai'));
+const apiCoreRequire = createRequire(path.join(repoRoot, "packages", "api-core", "package.json"));
+const { default: OpenAI } = await import(apiCoreRequire.resolve("openai"));
 
 const CLUSTER_RUBRIC = `You are evaluating a cluster of GitHub issues/PRs that were grouped together by embedding similarity. Each item shows its number, kind (issue/PR), title, and dedupe_summary.
 
@@ -58,9 +58,9 @@ Rate 1-5:
 Return JSON only: { "score": <int>, "reasoning": "<string>" }`;
 
 function parseArgs(argv) {
-  let repo = 'openclaw/openclaw';
-  let experimentId = 'unnamed';
-  let outputDir = '.context/compound-engineering/ce-optimize/embedding-clustering/results';
+  let repo = "openclaw/openclaw";
+  let experimentId = "unnamed";
+  let outputDir = ".context/compound-engineering/ce-optimize/embedding-clustering/results";
   let sourceKinds;
   let aggregation;
   let aggregationWeights;
@@ -68,51 +68,105 @@ function parseArgs(argv) {
   let k;
   let candidateK;
   let efSearch;
-  let backend = 'vectorlite';
+  let backend = "vectorlite";
   let maxClusterSize = 200;
-  let clusterMode = 'bounded';
+  let clusterMode = "bounded";
   let clusterSampleSize = 30;
   let singletonSampleSize = 15;
-  let judgeModel = 'gpt-5-mini';
+  let judgeModel = "gpt-5-mini";
 
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
     if (!token) continue;
-    if (token === '--experiment-id') { experimentId = argv[++index]; continue; }
-    if (token === '--output-dir') { outputDir = argv[++index]; continue; }
-    if (token === '--source-kinds') { sourceKinds = argv[++index].split(','); continue; }
-    if (token === '--aggregation') { aggregation = argv[++index]; continue; }
-    if (token === '--weights') { aggregationWeights = JSON.parse(argv[++index]); continue; }
-    if (token === '--threshold') { threshold = Number(argv[++index]); continue; }
-    if (token === '--k') { k = Number(argv[++index]); continue; }
-    if (token === '--candidate-k') { candidateK = Number(argv[++index]); continue; }
-    if (token === '--ef-search') { efSearch = Number(argv[++index]); continue; }
-    if (token === '--backend') { backend = argv[++index]; continue; }
-    if (token === '--max-cluster-size') { maxClusterSize = Number(argv[++index]); continue; }
-    if (token === '--cluster-mode') { clusterMode = argv[++index]; continue; }
-    if (token === '--cluster-sample-size') { clusterSampleSize = Number(argv[++index]); continue; }
-    if (token === '--singleton-sample-size') { singletonSampleSize = Number(argv[++index]); continue; }
-    if (token === '--judge-model') { judgeModel = argv[++index]; continue; }
-    if (!token.startsWith('--')) repo = token;
+    if (token === "--experiment-id") {
+      experimentId = argv[++index];
+      continue;
+    }
+    if (token === "--output-dir") {
+      outputDir = argv[++index];
+      continue;
+    }
+    if (token === "--source-kinds") {
+      sourceKinds = argv[++index].split(",");
+      continue;
+    }
+    if (token === "--aggregation") {
+      aggregation = argv[++index];
+      continue;
+    }
+    if (token === "--weights") {
+      aggregationWeights = JSON.parse(argv[++index]);
+      continue;
+    }
+    if (token === "--threshold") {
+      threshold = Number(argv[++index]);
+      continue;
+    }
+    if (token === "--k") {
+      k = Number(argv[++index]);
+      continue;
+    }
+    if (token === "--candidate-k") {
+      candidateK = Number(argv[++index]);
+      continue;
+    }
+    if (token === "--ef-search") {
+      efSearch = Number(argv[++index]);
+      continue;
+    }
+    if (token === "--backend") {
+      backend = argv[++index];
+      continue;
+    }
+    if (token === "--max-cluster-size") {
+      maxClusterSize = Number(argv[++index]);
+      continue;
+    }
+    if (token === "--cluster-mode") {
+      clusterMode = argv[++index];
+      continue;
+    }
+    if (token === "--cluster-sample-size") {
+      clusterSampleSize = Number(argv[++index]);
+      continue;
+    }
+    if (token === "--singleton-sample-size") {
+      singletonSampleSize = Number(argv[++index]);
+      continue;
+    }
+    if (token === "--judge-model") {
+      judgeModel = argv[++index];
+      continue;
+    }
+    if (!token.startsWith("--")) repo = token;
   }
 
-  const [owner, name] = repo.split('/');
+  const [owner, name] = repo.split("/");
   return {
-    owner, repo: name,
-    experimentId, outputDir,
+    owner,
+    repo: name,
+    experimentId,
+    outputDir,
     backend,
-    sourceKinds, aggregation, aggregationWeights,
-    threshold, k, candidateK, efSearch,
-    maxClusterSize, clusterMode,
-    clusterSampleSize, singletonSampleSize,
+    sourceKinds,
+    aggregation,
+    aggregationWeights,
+    threshold,
+    k,
+    candidateK,
+    efSearch,
+    maxClusterSize,
+    clusterMode,
+    clusterSampleSize,
+    singletonSampleSize,
     judgeModel,
   };
 }
 
 function sampleClusters(clusters, sampleSize, seed = 42) {
   // Separate multi-member clusters from singletons
-  const multiMember = clusters.filter(c => c.memberThreadIds.length > 1);
-  const singletons = clusters.filter(c => c.memberThreadIds.length === 1);
+  const multiMember = clusters.filter((c) => c.memberThreadIds.length > 1);
+  const singletons = clusters.filter((c) => c.memberThreadIds.length === 1);
 
   // Sort by size descending
   multiMember.sort((a, b) => b.memberThreadIds.length - a.memberThreadIds.length);
@@ -121,7 +175,7 @@ function sampleClusters(clusters, sampleSize, seed = 42) {
   const sampled = [];
 
   // Top by size
-  sampled.push(...multiMember.slice(0, perBucket).map(c => ({ ...c, bucket: 'top_by_size' })));
+  sampled.push(...multiMember.slice(0, perBucket).map((c) => ({ ...c, bucket: "top_by_size" })));
 
   // Mid range
   const midStart = Math.floor(multiMember.length * 0.3);
@@ -129,13 +183,13 @@ function sampleClusters(clusters, sampleSize, seed = 42) {
   const midPool = multiMember.slice(midStart, midEnd);
   // Deterministic pseudo-random selection
   const midSampled = deterministicSample(midPool, perBucket, seed);
-  sampled.push(...midSampled.map(c => ({ ...c, bucket: 'mid_range' })));
+  sampled.push(...midSampled.map((c) => ({ ...c, bucket: "mid_range" })));
 
   // Small clusters (size 2-3)
-  const smallPool = multiMember.filter(c => c.memberThreadIds.length <= 3);
+  const smallPool = multiMember.filter((c) => c.memberThreadIds.length <= 3);
   const remaining = sampleSize - sampled.length;
   const smallSampled = deterministicSample(smallPool, remaining, seed + 1);
-  sampled.push(...smallSampled.map(c => ({ ...c, bucket: 'small_clusters' })));
+  sampled.push(...smallSampled.map((c) => ({ ...c, bucket: "small_clusters" })));
 
   return { sampled, singletons };
 }
@@ -150,13 +204,13 @@ function deterministicSample(pool, count, seed) {
     const j = s % (i + 1);
     [indices[i], indices[j]] = [indices[j], indices[i]];
   }
-  return indices.slice(0, count).map(i => pool[i]);
+  return indices.slice(0, count).map((i) => pool[i]);
 }
 
 async function judgeCluster(client, model, cluster, threadDetails) {
   // For large clusters, show a sample of items to avoid exceeding context limits
   let displayIds = cluster.memberThreadIds;
-  let truncationNote = '';
+  let truncationNote = "";
   if (displayIds.length > 25) {
     // Show first 10, last 5, and 10 evenly spaced from the middle
     const first = displayIds.slice(0, 10);
@@ -170,71 +224,83 @@ async function judgeCluster(client, model, cluster, threadDetails) {
     truncationNote = `\n(Showing ${displayIds.length} of ${cluster.memberThreadIds.length} items — sampled for brevity)`;
   }
 
-  const items = displayIds.map(id => {
-    const t = threadDetails.get(id);
-    if (!t) return `  - Thread ID ${id}: (details not found)`;
-    return `  - #${t.number} (${t.kind}): "${t.title}" — ${t.dedupeSummary || '(no summary)'}`;
-  }).join('\n');
+  const items = displayIds
+    .map((id) => {
+      const t = threadDetails.get(id);
+      if (!t) return `  - Thread ID ${id}: (details not found)`;
+      return `  - #${t.number} (${t.kind}): "${t.title}" — ${t.dedupeSummary || "(no summary)"}`;
+    })
+    .join("\n");
 
   const input = `Cluster with ${cluster.memberThreadIds.length} items:${truncationNote}\n${items}`;
 
   const response = await client.responses.create({
     model,
     input: [
-      { role: 'system', content: [{ type: 'input_text', text: CLUSTER_RUBRIC }] },
-      { role: 'user', content: [{ type: 'input_text', text: input }] },
+      { role: "system", content: [{ type: "input_text", text: CLUSTER_RUBRIC }] },
+      { role: "user", content: [{ type: "input_text", text: input }] },
     ],
     text: {
-      format: { type: 'json_schema', name: 'cluster_judge', strict: true, schema: {
-        type: 'object',
-        properties: {
-          score: { type: 'integer' },
-          distinct_topics: { type: 'integer' },
-          outlier_count: { type: 'integer' },
-          dominant_theme: { type: 'string' },
-          reasoning: { type: 'string' },
+      format: {
+        type: "json_schema",
+        name: "cluster_judge",
+        strict: true,
+        schema: {
+          type: "object",
+          properties: {
+            score: { type: "integer" },
+            distinct_topics: { type: "integer" },
+            outlier_count: { type: "integer" },
+            dominant_theme: { type: "string" },
+            reasoning: { type: "string" },
+          },
+          required: ["score", "distinct_topics", "outlier_count", "dominant_theme", "reasoning"],
+          additionalProperties: false,
         },
-        required: ['score', 'distinct_topics', 'outlier_count', 'dominant_theme', 'reasoning'],
-        additionalProperties: false,
-      }},
+      },
     },
     max_output_tokens: 800,
   });
 
   try {
-    return JSON.parse(response.output_text ?? '{}');
+    return JSON.parse(response.output_text ?? "{}");
   } catch {
-    return { score: null, reasoning: 'parse error' };
+    return { score: null, reasoning: "parse error" };
   }
 }
 
 async function judgeSingleton(client, model, threadDetail) {
-  const input = `Thread #${threadDetail.number} (${threadDetail.kind}): "${threadDetail.title}"\ndedupe_summary: ${threadDetail.dedupeSummary || '(none)'}`;
+  const input = `Thread #${threadDetail.number} (${threadDetail.kind}): "${threadDetail.title}"\ndedupe_summary: ${threadDetail.dedupeSummary || "(none)"}`;
 
   const response = await client.responses.create({
     model,
     input: [
-      { role: 'system', content: [{ type: 'input_text', text: SINGLETON_RUBRIC }] },
-      { role: 'user', content: [{ type: 'input_text', text: input }] },
+      { role: "system", content: [{ type: "input_text", text: SINGLETON_RUBRIC }] },
+      { role: "user", content: [{ type: "input_text", text: input }] },
     ],
     text: {
-      format: { type: 'json_schema', name: 'singleton_judge', strict: true, schema: {
-        type: 'object',
-        properties: {
-          score: { type: 'integer' },
-          reasoning: { type: 'string' },
+      format: {
+        type: "json_schema",
+        name: "singleton_judge",
+        strict: true,
+        schema: {
+          type: "object",
+          properties: {
+            score: { type: "integer" },
+            reasoning: { type: "string" },
+          },
+          required: ["score", "reasoning"],
+          additionalProperties: false,
         },
-        required: ['score', 'reasoning'],
-        additionalProperties: false,
-      }},
+      },
     },
     max_output_tokens: 500,
   });
 
   try {
-    return JSON.parse(response.output_text ?? '{}');
+    return JSON.parse(response.output_text ?? "{}");
   } catch {
-    return { score: null, reasoning: 'parse error' };
+    return { score: null, reasoning: "parse error" };
   }
 }
 
@@ -242,7 +308,7 @@ async function judgeSingleton(client, model, threadDetail) {
 const args = parseArgs(process.argv.slice(2));
 
 const apiKey = process.env.OPENAI_API_KEY;
-if (!apiKey) throw new Error('OPENAI_API_KEY not set');
+if (!apiKey) throw new Error("OPENAI_API_KEY not set");
 const client = new OpenAI({ apiKey });
 
 const service = new GHCrawlService();
@@ -283,19 +349,38 @@ try {
     total_threads: totalThreads,
     max_cluster_size: result.clusterSizes.maxClusterSize,
     solo_pct: Math.round((soloClusters / Math.max(result.clusters, 1)) * 10000) / 100,
-    avg_multi_size: multiMemberClusters > 0 ? Math.round((threadsInMulti / multiMemberClusters) * 100) / 100 : 0,
+    avg_multi_size:
+      multiMemberClusters > 0 ? Math.round((threadsInMulti / multiMemberClusters) * 100) / 100 : 0,
     duration_ms: result.durationMs,
   };
 
-  process.stderr.write(`[experiment] clustering done: ${metrics.multi_member_pct}% multi-member, ${metrics.edge_count} edges\n`);
+  process.stderr.write(
+    `[experiment] clustering done: ${metrics.multi_member_pct}% multi-member, ${metrics.edge_count} edges\n`,
+  );
 
   // Check degenerate gates
   if (metrics.solo_pct >= 95 || metrics.max_cluster_size > 500 || metrics.multi_member_pct < 5) {
-    process.stderr.write(`[experiment] DEGENERATE: solo_pct=${metrics.solo_pct} max_cluster=${metrics.max_cluster_size} multi%=${metrics.multi_member_pct}\n`);
-    const output = { experiment_id: args.experimentId, outcome: 'degenerate', metrics, judge: null };
+    process.stderr.write(
+      `[experiment] DEGENERATE: solo_pct=${metrics.solo_pct} max_cluster=${metrics.max_cluster_size} multi%=${metrics.multi_member_pct}\n`,
+    );
+    const output = {
+      experiment_id: args.experimentId,
+      outcome: "degenerate",
+      metrics,
+      judge: null,
+    };
     fs.mkdirSync(path.resolve(args.outputDir), { recursive: true });
-    fs.writeFileSync(path.resolve(args.outputDir, `${args.experimentId}.json`), JSON.stringify(output, null, 2));
-    process.stdout.write(JSON.stringify({ experiment_id: args.experimentId, outcome: 'degenerate', ...metrics }, null, 2) + '\n');
+    fs.writeFileSync(
+      path.resolve(args.outputDir, `${args.experimentId}.json`),
+      JSON.stringify(output, null, 2),
+    );
+    process.stdout.write(
+      JSON.stringify(
+        { experiment_id: args.experimentId, outcome: "degenerate", ...metrics },
+        null,
+        2,
+      ) + "\n",
+    );
     process.exit(0);
   }
 
@@ -311,13 +396,15 @@ try {
   const threadIds = Array.from(allThreadIds);
   for (let i = 0; i < threadIds.length; i += 500) {
     const batch = threadIds.slice(i, i + 500);
-    const placeholders = batch.map(() => '?').join(',');
-    const rows = service.db.prepare(
-      `select t.id, t.number, t.kind, t.title, s.summary_text as dedupe_summary
+    const placeholders = batch.map(() => "?").join(",");
+    const rows = service.db
+      .prepare(
+        `select t.id, t.number, t.kind, t.title, s.summary_text as dedupe_summary
        from threads t
        left join document_summaries s on s.thread_id = t.id and s.summary_kind = 'dedupe_summary'
-       where t.id in (${placeholders})`
-    ).all(...batch);
+       where t.id in (${placeholders})`,
+      )
+      .all(...batch);
     for (const row of rows) {
       threadDetails.set(row.id, {
         number: row.number,
@@ -332,12 +419,16 @@ try {
   const { sampled, singletons } = sampleClusters(clusters, args.clusterSampleSize);
   const singletonSample = deterministicSample(singletons, args.singletonSampleSize, 42);
 
-  process.stderr.write(`[experiment] sampled ${sampled.length} clusters + ${singletonSample.length} singletons for judging\n`);
+  process.stderr.write(
+    `[experiment] sampled ${sampled.length} clusters + ${singletonSample.length} singletons for judging\n`,
+  );
 
   // Step 4: Judge clusters
   const clusterJudgments = [];
   for (const [i, cluster] of sampled.entries()) {
-    process.stderr.write(`[judge] cluster ${i + 1}/${sampled.length} (size=${cluster.memberThreadIds.length}, bucket=${cluster.bucket})\n`);
+    process.stderr.write(
+      `[judge] cluster ${i + 1}/${sampled.length} (size=${cluster.memberThreadIds.length}, bucket=${cluster.bucket})\n`,
+    );
     const judgment = await judgeCluster(client, args.judgeModel, cluster, threadDetails);
     clusterJudgments.push({
       bucket: cluster.bucket,
@@ -353,7 +444,9 @@ try {
     const threadId = singleton.memberThreadIds[0];
     const detail = threadDetails.get(threadId);
     if (!detail) continue;
-    process.stderr.write(`[judge] singleton ${i + 1}/${singletonSample.length} #${detail.number}\n`);
+    process.stderr.write(
+      `[judge] singleton ${i + 1}/${singletonSample.length} #${detail.number}\n`,
+    );
     const judgment = await judgeSingleton(client, args.judgeModel, detail);
     singletonJudgments.push({
       threadId,
@@ -364,29 +457,36 @@ try {
   }
 
   // Step 6: Aggregate
-  const scoredClusters = clusterJudgments.filter(j => j.judgment?.score != null);
-  const meanScore = scoredClusters.length > 0
-    ? scoredClusters.reduce((s, j) => s + j.judgment.score, 0) / scoredClusters.length
-    : 0;
-  const meanDistinctTopics = scoredClusters.length > 0
-    ? scoredClusters.reduce((s, j) => s + (j.judgment.distinct_topics ?? 0), 0) / scoredClusters.length
-    : 0;
+  const scoredClusters = clusterJudgments.filter((j) => j.judgment?.score != null);
+  const meanScore =
+    scoredClusters.length > 0
+      ? scoredClusters.reduce((s, j) => s + j.judgment.score, 0) / scoredClusters.length
+      : 0;
+  const meanDistinctTopics =
+    scoredClusters.length > 0
+      ? scoredClusters.reduce((s, j) => s + (j.judgment.distinct_topics ?? 0), 0) /
+        scoredClusters.length
+      : 0;
   const totalOutliers = scoredClusters.reduce((s, j) => s + (j.judgment.outlier_count ?? 0), 0);
   const totalMembers = scoredClusters.reduce((s, j) => s + j.size, 0);
   const outlierRate = totalMembers > 0 ? totalOutliers / totalMembers : 0;
 
-  const scoredSingletons = singletonJudgments.filter(j => j.judgment?.score != null);
-  const singletonScore = scoredSingletons.length > 0
-    ? scoredSingletons.reduce((s, j) => s + j.judgment.score, 0) / scoredSingletons.length
-    : 0;
+  const scoredSingletons = singletonJudgments.filter((j) => j.judgment?.score != null);
+  const singletonScore =
+    scoredSingletons.length > 0
+      ? scoredSingletons.reduce((s, j) => s + j.judgment.score, 0) / scoredSingletons.length
+      : 0;
 
   // Per-bucket breakdown
   const bucketScores = {};
-  for (const bucket of ['top_by_size', 'mid_range', 'small_clusters']) {
-    const bucketItems = scoredClusters.filter(j => j.bucket === bucket);
-    bucketScores[bucket] = bucketItems.length > 0
-      ? Math.round(bucketItems.reduce((s, j) => s + j.judgment.score, 0) / bucketItems.length * 100) / 100
-      : null;
+  for (const bucket of ["top_by_size", "mid_range", "small_clusters"]) {
+    const bucketItems = scoredClusters.filter((j) => j.bucket === bucket);
+    bucketScores[bucket] =
+      bucketItems.length > 0
+        ? Math.round(
+            (bucketItems.reduce((s, j) => s + j.judgment.score, 0) / bucketItems.length) * 100,
+          ) / 100
+        : null;
   }
 
   const judgeResults = {
@@ -402,11 +502,11 @@ try {
   // Save full results
   const output = {
     experiment_id: args.experimentId,
-    outcome: 'measured',
+    outcome: "measured",
     timestamp: new Date().toISOString(),
     params: {
-      source_kinds: args.sourceKinds ?? 'all',
-      aggregation: args.aggregation ?? 'max',
+      source_kinds: args.sourceKinds ?? "all",
+      aggregation: args.aggregation ?? "max",
       threshold: args.threshold ?? 0.82,
       k: args.k ?? 6,
       max_cluster_size: args.maxClusterSize,
@@ -424,12 +524,18 @@ try {
   process.stderr.write(`\n[experiment] results saved to ${outputPath}\n`);
 
   // Print summary to stdout
-  process.stdout.write(JSON.stringify({
-    experiment_id: args.experimentId,
-    outcome: 'measured',
-    ...metrics,
-    ...judgeResults,
-  }, null, 2) + '\n');
+  process.stdout.write(
+    JSON.stringify(
+      {
+        experiment_id: args.experimentId,
+        outcome: "measured",
+        ...metrics,
+        ...judgeResults,
+      },
+      null,
+      2,
+    ) + "\n",
+  );
 } finally {
   service.close();
 }

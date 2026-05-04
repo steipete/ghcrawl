@@ -68,7 +68,10 @@ class UnionFind {
   }
 }
 
-export function buildClusters(nodes: Node[], edges: SimilarityEdge[]): Array<{ representativeThreadId: number; members: number[] }> {
+export function buildClusters(
+  nodes: Node[],
+  edges: SimilarityEdge[],
+): Array<{ representativeThreadId: number; members: number[] }> {
   const uf = new UnionFind();
   for (const node of nodes) uf.add(node.threadId);
   for (const edge of edges) uf.union(edge.leftThreadId, edge.rightThreadId);
@@ -155,10 +158,16 @@ export function buildRefinedClusters(
   const adjacency = new Map<number, SimilarityEdge[]>();
   for (const edge of edges) {
     let list = adjacency.get(edge.leftThreadId);
-    if (!list) { list = []; adjacency.set(edge.leftThreadId, list); }
+    if (!list) {
+      list = [];
+      adjacency.set(edge.leftThreadId, list);
+    }
     list.push(edge);
     let rList = adjacency.get(edge.rightThreadId);
-    if (!rList) { rList = []; adjacency.set(edge.rightThreadId, rList); }
+    if (!rList) {
+      rList = [];
+      adjacency.set(edge.rightThreadId, rList);
+    }
     rList.push(edge);
   }
 
@@ -168,7 +177,9 @@ export function buildRefinedClusters(
 
   for (const members of byRoot.values()) {
     if (members.length <= options.maxClusterSize) {
-      const clusterNodes = members.map((id) => nodesById.get(id)).filter((n): n is Node => n !== undefined);
+      const clusterNodes = members
+        .map((id) => nodesById.get(id))
+        .filter((n): n is Node => n !== undefined);
       const clusterEdges = edgesWithinSet(new Set(members), adjacency);
       result.push(...formatClusters(clusterNodes, clusterEdges, new Map([[0, members]])));
     } else {
@@ -214,7 +225,9 @@ export function buildRefinedClusters(
 
     for (const subMembers of subByRoot.values()) {
       if (subMembers.length <= options.maxClusterSize) {
-        const clusterNodes = subMembers.map((id) => nodesById.get(id)).filter((n): n is Node => n !== undefined);
+        const clusterNodes = subMembers
+          .map((id) => nodesById.get(id))
+          .filter((n): n is Node => n !== undefined);
         const clusterEdges = edgesWithinSet(new Set(subMembers), adjacency);
         result.push(...formatClusters(clusterNodes, clusterEdges, new Map([[0, subMembers]])));
       } else {
@@ -226,7 +239,10 @@ export function buildRefinedClusters(
   return result.sort((left, right) => right.members.length - left.members.length);
 }
 
-function edgesWithinSet(memberSet: Set<number>, adjacency: Map<number, SimilarityEdge[]>): SimilarityEdge[] {
+function edgesWithinSet(
+  memberSet: Set<number>,
+  adjacency: Map<number, SimilarityEdge[]>,
+): SimilarityEdge[] {
   const edges: SimilarityEdge[] = [];
   for (const memberId of memberSet) {
     for (const edge of adjacency.get(memberId) ?? []) {
@@ -261,7 +277,10 @@ function formatClusters(
         if (!left || !right) return leftId - rightId;
         return left.number - right.number;
       })[0];
-      return { representativeThreadId: representative, members: members.sort((left, right) => left - right) };
+      return {
+        representativeThreadId: representative,
+        members: members.sort((left, right) => left - right),
+      };
     })
     .sort((left, right) => right.members.length - left.members.length);
 }

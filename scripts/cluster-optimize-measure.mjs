@@ -10,21 +10,21 @@
  *
  * Output: JSON object with all metrics to stdout (progress to stderr).
  */
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const serviceModulePath = path.join(repoRoot, 'packages', 'api-core', 'dist', 'service.js');
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const serviceModulePath = path.join(repoRoot, "packages", "api-core", "dist", "service.js");
 
 const { GHCrawlService } = await import(serviceModulePath);
 
 function parseArgs(argv) {
-  let repo = 'openclaw/openclaw';
+  let repo = "openclaw/openclaw";
   let k;
   let threshold;
   let candidateK;
   let efSearch;
-  let backend = 'vectorlite';
+  let backend = "vectorlite";
   let maxClusterSize;
   let refineStep;
   let clusterMode;
@@ -35,21 +35,54 @@ function parseArgs(argv) {
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
     if (!token) continue;
-    if (token === '--k') { k = Number(argv[++index]); continue; }
-    if (token === '--threshold') { threshold = Number(argv[++index]); continue; }
-    if (token === '--candidate-k') { candidateK = Number(argv[++index]); continue; }
-    if (token === '--ef-search') { efSearch = Number(argv[++index]); continue; }
-    if (token === '--backend') { backend = argv[++index]; continue; }
-    if (token === '--max-cluster-size') { maxClusterSize = Number(argv[++index]); continue; }
-    if (token === '--refine-step') { refineStep = Number(argv[++index]); continue; }
-    if (token === '--cluster-mode') { clusterMode = argv[++index]; continue; }
-    if (token === '--source-kinds') { sourceKinds = argv[++index].split(','); continue; }
-    if (token === '--aggregation') { aggregation = argv[++index]; continue; }
-    if (token === '--weights') { aggregationWeights = JSON.parse(argv[++index]); continue; }
-    if (!token.startsWith('--')) repo = token;
+    if (token === "--k") {
+      k = Number(argv[++index]);
+      continue;
+    }
+    if (token === "--threshold") {
+      threshold = Number(argv[++index]);
+      continue;
+    }
+    if (token === "--candidate-k") {
+      candidateK = Number(argv[++index]);
+      continue;
+    }
+    if (token === "--ef-search") {
+      efSearch = Number(argv[++index]);
+      continue;
+    }
+    if (token === "--backend") {
+      backend = argv[++index];
+      continue;
+    }
+    if (token === "--max-cluster-size") {
+      maxClusterSize = Number(argv[++index]);
+      continue;
+    }
+    if (token === "--refine-step") {
+      refineStep = Number(argv[++index]);
+      continue;
+    }
+    if (token === "--cluster-mode") {
+      clusterMode = argv[++index];
+      continue;
+    }
+    if (token === "--source-kinds") {
+      sourceKinds = argv[++index].split(",");
+      continue;
+    }
+    if (token === "--aggregation") {
+      aggregation = argv[++index];
+      continue;
+    }
+    if (token === "--weights") {
+      aggregationWeights = JSON.parse(argv[++index]);
+      continue;
+    }
+    if (!token.startsWith("--")) repo = token;
   }
 
-  const [owner, name] = repo.split('/');
+  const [owner, name] = repo.split("/");
   if (!owner || !name) throw new Error(`Expected owner/repo, received: ${repo}`);
 
   return {
@@ -112,9 +145,8 @@ try {
 
     // Diagnostics
     solo_pct: Math.round((soloClusters / Math.max(result.clusters, 1)) * 10000) / 100,
-    avg_multi_size: multiMemberClusters > 0
-      ? Math.round((threadsInMulti / multiMemberClusters) * 100) / 100
-      : 0,
+    avg_multi_size:
+      multiMemberClusters > 0 ? Math.round((threadsInMulti / multiMemberClusters) * 100) / 100 : 0,
 
     // Timing
     duration_ms: result.durationMs,
@@ -136,7 +168,7 @@ try {
       refine_step: args.refineStep ?? null,
       cluster_mode: args.clusterMode ?? null,
       source_kinds: args.sourceKinds ?? null,
-      aggregation: args.aggregation ?? 'max',
+      aggregation: args.aggregation ?? "max",
       aggregation_weights: args.aggregationWeights ?? null,
     },
 
@@ -145,7 +177,7 @@ try {
     histogram: result.clusterSizes.histogram,
   };
 
-  process.stdout.write(JSON.stringify(metrics, null, 2) + '\n');
+  process.stdout.write(JSON.stringify(metrics, null, 2) + "\n");
 } finally {
   service.close();
 }

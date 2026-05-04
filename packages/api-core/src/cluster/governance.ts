@@ -1,9 +1,19 @@
-import { humanKeyForValue } from './human-key.js';
+import { humanKeyForValue } from "./human-key.js";
 
-export type ClusterMembershipState = 'active' | 'removed_by_user' | 'blocked_by_override' | 'pending_review' | 'stale';
-export type ClusterMembershipRole = 'canonical' | 'duplicate' | 'related';
-export type ClusterOverrideAction = 'exclude' | 'force_include' | 'force_canonical';
-export type ClusterEventType = 'create_cluster' | 'add_member' | 'block_member' | 'keep_member' | 'remove_member';
+export type ClusterMembershipState =
+  | "active"
+  | "removed_by_user"
+  | "blocked_by_override"
+  | "pending_review"
+  | "stale";
+export type ClusterMembershipRole = "canonical" | "duplicate" | "related";
+export type ClusterOverrideAction = "exclude" | "force_include" | "force_canonical";
+export type ClusterEventType =
+  | "create_cluster"
+  | "add_member"
+  | "block_member"
+  | "keep_member"
+  | "remove_member";
 
 export type DurableCluster = {
   id: string;
@@ -20,8 +30,8 @@ export type ClusterMembership = {
   role: ClusterMembershipRole;
   state: ClusterMembershipState;
   scoreToRepresentative: number | null;
-  addedBy: 'algo' | 'user' | 'import';
-  removedBy: 'algo' | 'user' | null;
+  addedBy: "algo" | "user" | "import";
+  removedBy: "algo" | "user" | null;
 };
 
 export type ClusterOverride = {
@@ -57,7 +67,10 @@ export type ClusterGovernanceResult = {
   events: ClusterGovernanceEvent[];
 };
 
-function stableClusterIdentity(repoId: number, representativeThreadId: number): { key: string; slug: string } {
+function stableClusterIdentity(
+  repoId: number,
+  representativeThreadId: number,
+): { key: string; slug: string } {
   const key = humanKeyForValue(`cluster:${repoId}:${representativeThreadId}`);
   return { key: key.hash, slug: key.slug };
 }
@@ -73,7 +86,7 @@ function findReusableCluster(
 ): DurableCluster | null {
   const activeByThread = new Map<number, string>();
   for (const membership of existingMemberships) {
-    if (membership.state === 'active') {
+    if (membership.state === "active") {
       activeByThread.set(membership.threadId, membership.clusterId);
     }
   }
@@ -90,9 +103,24 @@ function findReusableCluster(
 }
 
 export function applyClusterGovernance(input: ClusterGovernanceInput): ClusterGovernanceResult {
-  const clusters = new Map(input.existingClusters.map((cluster) => [cluster.id, { ...cluster, memberThreadIds: [...cluster.memberThreadIds] }]));
-  const memberships = new Map(input.existingMemberships.map((membership) => [membershipKey(membership.clusterId, membership.threadId), { ...membership }]));
-  const overrides = new Map(input.overrides.map((override) => [membershipKey(override.clusterId, override.threadId), override]));
+  const clusters = new Map(
+    input.existingClusters.map((cluster) => [
+      cluster.id,
+      { ...cluster, memberThreadIds: [...cluster.memberThreadIds] },
+    ]),
+  );
+  const memberships = new Map(
+    input.existingMemberships.map((membership) => [
+      membershipKey(membership.clusterId, membership.threadId),
+      { ...membership },
+    ]),
+  );
+  const overrides = new Map(
+    input.overrides.map((override) => [
+      membershipKey(override.clusterId, override.threadId),
+      override,
+    ]),
+  );
   const events: ClusterGovernanceEvent[] = [];
 
   for (const proposal of input.proposals) {
@@ -109,7 +137,7 @@ export function applyClusterGovernance(input: ClusterGovernanceInput): ClusterGo
       };
       events.push({
         clusterId: cluster.id,
-        eventType: 'create_cluster',
+        eventType: "create_cluster",
         threadId: null,
         payload: { representativeThreadId: proposal.representativeThreadId },
       });
@@ -120,21 +148,21 @@ export function applyClusterGovernance(input: ClusterGovernanceInput): ClusterGo
     for (const threadId of proposedMembers) {
       const key = membershipKey(cluster.id, threadId);
       const override = overrides.get(key);
-      if (override?.action === 'exclude') {
+      if (override?.action === "exclude") {
         memberships.set(key, {
           clusterId: cluster.id,
           threadId,
-          role: 'related',
-          state: 'blocked_by_override',
+          role: "related",
+          state: "blocked_by_override",
           scoreToRepresentative: proposal.scoresToRepresentative.get(threadId) ?? null,
-          addedBy: 'algo',
-          removedBy: 'user',
+          addedBy: "algo",
+          removedBy: "user",
         });
         events.push({
           clusterId: cluster.id,
-          eventType: 'block_member',
+          eventType: "block_member",
           threadId,
-          payload: { reason: 'manual_exclusion' },
+          payload: { reason: "manual_exclusion" },
         });
         continue;
       }
@@ -143,22 +171,29 @@ export function applyClusterGovernance(input: ClusterGovernanceInput): ClusterGo
       memberships.set(key, {
         clusterId: cluster.id,
         threadId,
-        role: threadId === proposal.representativeThreadId || override?.action === 'force_canonical' ? 'canonical' : 'related',
-        state: 'active',
+        role:
+          threadId === proposal.representativeThreadId || override?.action === "force_canonical"
+            ? "canonical"
+            : "related",
+        state: "active",
         scoreToRepresentative: proposal.scoresToRepresentative.get(threadId) ?? null,
-        addedBy: existing?.addedBy ?? (override?.action === 'force_include' || override?.action === 'force_canonical' ? 'user' : 'algo'),
+        addedBy:
+          existing?.addedBy ??
+          (override?.action === "force_include" || override?.action === "force_canonical"
+            ? "user"
+            : "algo"),
         removedBy: null,
       });
       events.push({
         clusterId: cluster.id,
-        eventType: existing?.state === 'active' ? 'keep_member' : 'add_member',
+        eventType: existing?.state === "active" ? "keep_member" : "add_member",
         threadId,
         payload: { scoreToRepresentative: proposal.scoresToRepresentative.get(threadId) ?? null },
       });
     }
 
     const activeMembers = Array.from(memberships.values())
-      .filter((membership) => membership.clusterId === cluster.id && membership.state === 'active')
+      .filter((membership) => membership.clusterId === cluster.id && membership.state === "active")
       .map((membership) => membership.threadId)
       .sort((left, right) => left - right);
     clusters.set(cluster.id, {

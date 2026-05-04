@@ -1,6 +1,6 @@
-import type { SqliteDatabase } from '../db/sqlite.js';
-import type { SyncCursorState } from '../service-types.js';
-import { nowIso, parseSyncRunStats } from '../service-utils.js';
+import type { SqliteDatabase } from "../db/sqlite.js";
+import type { SyncCursorState } from "../service-types.js";
+import { nowIso, parseSyncRunStats } from "../service-utils.js";
 
 export function getSyncCursorState(db: SqliteDatabase, repoId: number): SyncCursorState {
   const persisted =
@@ -32,7 +32,9 @@ export function getSyncCursorState(db: SqliteDatabase, repoId: number): SyncCurs
   }
 
   const rows = db
-    .prepare("select finished_at, stats_json from sync_runs where repo_id = ? and status = 'completed' order by id desc")
+    .prepare(
+      "select finished_at, stats_json from sync_runs where repo_id = ? and status = 'completed' order by id desc",
+    )
     .all(repoId) as Array<{ finished_at: string | null; stats_json: string | null }>;
   const state: SyncCursorState = {
     lastFullOpenScanStartedAt: null,
@@ -47,10 +49,19 @@ export function getSyncCursorState(db: SqliteDatabase, repoId: number): SyncCurs
     if (state.lastFullOpenScanStartedAt === null && stats.isFullOpenScan) {
       state.lastFullOpenScanStartedAt = stats.crawlStartedAt;
     }
-    if (state.lastOverlappingOpenScanCompletedAt === null && stats.isOverlappingOpenScan && row.finished_at) {
+    if (
+      state.lastOverlappingOpenScanCompletedAt === null &&
+      stats.isOverlappingOpenScan &&
+      row.finished_at
+    ) {
       state.lastOverlappingOpenScanCompletedAt = row.finished_at;
     }
-    if (state.lastNonOverlappingScanCompletedAt === null && !stats.isFullOpenScan && !stats.isOverlappingOpenScan && row.finished_at) {
+    if (
+      state.lastNonOverlappingScanCompletedAt === null &&
+      !stats.isFullOpenScan &&
+      !stats.isOverlappingOpenScan &&
+      row.finished_at
+    ) {
       state.lastNonOverlappingScanCompletedAt = row.finished_at;
     }
     if (state.lastReconciledOpenCloseAt === null && stats.reconciledOpenCloseAt) {
@@ -70,7 +81,11 @@ export function getSyncCursorState(db: SqliteDatabase, repoId: number): SyncCurs
   return state;
 }
 
-export function writeSyncCursorState(db: SqliteDatabase, repoId: number, state: SyncCursorState): void {
+export function writeSyncCursorState(
+  db: SqliteDatabase,
+  repoId: number,
+  state: SyncCursorState,
+): void {
   db.prepare(
     `insert into repo_sync_state (
         repo_id,

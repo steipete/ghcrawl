@@ -1,18 +1,18 @@
-import crypto from 'node:crypto';
+import crypto from "node:crypto";
 
-import { storeTextBlob } from '../db/blob-store.js';
-import type { SqliteDatabase } from '../db/sqlite.js';
-import type { CodeSnapshotSignature } from './code-signature.js';
-import type { EvidenceTier, SimilarityEvidenceBreakdown } from './evidence-score.js';
-import { llmKeyEmbeddingText, type LlmKeySummary } from './llm-key-summary.js';
-import type { DeterministicThreadFingerprint } from './thread-fingerprint.js';
+import { storeTextBlob } from "../db/blob-store.js";
+import type { SqliteDatabase } from "../db/sqlite.js";
+import type { CodeSnapshotSignature } from "./code-signature.js";
+import type { EvidenceTier, SimilarityEvidenceBreakdown } from "./evidence-score.js";
+import { llmKeyEmbeddingText, type LlmKeySummary } from "./llm-key-summary.js";
+import type { DeterministicThreadFingerprint } from "./thread-fingerprint.js";
 
 function nowIso(): string {
   return new Date().toISOString();
 }
 
 function stableHash(value: string): string {
-  return crypto.createHash('sha256').update(value).digest('hex');
+  return crypto.createHash("sha256").update(value).digest("hex");
 }
 
 function jsonHash(value: unknown): string {
@@ -32,7 +32,9 @@ function upsertInlineBlob(
      values (?, ?, 'none', ?, 'inline', null, ?, ?)
      on conflict(sha256) do nothing`,
   ).run(sha256, params.mediaType, Buffer.byteLength(params.text), params.text, nowIso());
-  const row = db.prepare('select id from blobs where sha256 = ? limit 1').get(sha256) as { id: number };
+  const row = db.prepare("select id from blobs where sha256 = ? limit 1").get(sha256) as {
+    id: number;
+  };
   return row.id;
 }
 
@@ -53,7 +55,13 @@ function upsertTextBlob(
   return upsertInlineBlob(db, params);
 }
 
-export type PipelineRunKind = 'sync' | 'fingerprint' | 'enrich' | 'edge' | 'cluster' | 'cluster_incremental';
+export type PipelineRunKind =
+  | "sync"
+  | "fingerprint"
+  | "enrich"
+  | "edge"
+  | "cluster"
+  | "cluster_incremental";
 
 export function upsertThreadRevision(
   db: SqliteDatabase,
@@ -69,15 +77,15 @@ export function upsertThreadRevision(
   const labels = Array.from(new Set(params.labels)).sort();
   const contentHash = jsonHash({
     title: params.title,
-    body: params.body ?? '',
+    body: params.body ?? "",
     labels,
     rawJson: params.rawJson ?? null,
   });
   const rawJsonBlobId =
-    params.rawJson && params.rawJson !== '{}'
+    params.rawJson && params.rawJson !== "{}"
       ? upsertInlineBlob(db, {
           text: params.rawJson,
-          mediaType: 'application/vnd.ghcrawl.thread.raw+json',
+          mediaType: "application/vnd.ghcrawl.thread.raw+json",
         })
       : null;
   db.prepare(
@@ -92,13 +100,13 @@ export function upsertThreadRevision(
     params.sourceUpdatedAt ?? null,
     contentHash,
     stableHash(params.title),
-    stableHash(params.body ?? ''),
+    stableHash(params.body ?? ""),
     jsonHash(labels),
     rawJsonBlobId,
     nowIso(),
   );
   const row = db
-    .prepare('select id from thread_revisions where thread_id = ? and content_hash = ? limit 1')
+    .prepare("select id from thread_revisions where thread_id = ? and content_hash = ? limit 1")
     .get(params.threadId, contentHash) as { id: number };
   return row.id;
 }
@@ -112,11 +120,11 @@ export function upsertThreadFingerprint(
 ): void {
   const minhashBlobId = upsertInlineBlob(db, {
     text: JSON.stringify(params.fingerprint.minhashSignature),
-    mediaType: 'application/vnd.ghcrawl.minhash+json',
+    mediaType: "application/vnd.ghcrawl.minhash+json",
   });
   const winnowBlobId = upsertInlineBlob(db, {
     text: JSON.stringify(params.fingerprint.winnowHashes),
-    mediaType: 'application/vnd.ghcrawl.winnow+json',
+    mediaType: "application/vnd.ghcrawl.winnow+json",
   });
   const featureJson = JSON.stringify({
     salientTitleTokens: params.fingerprint.salientTitleTokens,
@@ -179,14 +187,14 @@ export function upsertThreadCodeSnapshot(
     .filter((file) => file.patch)
     .map((file) => {
       const previous = file.previousFilename ?? file.filename;
-      return [`diff --git a/${previous} b/${file.filename}`, file.patch].join('\n');
+      return [`diff --git a/${previous} b/${file.filename}`, file.patch].join("\n");
     })
-    .join('\n');
+    .join("\n");
   const rawDiffBlobId =
     rawDiff.length > 0
       ? upsertTextBlob(db, {
           text: rawDiff,
-          mediaType: 'text/x-diff',
+          mediaType: "text/x-diff",
           storeRoot: params.storeRoot,
         })
       : null;
@@ -214,11 +222,11 @@ export function upsertThreadCodeSnapshot(
     timestamp,
   );
   const snapshot = db
-    .prepare('select id from thread_code_snapshots where thread_revision_id = ? limit 1')
+    .prepare("select id from thread_code_snapshots where thread_revision_id = ? limit 1")
     .get(params.threadRevisionId) as { id: number };
 
-  db.prepare('delete from thread_changed_files where snapshot_id = ?').run(snapshot.id);
-  db.prepare('delete from thread_hunk_signatures where snapshot_id = ?').run(snapshot.id);
+  db.prepare("delete from thread_changed_files where snapshot_id = ?").run(snapshot.id);
+  db.prepare("delete from thread_hunk_signatures where snapshot_id = ?").run(snapshot.id);
 
   const insertFile = db.prepare(
     `insert into thread_changed_files (
@@ -229,7 +237,7 @@ export function upsertThreadCodeSnapshot(
     const patchBlobId = file.patch
       ? upsertTextBlob(db, {
           text: file.patch,
-          mediaType: 'text/x-diff',
+          mediaType: "text/x-diff",
           storeRoot: params.storeRoot,
         })
       : null;
@@ -252,7 +260,15 @@ export function upsertThreadCodeSnapshot(
      on conflict(snapshot_id, path, hunk_hash) do nothing`,
   );
   for (const hunk of params.signature.hunkSignatures) {
-    insertHunk.run(snapshot.id, hunk.path, hunk.hunkHash, hunk.contextHash, hunk.addedTokenHash, hunk.removedTokenHash, timestamp);
+    insertHunk.run(
+      snapshot.id,
+      hunk.path,
+      hunk.hunkHash,
+      hunk.contextHash,
+      hunk.addedTokenHash,
+      hunk.removedTokenHash,
+      timestamp,
+    );
   }
 
   return snapshot.id;
@@ -273,7 +289,7 @@ export function upsertThreadKeySummary(
   const outputJson = JSON.stringify(params.summary);
   const outputBlobId = upsertInlineBlob(db, {
     text: outputJson,
-    mediaType: 'application/vnd.ghcrawl.key-summary+json',
+    mediaType: "application/vnd.ghcrawl.key-summary+json",
   });
   db.prepare(
     `insert into thread_key_summaries (
@@ -313,16 +329,24 @@ export function createPipelineRun(
       `insert into pipeline_runs (repo_id, run_kind, algorithm_version, config_hash, status, started_at)
        values (?, ?, ?, ?, 'running', ?)`,
     )
-    .run(params.repoId, params.runKind, params.algorithmVersion ?? null, params.configHash ?? null, nowIso());
+    .run(
+      params.repoId,
+      params.runKind,
+      params.algorithmVersion ?? null,
+      params.configHash ?? null,
+      nowIso(),
+    );
   return Number(result.lastInsertRowid);
 }
 
 export function finishPipelineRun(
   db: SqliteDatabase,
   runId: number,
-  params: { status: 'completed' | 'failed'; stats?: unknown; errorText?: string | null },
+  params: { status: "completed" | "failed"; stats?: unknown; errorText?: string | null },
 ): void {
-  db.prepare('update pipeline_runs set status = ?, finished_at = ?, stats_json = ?, error_text = ? where id = ?').run(
+  db.prepare(
+    "update pipeline_runs set status = ?, finished_at = ?, stats_json = ?, error_text = ? where id = ?",
+  ).run(
     params.status,
     nowIso(),
     JSON.stringify(params.stats ?? null),
@@ -340,8 +364,8 @@ export function upsertSimilarityEdgeEvidence(
     algorithmVersion: string;
     configHash: string;
     score: number;
-    tier: Exclude<EvidenceTier, 'none'>;
-    state?: 'active' | 'stale' | 'rejected';
+    tier: Exclude<EvidenceTier, "none">;
+    state?: "active" | "stale" | "rejected";
     breakdown: SimilarityEvidenceBreakdown | unknown;
     runId: number;
   },
@@ -369,7 +393,7 @@ export function upsertSimilarityEdgeEvidence(
     params.configHash,
     params.score,
     params.tier,
-    params.state ?? 'active',
+    params.state ?? "active",
     JSON.stringify(params.breakdown),
     params.runId,
     params.runId,
@@ -384,7 +408,7 @@ export function upsertClusterGroup(
     repoId: number;
     stableKey: string;
     stableSlug: string;
-    status?: 'active' | 'closed' | 'merged' | 'split';
+    status?: "active" | "closed" | "merged" | "split";
     clusterType?: string | null;
     representativeThreadId?: number | null;
     title?: string | null;
@@ -409,7 +433,7 @@ export function upsertClusterGroup(
     params.repoId,
     params.stableKey,
     params.stableSlug,
-    params.status ?? 'active',
+    params.status ?? "active",
     params.clusterType ?? null,
     params.representativeThreadId ?? null,
     params.title ?? null,
@@ -417,7 +441,7 @@ export function upsertClusterGroup(
     timestamp,
   );
   const row = db
-    .prepare('select id from cluster_groups where repo_id = ? and stable_key = ? limit 1')
+    .prepare("select id from cluster_groups where repo_id = ? and stable_key = ? limit 1")
     .get(params.repoId, params.stableKey) as { id: number };
   return row.id;
 }
@@ -427,12 +451,12 @@ export function upsertClusterMembership(
   params: {
     clusterId: number;
     threadId: number;
-    role: 'canonical' | 'duplicate' | 'related';
-    state: 'active' | 'removed_by_user' | 'blocked_by_override' | 'pending_review' | 'stale';
+    role: "canonical" | "duplicate" | "related";
+    state: "active" | "removed_by_user" | "blocked_by_override" | "pending_review" | "stale";
     scoreToRepresentative?: number | null;
     runId?: number | null;
-    addedBy: 'algo' | 'user' | 'import';
-    removedBy?: 'algo' | 'user' | null;
+    addedBy: "algo" | "user" | "import";
+    removedBy?: "algo" | "user" | null;
     addedReason?: unknown;
     removedReason?: unknown;
   },
@@ -467,7 +491,7 @@ export function upsertClusterMembership(
     JSON.stringify(params.removedReason ?? null),
     timestamp,
     timestamp,
-    params.state === 'active' ? null : timestamp,
+    params.state === "active" ? null : timestamp,
   );
 }
 
@@ -477,12 +501,19 @@ export function recordClusterEvent(
     clusterId: number;
     runId?: number | null;
     eventType: string;
-    actorKind: 'algo' | 'user' | 'import';
+    actorKind: "algo" | "user" | "import";
     payload: unknown;
   },
 ): void {
   db.prepare(
     `insert into cluster_events (cluster_id, run_id, event_type, actor_kind, payload_json, created_at)
      values (?, ?, ?, ?, ?, ?)`,
-  ).run(params.clusterId, params.runId ?? null, params.eventType, params.actorKind, JSON.stringify(params.payload), nowIso());
+  ).run(
+    params.clusterId,
+    params.runId ?? null,
+    params.eventType,
+    params.actorKind,
+    JSON.stringify(params.payload),
+    nowIso(),
+  );
 }

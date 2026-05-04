@@ -1,8 +1,11 @@
-import { readTextBlob } from '../db/blob-store.js';
-import { blobStoreRoot } from '../db/raw-json-store.js';
-import type { SqliteDatabase } from '../db/sqlite.js';
-import { parseStringArrayJson } from '../service-utils.js';
-import { THREAD_FINGERPRINT_ALGORITHM_VERSION, type DeterministicThreadFingerprint } from './thread-fingerprint.js';
+import { readTextBlob } from "../db/blob-store.js";
+import { blobStoreRoot } from "../db/raw-json-store.js";
+import type { SqliteDatabase } from "../db/sqlite.js";
+import { parseStringArrayJson } from "../service-utils.js";
+import {
+  THREAD_FINGERPRINT_ALGORITHM_VERSION,
+  type DeterministicThreadFingerprint,
+} from "./thread-fingerprint.js";
 
 export function loadLatestDeterministicFingerprints(params: {
   db: SqliteDatabase;
@@ -12,7 +15,7 @@ export function loadLatestDeterministicFingerprints(params: {
   const { db, dbPath, threadIds } = params;
   if (threadIds.length === 0) return new Map();
 
-  const placeholders = threadIds.map(() => '?').join(',');
+  const placeholders = threadIds.map(() => "?").join(",");
   const rows = db
     .prepare(
       `select
@@ -55,24 +58,30 @@ export function loadLatestDeterministicFingerprints(params: {
     const feature = parseFingerprintFeature(row.feature_json);
     const stringFeature = (key: string): string[] => {
       const value = feature[key];
-      return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : [];
+      return Array.isArray(value)
+        ? value.filter((entry): entry is string => typeof entry === "string")
+        : [];
     };
     fingerprints.set(row.thread_id, {
       algorithmVersion: THREAD_FINGERPRINT_ALGORITHM_VERSION,
       fingerprintHash: row.fingerprint_hash,
       fingerprintSlug: row.fingerprint_slug,
       titleTokens: parseStringArrayJson(row.title_tokens_json),
-      salientTitleTokens: stringFeature('salientTitleTokens'),
+      salientTitleTokens: stringFeature("salientTitleTokens"),
       bodyTokens: [],
       linkedRefs: parseStringArrayJson(row.linked_refs_json),
       moduleBuckets: parseStringArrayJson(row.module_buckets_json),
-      changedFiles: stringFeature('changedFiles'),
-      hunkSignatures: stringFeature('hunkSignatures'),
-      patchIds: stringFeature('patchIds'),
-      featureHash: typeof feature.featureHash === 'string' ? feature.featureHash : '',
-      minhashSignature: row.minhash_signature_blob_id ? parseStringArrayJson(readTextBlob(db, storeRoot, row.minhash_signature_blob_id)) : [],
+      changedFiles: stringFeature("changedFiles"),
+      hunkSignatures: stringFeature("hunkSignatures"),
+      patchIds: stringFeature("patchIds"),
+      featureHash: typeof feature.featureHash === "string" ? feature.featureHash : "",
+      minhashSignature: row.minhash_signature_blob_id
+        ? parseStringArrayJson(readTextBlob(db, storeRoot, row.minhash_signature_blob_id))
+        : [],
       simhash64: row.simhash64,
-      winnowHashes: row.winnow_hashes_blob_id ? parseStringArrayJson(readTextBlob(db, storeRoot, row.winnow_hashes_blob_id)) : [],
+      winnowHashes: row.winnow_hashes_blob_id
+        ? parseStringArrayJson(readTextBlob(db, storeRoot, row.winnow_hashes_blob_id))
+        : [],
     });
   }
   return fingerprints;

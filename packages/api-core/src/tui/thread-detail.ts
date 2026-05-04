@@ -1,11 +1,11 @@
-import type { RepositoryDto, SearchHitDto } from '@ghcrawl/api-contract';
+import type { RepositoryDto, SearchHitDto } from "@ghcrawl/api-contract";
 
-import { listStoredClusterNeighbors } from '../cluster/neighbor-queries.js';
-import { getLatestClusterRun } from '../cluster/run-queries.js';
-import type { SqliteDatabase } from '../db/sqlite.js';
-import { SUMMARY_PROMPT_VERSION } from '../service-constants.js';
-import type { ThreadRow, TuiThreadDetail } from '../service-types.js';
-import { normalizeKeySummaryDisplayText, threadToDto } from '../service-utils.js';
+import { listStoredClusterNeighbors } from "../cluster/neighbor-queries.js";
+import { getLatestClusterRun } from "../cluster/run-queries.js";
+import type { SqliteDatabase } from "../db/sqlite.js";
+import { SUMMARY_PROMPT_VERSION } from "../service-constants.js";
+import type { ThreadRow, TuiThreadDetail } from "../service-types.js";
+import { normalizeKeySummaryDisplayText, threadToDto } from "../service-utils.js";
 
 export function buildTuiThreadDetail(params: {
   db: SqliteDatabase;
@@ -14,7 +14,7 @@ export function buildTuiThreadDetail(params: {
   threadId?: number;
   threadNumber?: number;
   includeNeighbors?: boolean;
-  neighborFallback?: (threadNumber: number) => SearchHitDto['neighbors'];
+  neighborFallback?: (threadNumber: number) => SearchHitDto["neighbors"];
 }): TuiThreadDetail {
   const row = getTuiThreadRow({
     db: params.db,
@@ -32,9 +32,14 @@ export function buildTuiThreadDetail(params: {
   const topFiles = getTopChangedFiles(params.db, row.id, 5);
   const keySummary = getLatestTuiKeySummary(params.db, row.id, params.summaryModel);
 
-  let neighbors: SearchHitDto['neighbors'] = [];
+  let neighbors: SearchHitDto["neighbors"] = [];
   if (params.includeNeighbors !== false) {
-    neighbors = listStoredClusterNeighbors({ db: params.db, repoId: params.repository.id, threadId: row.id, limit: 8 });
+    neighbors = listStoredClusterNeighbors({
+      db: params.db,
+      repoId: params.repository.id,
+      threadId: row.id,
+      limit: 8,
+    });
     if (neighbors.length === 0) {
       try {
         neighbors = params.neighborFallback?.(row.number) ?? [];
@@ -62,21 +67,25 @@ export function getTuiThreadRow(params: {
   if (params.threadId) {
     return (
       (params.db
-        .prepare('select * from threads where repo_id = ? and id = ? limit 1')
+        .prepare("select * from threads where repo_id = ? and id = ? limit 1")
         .get(params.repoId, params.threadId) as ThreadRow | undefined) ?? null
     );
   }
   if (params.threadNumber) {
     return (
       (params.db
-        .prepare('select * from threads where repo_id = ? and number = ? limit 1')
+        .prepare("select * from threads where repo_id = ? and number = ? limit 1")
         .get(params.repoId, params.threadNumber) as ThreadRow | undefined) ?? null
     );
   }
   return null;
 }
 
-export function getLatestTuiThreadClusterId(db: SqliteDatabase, repoId: number, threadId: number): number | null {
+export function getLatestTuiThreadClusterId(
+  db: SqliteDatabase,
+  repoId: number,
+  threadId: number,
+): number | null {
   const latestRun = getLatestClusterRun(db, repoId);
   const clusterMembership = latestRun
     ? ((db
@@ -92,7 +101,11 @@ export function getLatestTuiThreadClusterId(db: SqliteDatabase, repoId: number, 
   return clusterMembership?.cluster_id ?? null;
 }
 
-export function getTuiThreadSummaries(db: SqliteDatabase, threadId: number, summaryModel: string): TuiThreadDetail['summaries'] {
+export function getTuiThreadSummaries(
+  db: SqliteDatabase,
+  threadId: number,
+  summaryModel: string,
+): TuiThreadDetail["summaries"] {
   const rows = db
     .prepare(
       `select summary_kind, summary_text
@@ -100,14 +113,17 @@ export function getTuiThreadSummaries(db: SqliteDatabase, threadId: number, summ
        where thread_id = ? and model = ? and prompt_version = ?
        order by summary_kind asc`,
     )
-    .all(threadId, summaryModel, SUMMARY_PROMPT_VERSION) as Array<{ summary_kind: string; summary_text: string }>;
-  const summaries: TuiThreadDetail['summaries'] = {};
+    .all(threadId, summaryModel, SUMMARY_PROMPT_VERSION) as Array<{
+    summary_kind: string;
+    summary_text: string;
+  }>;
+  const summaries: TuiThreadDetail["summaries"] = {};
   for (const summary of rows) {
     if (
-      summary.summary_kind === 'problem_summary' ||
-      summary.summary_kind === 'solution_summary' ||
-      summary.summary_kind === 'maintainer_signal_summary' ||
-      summary.summary_kind === 'dedupe_summary'
+      summary.summary_kind === "problem_summary" ||
+      summary.summary_kind === "solution_summary" ||
+      summary.summary_kind === "maintainer_signal_summary" ||
+      summary.summary_kind === "dedupe_summary"
     ) {
       summaries[summary.summary_kind] = summary.summary_text;
     }
@@ -115,7 +131,11 @@ export function getTuiThreadSummaries(db: SqliteDatabase, threadId: number, summ
   return summaries;
 }
 
-export function getLatestTuiKeySummary(db: SqliteDatabase, threadId: number, summaryModel: string): TuiThreadDetail['keySummary'] {
+export function getLatestTuiKeySummary(
+  db: SqliteDatabase,
+  threadId: number,
+  summaryModel: string,
+): TuiThreadDetail["keySummary"] {
   const row = db
     .prepare(
       `select ks.summary_kind, ks.prompt_version, ks.model, ks.key_text
@@ -148,7 +168,11 @@ export function getLatestTuiKeySummary(db: SqliteDatabase, threadId: number, sum
   };
 }
 
-export function getTopChangedFiles(db: SqliteDatabase, threadId: number, limit: number): TuiThreadDetail['topFiles'] {
+export function getTopChangedFiles(
+  db: SqliteDatabase,
+  threadId: number,
+  limit: number,
+): TuiThreadDetail["topFiles"] {
   const latestRevision = db
     .prepare(
       `select id
@@ -169,5 +193,5 @@ export function getTopChangedFiles(db: SqliteDatabase, threadId: number, limit: 
        order by (cf.additions + cf.deletions) desc, cf.path asc
        limit ?`,
     )
-    .all(latestRevision.id, limit) as TuiThreadDetail['topFiles'];
+    .all(latestRevision.id, limit) as TuiThreadDetail["topFiles"];
 }

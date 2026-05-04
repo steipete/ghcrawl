@@ -1,7 +1,7 @@
-import { mkdirSync } from 'node:fs';
-import path from 'node:path';
-import process from 'node:process';
-import { writeHeapSnapshot } from 'node:v8';
+import { mkdirSync } from "node:fs";
+import path from "node:path";
+import process from "node:process";
+import { writeHeapSnapshot } from "node:v8";
 
 export type HeapDiagnosticsOptions = {
   snapshotDir?: string;
@@ -16,8 +16,8 @@ export type HeapDiagnostics = {
 };
 
 function formatBytes(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes < 0) return 'n/a';
-  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  if (!Number.isFinite(bytes) || bytes < 0) return "n/a";
+  const units = ["B", "KB", "MB", "GB", "TB"];
   let value = bytes;
   let index = 0;
   while (value >= 1024 && index < units.length - 1) {
@@ -28,11 +28,13 @@ function formatBytes(bytes: number): string {
 }
 
 function sanitizeLabel(label: string): string {
-  return label
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '') || 'snapshot';
+  return (
+    label
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "snapshot"
+  );
 }
 
 export function formatMemoryUsage(usage: NodeJS.MemoryUsage = process.memoryUsage()): string {
@@ -47,12 +49,12 @@ export function createHeapDiagnostics(options: HeapDiagnosticsOptions): HeapDiag
 
   let sawClusterProgress = false;
   let interval: NodeJS.Timeout | null = null;
-  const signal = 'SIGUSR2';
+  const signal = "SIGUSR2";
   const unsafeCapture = (label: string): string | null => {
     if (!snapshotDir) {
       return null;
     }
-    const timestamp = new Date().toISOString().replace(/[:]/g, '-');
+    const timestamp = new Date().toISOString().replace(/[:]/g, "-");
     const filename = path.join(snapshotDir, `${timestamp}-${sanitizeLabel(label)}.heapsnapshot`);
     return writeHeapSnapshot(filename);
   };
@@ -68,20 +70,24 @@ export function createHeapDiagnostics(options: HeapDiagnosticsOptions): HeapDiag
   };
 
   const signalHandler = (): void => {
-    const file = capture('signal-sigusr2');
-    options.log(file ? `[heap] wrote heap snapshot on ${signal}: ${file}` : `[heap] ${signal} received but snapshot output is disabled`);
+    const file = capture("signal-sigusr2");
+    options.log(
+      file
+        ? `[heap] wrote heap snapshot on ${signal}: ${file}`
+        : `[heap] ${signal} received but snapshot output is disabled`,
+    );
   };
 
   process.on(signal, signalHandler);
   options.log(
     `[heap] diagnostics enabled pid=${process.pid} signal=${signal}` +
-      (snapshotDir ? ` snapshot_dir=${snapshotDir}` : '') +
-      (options.logIntervalMs ? ` log_interval_ms=${options.logIntervalMs}` : ''),
+      (snapshotDir ? ` snapshot_dir=${snapshotDir}` : "") +
+      (options.logIntervalMs ? ` log_interval_ms=${options.logIntervalMs}` : ""),
   );
   options.log(`[heap] start ${formatMemoryUsage()}`);
 
   if (snapshotDir) {
-    const file = capture('command-start');
+    const file = capture("command-start");
     options.log(`[heap] wrote heap snapshot: ${file}`);
   }
 
@@ -95,11 +101,11 @@ export function createHeapDiagnostics(options: HeapDiagnosticsOptions): HeapDiag
   return {
     wrapProgress(onProgress?: (message: string) => void): (message: string) => void {
       return (message: string) => {
-        if (!sawClusterProgress && message.startsWith('[cluster]')) {
+        if (!sawClusterProgress && message.startsWith("[cluster]")) {
           sawClusterProgress = true;
           options.log(`[heap] cluster-start ${formatMemoryUsage()}`);
           if (snapshotDir) {
-            const file = capture('cluster-start');
+            const file = capture("cluster-start");
             options.log(`[heap] wrote heap snapshot: ${file}`);
           }
         }

@@ -1,8 +1,8 @@
-import crypto from 'node:crypto';
+import crypto from "node:crypto";
 
-import { z } from 'zod';
+import { z } from "zod";
 
-export const LLM_KEY_SUMMARY_PROMPT_VERSION = 'llm-key-summary-v2';
+export const LLM_KEY_SUMMARY_PROMPT_VERSION = "llm-key-summary-v2";
 
 export const LLM_KEY_SUMMARY_SYSTEM_PROMPT = `You produce stable deduplication keys for GitHub issues and pull requests.
 Return only strict JSON with exactly these fields:
@@ -32,12 +32,12 @@ export function parseLlmKeySummary(value: unknown): LlmKeySummary {
 }
 
 function clampSentence(value: string, maxLength: number): string {
-  const normalized = value.replace(/\s+/g, ' ').trim();
+  const normalized = value.replace(/\s+/g, " ").trim();
   if (normalized.length <= maxLength) {
     return normalized;
   }
 
-  return normalized.slice(0, maxLength - 1).trimEnd() + '.';
+  return normalized.slice(0, maxLength - 1).trimEnd() + ".";
 }
 
 export function llmKeyEmbeddingText(summary: LlmKeySummary): string {
@@ -46,7 +46,7 @@ export function llmKeyEmbeddingText(summary: LlmKeySummary): string {
     `intent: ${summary.intent}`,
     `surface: ${summary.surface}`,
     `mechanism: ${summary.mechanism}`,
-  ].join('\n');
+  ].join("\n");
 }
 
 export function llmKeyInputHash(input: {
@@ -57,15 +57,15 @@ export function llmKeyInputHash(input: {
   diffText?: string | null;
 }): string {
   return crypto
-    .createHash('sha256')
+    .createHash("sha256")
     .update(
       JSON.stringify({
         promptVersion: input.promptVersion ?? LLM_KEY_SUMMARY_PROMPT_VERSION,
         title: input.title,
-        body: input.body ?? '',
-        commentsText: input.commentsText ?? '',
-        diffText: input.diffText ?? '',
+        body: input.body ?? "",
+        commentsText: input.commentsText ?? "",
+        diffText: input.diffText ?? "",
       }),
     )
-    .digest('hex');
+    .digest("hex");
 }

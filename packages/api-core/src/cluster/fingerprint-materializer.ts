@@ -1,12 +1,12 @@
-import type { SqliteDatabase } from '../db/sqlite.js';
-import { extractDeterministicRefs } from './deterministic-engine.js';
-import type { DeterministicClusterableThreadMeta } from './deterministic-thread-loader.js';
-import { upsertThreadFingerprint, upsertThreadRevision } from './persistent-store.js';
+import type { SqliteDatabase } from "../db/sqlite.js";
+import { extractDeterministicRefs } from "./deterministic-engine.js";
+import type { DeterministicClusterableThreadMeta } from "./deterministic-thread-loader.js";
+import { upsertThreadFingerprint, upsertThreadRevision } from "./persistent-store.js";
 import {
   buildDeterministicThreadFingerprint,
   fingerprintFeatureHash,
   THREAD_FINGERPRINT_ALGORITHM_VERSION,
-} from './thread-fingerprint.js';
+} from "./thread-fingerprint.js";
 
 export function materializeLatestDeterministicFingerprints(
   db: SqliteDatabase,
@@ -24,7 +24,7 @@ export function materializeLatestDeterministicFingerprints(
       labels: item.labels,
       rawJson: item.rawJson,
     });
-    const inferredRefs = extractDeterministicRefs(`${item.title}\n${item.body ?? ''}`);
+    const inferredRefs = extractDeterministicRefs(`${item.title}\n${item.body ?? ""}`);
     const featureHash = fingerprintFeatureHash({
       linkedRefs: inferredRefs,
       changedFiles: item.changedFiles,
@@ -39,12 +39,14 @@ export function materializeLatestDeterministicFingerprints(
            and algorithm_version = ?
          limit 1`,
       )
-      .get(revisionId, THREAD_FINGERPRINT_ALGORITHM_VERSION) as { id: number; feature_json: string } | undefined;
+      .get(revisionId, THREAD_FINGERPRINT_ALGORITHM_VERSION) as
+      | { id: number; feature_json: string }
+      | undefined;
     if (existing) {
       const existingFeatureHash = (() => {
         try {
           const feature = JSON.parse(existing.feature_json) as Record<string, unknown>;
-          return typeof feature.featureHash === 'string' ? feature.featureHash : null;
+          return typeof feature.featureHash === "string" ? feature.featureHash : null;
         } catch {
           return null;
         }

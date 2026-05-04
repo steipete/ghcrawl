@@ -1,10 +1,10 @@
-import type { GitcrawlConfig } from '../config.js';
-import type { SqliteDatabase } from '../db/sqlite.js';
-import { writeRepoPipelineState } from '../pipeline-state.js';
-import { nowIso } from '../service-utils.js';
-import { vectorBlob } from './encoding.js';
-import { isCorruptedVectorIndexError, repositoryVectorStorePath } from './repository-store.js';
-import type { VectorNeighbor, VectorQueryParams, VectorStore } from './store.js';
+import type { GitcrawlConfig } from "../config.js";
+import type { SqliteDatabase } from "../db/sqlite.js";
+import { writeRepoPipelineState } from "../pipeline-state.js";
+import { nowIso } from "../service-utils.js";
+import { vectorBlob } from "./encoding.js";
+import { isCorruptedVectorIndexError, repositoryVectorStorePath } from "./repository-store.js";
+import type { VectorNeighbor, VectorQueryParams, VectorStore } from "./store.js";
 
 export type ActiveVectorMeta = {
   id: number;
@@ -16,7 +16,7 @@ export function queryNearestWithRecovery(params: {
   configDir: string;
   repoFullName: string;
   dimensions: number;
-  query: Omit<VectorQueryParams, 'storePath' | 'dimensions'>;
+  query: Omit<VectorQueryParams, "storePath" | "dimensions">;
   rebuild: () => void;
 }): VectorNeighbor[] {
   const storePath = repositoryVectorStorePath(params.configDir, params.repoFullName);
@@ -108,7 +108,7 @@ export function pruneInactiveRepositoryVectors(params: {
   }
 
   const storePath = repositoryVectorStorePath(params.configDir, params.repoFullName);
-  const deleteVectorRow = params.db.prepare('delete from thread_vectors where thread_id = ?');
+  const deleteVectorRow = params.db.prepare("delete from thread_vectors where thread_id = ?");
   let shouldRebuildVectorStore = false;
   params.db.transaction(() => {
     for (const row of rows) {
@@ -153,7 +153,9 @@ export function cleanupMigratedRepositoryArtifacts(params: {
          where thread_id in (select id from threads where repo_id = ?)`,
       )
       .run(params.repoId);
-    params.onProgress?.(`[cleanup] removed ${legacyEmbeddingCount} legacy document embedding row(s) after vector migration`);
+    params.onProgress?.(
+      `[cleanup] removed ${legacyEmbeddingCount} legacy document embedding row(s) after vector migration`,
+    );
   }
 
   if (inlineJsonVectorCount > 0) {
@@ -167,20 +169,26 @@ export function cleanupMigratedRepositoryArtifacts(params: {
            and tv.vector_json != ''`,
       )
       .all(params.repoId) as Array<{ thread_id: number; vector_json: string }>;
-    const update = params.db.prepare('update thread_vectors set vector_json = ?, updated_at = ? where thread_id = ?');
+    const update = params.db.prepare(
+      "update thread_vectors set vector_json = ?, updated_at = ? where thread_id = ?",
+    );
     params.db.transaction(() => {
       for (const row of rows) {
         update.run(vectorBlob(JSON.parse(row.vector_json) as number[]), nowIso(), row.thread_id);
       }
     })();
-    params.onProgress?.(`[cleanup] compacted ${inlineJsonVectorCount} inline SQLite vector payload(s) from JSON to binary blobs`);
+    params.onProgress?.(
+      `[cleanup] compacted ${inlineJsonVectorCount} inline SQLite vector payload(s) from JSON to binary blobs`,
+    );
   }
 
-  if (params.dbPath !== ':memory:') {
-    params.onProgress?.(`[cleanup] checkpointing WAL and vacuuming ${params.repoFullName} migration changes`);
-    params.db.pragma('wal_checkpoint(TRUNCATE)');
-    params.db.exec('VACUUM');
-    params.db.pragma('wal_checkpoint(TRUNCATE)');
+  if (params.dbPath !== ":memory:") {
+    params.onProgress?.(
+      `[cleanup] checkpointing WAL and vacuuming ${params.repoFullName} migration changes`,
+    );
+    params.db.pragma("wal_checkpoint(TRUNCATE)");
+    params.db.exec("VACUUM");
+    params.db.pragma("wal_checkpoint(TRUNCATE)");
   }
 }
 

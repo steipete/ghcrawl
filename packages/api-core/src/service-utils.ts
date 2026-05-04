@@ -1,8 +1,8 @@
-import crypto from 'node:crypto';
+import crypto from "node:crypto";
 
-import type { RepositoryDto, ThreadDto } from '@ghcrawl/api-contract';
+import type { RepositoryDto, ThreadDto } from "@ghcrawl/api-contract";
 
-import type { SyncRunStats, ThreadRow } from './service-types.js';
+import type { SyncRunStats, ThreadRow } from "./service-types.js";
 
 export function nowIso(): string {
   return new Date().toISOString();
@@ -14,20 +14,26 @@ export function parseIso(value: string | null | undefined): number | null {
   return Number.isNaN(parsed) ? null : parsed;
 }
 
-export function isEffectivelyClosed(row: { state: string; closed_at_local: string | null }): boolean {
-  return row.state !== 'open' || row.closed_at_local !== null;
+export function isEffectivelyClosed(row: {
+  state: string;
+  closed_at_local: string | null;
+}): boolean {
+  return row.state !== "open" || row.closed_at_local !== null;
 }
 
 export function isClosedGitHubPayload(payload: Record<string, unknown>): boolean {
-  const state = typeof payload.state === 'string' ? payload.state.toLowerCase() : null;
-  if (state !== null && state !== 'open') return true;
-  if (typeof payload.closed_at === 'string' && payload.closed_at.length > 0) return true;
-  if (typeof payload.merged_at === 'string' && payload.merged_at.length > 0) return true;
+  const state = typeof payload.state === "string" ? payload.state.toLowerCase() : null;
+  if (state !== null && state !== "open") return true;
+  if (typeof payload.closed_at === "string" && payload.closed_at.length > 0) return true;
+  if (typeof payload.merged_at === "string" && payload.merged_at.length > 0) return true;
   return false;
 }
 
 export function isMissingGitHubResourceError(error: unknown): boolean {
-  const status = typeof (error as { status?: unknown })?.status === 'number' ? Number((error as { status?: unknown }).status) : null;
+  const status =
+    typeof (error as { status?: unknown })?.status === "number"
+      ? Number((error as { status?: unknown }).status)
+      : null;
   if (status === 404 || status === 410) {
     return true;
   }
@@ -48,24 +54,26 @@ export function parseSyncRunStats(statsJson: string | null): SyncRunStats | null
   if (!statsJson) return null;
   try {
     const parsed = JSON.parse(statsJson) as Partial<SyncRunStats>;
-    if (typeof parsed.crawlStartedAt !== 'string') {
+    if (typeof parsed.crawlStartedAt !== "string") {
       return null;
     }
     return {
-      threadsSynced: typeof parsed.threadsSynced === 'number' ? parsed.threadsSynced : 0,
-      commentsSynced: typeof parsed.commentsSynced === 'number' ? parsed.commentsSynced : 0,
-      threadsClosed: typeof parsed.threadsClosed === 'number' ? parsed.threadsClosed : 0,
+      threadsSynced: typeof parsed.threadsSynced === "number" ? parsed.threadsSynced : 0,
+      commentsSynced: typeof parsed.commentsSynced === "number" ? parsed.commentsSynced : 0,
+      threadsClosed: typeof parsed.threadsClosed === "number" ? parsed.threadsClosed : 0,
       crawlStartedAt: parsed.crawlStartedAt,
-      requestedSince: typeof parsed.requestedSince === 'string' ? parsed.requestedSince : null,
-      effectiveSince: typeof parsed.effectiveSince === 'string' ? parsed.effectiveSince : null,
-      limit: typeof parsed.limit === 'number' ? parsed.limit : null,
+      requestedSince: typeof parsed.requestedSince === "string" ? parsed.requestedSince : null,
+      effectiveSince: typeof parsed.effectiveSince === "string" ? parsed.effectiveSince : null,
+      limit: typeof parsed.limit === "number" ? parsed.limit : null,
       includeComments: parsed.includeComments === true,
-      codeFilesSynced: typeof parsed.codeFilesSynced === 'number' ? parsed.codeFilesSynced : 0,
+      codeFilesSynced: typeof parsed.codeFilesSynced === "number" ? parsed.codeFilesSynced : 0,
       includeCode: parsed.includeCode === true,
       isFullOpenScan: parsed.isFullOpenScan === true,
       isOverlappingOpenScan: parsed.isOverlappingOpenScan === true,
-      overlapReferenceAt: typeof parsed.overlapReferenceAt === 'string' ? parsed.overlapReferenceAt : null,
-      reconciledOpenCloseAt: typeof parsed.reconciledOpenCloseAt === 'string' ? parsed.reconciledOpenCloseAt : null,
+      overlapReferenceAt:
+        typeof parsed.overlapReferenceAt === "string" ? parsed.overlapReferenceAt : null,
+      reconciledOpenCloseAt:
+        typeof parsed.reconciledOpenCloseAt === "string" ? parsed.reconciledOpenCloseAt : null,
     };
   } catch {
     return null;
@@ -84,7 +92,9 @@ export function parseStringArrayJson(value: string | null | undefined): string[]
   if (!value) return [];
   try {
     const parsed = JSON.parse(value) as unknown;
-    return Array.isArray(parsed) ? parsed.filter((entry): entry is string => typeof entry === 'string') : [];
+    return Array.isArray(parsed)
+      ? parsed.filter((entry): entry is string => typeof entry === "string")
+      : [];
   } catch {
     return [];
   }
@@ -94,7 +104,9 @@ export function parseObjectJson(value: string | null | undefined): Record<string
   if (!value) return null;
   try {
     const parsed = JSON.parse(value) as unknown;
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : null;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null;
   } catch {
     return null;
   }
@@ -103,13 +115,13 @@ export function parseObjectJson(value: string | null | undefined): Record<string
 export function userLogin(payload: Record<string, unknown>): string | null {
   const user = payload.user as Record<string, unknown> | undefined;
   const login = user?.login;
-  return typeof login === 'string' ? login : null;
+  return typeof login === "string" ? login : null;
 }
 
 export function userType(payload: Record<string, unknown>): string | null {
   const user = payload.user as Record<string, unknown> | undefined;
   const type = user?.type;
-  return typeof type === 'string' ? type : null;
+  return typeof type === "string" ? type : null;
 }
 
 export function isPullRequestPayload(payload: Record<string, unknown>): boolean {
@@ -121,8 +133,12 @@ export function parseLabels(payload: Record<string, unknown>): string[] {
   if (!Array.isArray(labels)) return [];
   return labels
     .map((label) => {
-      if (typeof label === 'string') return label;
-      if (label && typeof label === 'object' && typeof (label as Record<string, unknown>).name === 'string') {
+      if (typeof label === "string") return label;
+      if (
+        label &&
+        typeof label === "object" &&
+        typeof (label as Record<string, unknown>).name === "string"
+      ) {
         return String((label as Record<string, unknown>).name);
       }
       return null;
@@ -135,7 +151,11 @@ export function parseAssignees(payload: Record<string, unknown>): string[] {
   if (!Array.isArray(assignees)) return [];
   return assignees
     .map((assignee) => {
-      if (assignee && typeof assignee === 'object' && typeof (assignee as Record<string, unknown>).login === 'string') {
+      if (
+        assignee &&
+        typeof assignee === "object" &&
+        typeof (assignee as Record<string, unknown>).login === "string"
+      ) {
         return String((assignee as Record<string, unknown>).login);
       }
       return null;
@@ -144,11 +164,11 @@ export function parseAssignees(payload: Record<string, unknown>): string[] {
 }
 
 export function stableContentHash(input: string): string {
-  return crypto.createHash('sha256').update(input).digest('hex');
+  return crypto.createHash("sha256").update(input).digest("hex");
 }
 
 export function normalizeSummaryText(value: string): string {
-  return value.replace(/\r/g, '\n').replace(/\s+/g, ' ').trim();
+  return value.replace(/\r/g, "\n").replace(/\s+/g, " ").trim();
 }
 
 export function normalizeKeySummaryDisplayText(value: string): string {
@@ -156,12 +176,12 @@ export function normalizeKeySummaryDisplayText(value: string): string {
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean)
-    .join('\n');
+    .join("\n");
 }
 
 export function snippetText(value: string | null | undefined, maxChars: number): string | null {
   if (!value) return null;
-  const normalized = value.replace(/\s+/g, ' ').trim();
+  const normalized = value.replace(/\s+/g, " ").trim();
   if (!normalized) return null;
   if (normalized.length <= maxChars) return normalized;
   return `${normalized.slice(0, Math.max(0, maxChars - 1)).trimEnd()}…`;

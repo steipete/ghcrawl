@@ -1,6 +1,6 @@
-import type { SqliteDatabase } from '../db/sqlite.js';
-import { normalizeEmbedding } from '../search/exact.js';
-import type { EmbeddingSourceKind, StoredEmbeddingRow } from '../service-types.js';
+import type { SqliteDatabase } from "../db/sqlite.js";
+import { normalizeEmbedding } from "../search/exact.js";
+import type { EmbeddingSourceKind, StoredEmbeddingRow } from "../service-types.js";
 
 export function loadStoredEmbeddingsForThreadNumber(params: {
   db: SqliteDatabase;
@@ -61,7 +61,10 @@ export function loadNormalizedEmbeddingsForSourceKind(params: {
          and e.source_kind = ?
        order by t.number asc`,
     )
-    .all(params.repoId, params.embedModel, params.sourceKind) as Array<{ id: number; embedding_json: string }>;
+    .all(params.repoId, params.embedModel, params.sourceKind) as Array<{
+    id: number;
+    embedding_json: string;
+  }>;
 
   return rows.map((row) => ({
     id: row.id,

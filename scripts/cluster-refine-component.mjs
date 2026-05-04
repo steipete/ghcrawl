@@ -1,19 +1,26 @@
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const serviceModulePath = path.join(repoRoot, 'packages', 'api-core', 'dist', 'service.js');
-const buildModulePath = path.join(repoRoot, 'packages', 'api-core', 'dist', 'cluster', 'build.js');
-const exactEdgesModulePath = path.join(repoRoot, 'packages', 'api-core', 'dist', 'cluster', 'exact-edges.js');
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const serviceModulePath = path.join(repoRoot, "packages", "api-core", "dist", "service.js");
+const buildModulePath = path.join(repoRoot, "packages", "api-core", "dist", "cluster", "build.js");
+const exactEdgesModulePath = path.join(
+  repoRoot,
+  "packages",
+  "api-core",
+  "dist",
+  "cluster",
+  "exact-edges.js",
+);
 
 const { GHCrawlService } = await import(serviceModulePath);
 const { buildClusters } = await import(buildModulePath);
 const { buildSourceKindEdges } = await import(exactEdgesModulePath);
 
 function parseArgs(argv) {
-  let repo = 'openclaw/openclaw';
+  let repo = "openclaw/openclaw";
   let clusterRank = 1;
-  let backend = 'vectorlite';
+  let backend = "vectorlite";
   let k;
   let threshold;
   let candidateK;
@@ -23,52 +30,52 @@ function parseArgs(argv) {
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
     if (!token) continue;
-    if (token === '--repo') {
+    if (token === "--repo") {
       repo = argv[index + 1] ?? repo;
       index += 1;
       continue;
     }
-    if (token === '--cluster-rank') {
+    if (token === "--cluster-rank") {
       clusterRank = Number(argv[index + 1]);
       index += 1;
       continue;
     }
-    if (token === '--backend') {
+    if (token === "--backend") {
       backend = argv[index + 1] ?? backend;
       index += 1;
       continue;
     }
-    if (token === '--k') {
+    if (token === "--k") {
       k = Number(argv[index + 1]);
       index += 1;
       continue;
     }
-    if (token === '--threshold') {
+    if (token === "--threshold") {
       threshold = Number(argv[index + 1]);
       index += 1;
       continue;
     }
-    if (token === '--candidate-k') {
+    if (token === "--candidate-k") {
       candidateK = Number(argv[index + 1]);
       index += 1;
       continue;
     }
-    if (token === '--ef-search') {
+    if (token === "--ef-search") {
       efSearch = Number(argv[index + 1]);
       index += 1;
       continue;
     }
-    if (token === '--top-subclusters') {
+    if (token === "--top-subclusters") {
       topSubclusters = Number(argv[index + 1]);
       index += 1;
       continue;
     }
-    if (!token.startsWith('--')) {
+    if (!token.startsWith("--")) {
       repo = token;
     }
   }
 
-  const [owner, name] = repo.split('/');
+  const [owner, name] = repo.split("/");
   if (!owner || !name) {
     throw new Error(`Expected owner/repo, received: ${repo}`);
   }
@@ -78,7 +85,7 @@ function parseArgs(argv) {
     repo: name,
     fullName: `${owner}/${name}`,
     clusterRank: Number.isFinite(clusterRank) ? Math.max(1, clusterRank) : 1,
-    backend: backend === 'exact' ? 'exact' : 'vectorlite',
+    backend: backend === "exact" ? "exact" : "vectorlite",
     k: Number.isFinite(k) ? k : undefined,
     threshold: Number.isFinite(threshold) ? threshold : undefined,
     candidateK: Number.isFinite(candidateK) ? candidateK : undefined,
@@ -88,7 +95,8 @@ function parseArgs(argv) {
 }
 
 function edgeKey(leftThreadId, rightThreadId) {
-  const [left, right] = leftThreadId < rightThreadId ? [leftThreadId, rightThreadId] : [rightThreadId, leftThreadId];
+  const [left, right] =
+    leftThreadId < rightThreadId ? [leftThreadId, rightThreadId] : [rightThreadId, leftThreadId];
   return `${left}:${right}`;
 }
 
@@ -109,7 +117,7 @@ function mergeSourceKindEdges(aggregated, edges) {
 }
 
 function loadThreadMeta(service, ids) {
-  const placeholders = ids.map(() => '?').join(', ');
+  const placeholders = ids.map(() => "?").join(", ");
   const rows = service.db
     .prepare(
       `select id, number, kind, title
@@ -144,7 +152,7 @@ function describeThread(threadId, metaById) {
   if (!meta) {
     return `thread:${threadId}`;
   }
-  const kind = meta.kind === 'pull_request' ? 'PR' : 'Issue';
+  const kind = meta.kind === "pull_request" ? "PR" : "Issue";
   return `${kind} #${meta.number} ${meta.title}`;
 }
 
@@ -165,7 +173,9 @@ try {
   });
 
   const rankedClusters = [...(result.clustersDetail ?? [])].sort(
-    (left, right) => right.memberThreadIds.length - left.memberThreadIds.length || left.representativeThreadId - right.representativeThreadId,
+    (left, right) =>
+      right.memberThreadIds.length - left.memberThreadIds.length ||
+      left.representativeThreadId - right.representativeThreadId,
   );
   const selectedCluster = rankedClusters[args.clusterRank - 1];
   if (!selectedCluster) {
@@ -181,7 +191,7 @@ try {
        from document_embeddings e
        join threads t on t.id = e.thread_id
        where t.repo_id = ?
-         and t.id in (${ids.map(() => '?').join(', ')})
+         and t.id in (${ids.map(() => "?").join(", ")})
          and e.model = ?
        order by e.source_kind asc`,
     )
@@ -196,7 +206,7 @@ try {
          from document_embeddings e
          join threads t on t.id = e.thread_id
          where t.repo_id = ?
-           and t.id in (${ids.map(() => '?').join(', ')})
+           and t.id in (${ids.map(() => "?").join(", ")})
            and e.model = ?
            and e.source_kind = ?`,
       )
@@ -215,24 +225,24 @@ try {
       return {
         threadId,
         number: meta?.number ?? threadId,
-        title: meta?.title ?? '',
+        title: meta?.title ?? "",
       };
     }),
     Array.from(aggregated.values()),
   );
 
   const lines = [
-    '## Refined Cluster',
-    '',
+    "## Refined Cluster",
+    "",
     `- Repo: ${args.fullName}`,
     `- Source backend cluster: ${args.backend}`,
     `- Source cluster rank: ${args.clusterRank}`,
     `- Source cluster size: ${selectedCluster.memberThreadIds.length}`,
     `- Representative: ${describeThread(selectedCluster.representativeThreadId, metaById)}`,
     `- Exact refined subclusters: ${refinedClusters.length}`,
-    '',
-    '### Refined Sizes',
-    '',
+    "",
+    "### Refined Sizes",
+    "",
   ];
 
   for (const [index, cluster] of refinedClusters.slice(0, args.topSubclusters).entries()) {
@@ -241,7 +251,7 @@ try {
     );
   }
 
-  process.stdout.write(`\n${lines.join('\n')}\n`);
+  process.stdout.write(`\n${lines.join("\n")}\n`);
 } finally {
   service.close();
 }

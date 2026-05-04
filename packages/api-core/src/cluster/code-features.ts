@@ -1,4 +1,4 @@
-import type { SqliteDatabase } from '../db/sqlite.js';
+import type { SqliteDatabase } from "../db/sqlite.js";
 
 export type LatestCodeFeatures = {
   changedFiles: string[];
@@ -6,9 +6,12 @@ export type LatestCodeFeatures = {
   patchIds: string[];
 };
 
-export function loadLatestCodeFeatures(db: SqliteDatabase, threadIds: number[]): Map<number, LatestCodeFeatures> {
+export function loadLatestCodeFeatures(
+  db: SqliteDatabase,
+  threadIds: number[],
+): Map<number, LatestCodeFeatures> {
   if (threadIds.length === 0) return new Map();
-  const placeholders = threadIds.map(() => '?').join(',');
+  const placeholders = threadIds.map(() => "?").join(",");
   const latestRevisions = db
     .prepare(
       `select thread_id, max(id) as revision_id
@@ -20,7 +23,7 @@ export function loadLatestCodeFeatures(db: SqliteDatabase, threadIds: number[]):
   if (latestRevisions.length === 0) return new Map();
 
   const revisionToThread = new Map(latestRevisions.map((row) => [row.revision_id, row.thread_id]));
-  const revisionPlaceholders = latestRevisions.map(() => '?').join(',');
+  const revisionPlaceholders = latestRevisions.map(() => "?").join(",");
   const fileRows = db
     .prepare(
       `select cs.thread_revision_id, cf.path, cf.patch_hash
@@ -29,7 +32,11 @@ export function loadLatestCodeFeatures(db: SqliteDatabase, threadIds: number[]):
        where cs.thread_revision_id in (${revisionPlaceholders})
        order by cf.path asc`,
     )
-    .all(...latestRevisions.map((row) => row.revision_id)) as Array<{ thread_revision_id: number; path: string; patch_hash: string | null }>;
+    .all(...latestRevisions.map((row) => row.revision_id)) as Array<{
+    thread_revision_id: number;
+    path: string;
+    patch_hash: string | null;
+  }>;
   const hunkRows = db
     .prepare(
       `select cs.thread_revision_id, hs.hunk_hash
@@ -38,7 +45,10 @@ export function loadLatestCodeFeatures(db: SqliteDatabase, threadIds: number[]):
        where cs.thread_revision_id in (${revisionPlaceholders})
        order by hs.hunk_hash asc`,
     )
-    .all(...latestRevisions.map((row) => row.revision_id)) as Array<{ thread_revision_id: number; hunk_hash: string }>;
+    .all(...latestRevisions.map((row) => row.revision_id)) as Array<{
+    thread_revision_id: number;
+    hunk_hash: string;
+  }>;
 
   const out = new Map<number, LatestCodeFeatures>();
   function entry(threadId: number): LatestCodeFeatures {

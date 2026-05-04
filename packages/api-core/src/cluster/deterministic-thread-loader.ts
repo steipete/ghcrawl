@@ -1,11 +1,11 @@
-import type { SqliteDatabase } from '../db/sqlite.js';
-import { parseArray } from '../service-utils.js';
-import { loadLatestCodeFeatures } from './code-features.js';
+import type { SqliteDatabase } from "../db/sqlite.js";
+import { parseArray } from "../service-utils.js";
+import { loadLatestCodeFeatures } from "./code-features.js";
 
 export type DeterministicClusterableThreadMeta = {
   id: number;
   number: number;
-  kind: 'issue' | 'pull_request';
+  kind: "issue" | "pull_request";
   title: string;
   body: string | null;
   labels: string[];
@@ -21,8 +21,7 @@ export function loadDeterministicClusterableThreadMeta(
   repoId: number,
   threadIds?: number[],
 ): DeterministicClusterableThreadMeta[] {
-  let sql =
-    `select id, number, kind, title, body, labels_json, raw_json, updated_at_gh
+  let sql = `select id, number, kind, title, body, labels_json, raw_json, updated_at_gh
      from threads
      where repo_id = ?
        and state = 'open'
@@ -36,22 +35,25 @@ export function loadDeterministicClusterableThreadMeta(
        )`;
   const args: Array<number> = [repoId];
   if (threadIds && threadIds.length > 0) {
-    sql += ` and id in (${threadIds.map(() => '?').join(',')})`;
+    sql += ` and id in (${threadIds.map(() => "?").join(",")})`;
     args.push(...threadIds);
   }
-  sql += ' order by number asc';
+  sql += " order by number asc";
 
   const rows = db.prepare(sql).all(...args) as Array<{
     id: number;
     number: number;
-    kind: 'issue' | 'pull_request';
+    kind: "issue" | "pull_request";
     title: string;
     body: string | null;
     labels_json: string;
     raw_json: string;
     updated_at_gh: string | null;
   }>;
-  const codeFeaturesByThread = loadLatestCodeFeatures(db, rows.map((row) => row.id));
+  const codeFeaturesByThread = loadLatestCodeFeatures(
+    db,
+    rows.map((row) => row.id),
+  );
   return rows.map((row) => ({
     id: row.id,
     number: row.number,

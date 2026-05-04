@@ -1,44 +1,44 @@
-import type { RepositoryDto } from '@ghcrawl/api-contract';
+import type { RepositoryDto } from "@ghcrawl/api-contract";
 
-import type { SqliteDatabase } from '../db/sqlite.js';
+import type { SqliteDatabase } from "../db/sqlite.js";
 
-export const PORTABLE_SYNC_SCHEMA_VERSION = 'ghcrawl-portable-sync-v1';
+export const PORTABLE_SYNC_SCHEMA_VERSION = "ghcrawl-portable-sync-v1";
 export const DEFAULT_PORTABLE_BODY_CHARS = 512;
-export type PortableSyncProfile = 'lean' | 'review';
+export type PortableSyncProfile = "lean" | "review";
 
 export const PORTABLE_SYNC_TABLES = [
-  'repositories',
-  'threads',
-  'thread_revisions',
-  'thread_fingerprints',
-  'thread_key_summaries',
-  'repo_sync_state',
-  'repo_pipeline_state',
-  'cluster_groups',
-  'cluster_memberships',
-  'cluster_overrides',
-  'cluster_aliases',
-  'cluster_closures',
+  "repositories",
+  "threads",
+  "thread_revisions",
+  "thread_fingerprints",
+  "thread_key_summaries",
+  "repo_sync_state",
+  "repo_pipeline_state",
+  "cluster_groups",
+  "cluster_memberships",
+  "cluster_overrides",
+  "cluster_aliases",
+  "cluster_closures",
 ] as const;
 
 export const PORTABLE_SYNC_EXCLUDED_TABLES = [
-  'blobs',
-  'comments',
-  'documents',
-  'documents_fts',
-  'document_embeddings',
-  'thread_vectors',
-  'thread_code_snapshots',
-  'thread_changed_files',
-  'thread_hunk_signatures',
-  'cluster_events',
-  'pipeline_runs',
-  'sync_runs',
-  'summary_runs',
-  'embedding_runs',
-  'cluster_runs',
-  'similarity_edges',
-  'similarity_edge_evidence',
+  "blobs",
+  "comments",
+  "documents",
+  "documents_fts",
+  "document_embeddings",
+  "thread_vectors",
+  "thread_code_snapshots",
+  "thread_changed_files",
+  "thread_hunk_signatures",
+  "cluster_events",
+  "pipeline_runs",
+  "sync_runs",
+  "summary_runs",
+  "embedding_runs",
+  "cluster_runs",
+  "similarity_edges",
+  "similarity_edge_evidence",
 ] as const;
 
 export type PortableSyncExportOptions = {
@@ -53,7 +53,7 @@ export type PortableSyncExportOptions = {
 
 export type PortableSyncManifest = {
   schema: string;
-  profile: PortableSyncProfile | 'default';
+  profile: PortableSyncProfile | "default";
   exportedAt: string;
   outputPath: string;
   outputBytes: number;
@@ -84,7 +84,7 @@ export type PortableSyncExportResponse = {
   outputBytes: number;
   compressionRatio: number;
   bodyChars: number;
-  profile: PortableSyncProfile | 'default';
+  profile: PortableSyncProfile | "default";
   tables: Array<{ name: string; rows: number }>;
   excluded: string[];
   manifestPath: string | null;

@@ -1,8 +1,8 @@
-import path from 'node:path';
+import path from "node:path";
 
-import type { RepositoryDto } from '@ghcrawl/api-contract';
+import type { RepositoryDto } from "@ghcrawl/api-contract";
 
-import type { SqliteDatabase } from '../db/sqlite.js';
+import type { SqliteDatabase } from "../db/sqlite.js";
 import {
   countRows,
   fileSize,
@@ -12,7 +12,7 @@ import {
   readForeignKeyViolations,
   readIntegrityCheck,
   readPortableMetadata,
-} from './sqlite-utils.js';
+} from "./sqlite-utils.js";
 import {
   PORTABLE_SYNC_EXCLUDED_TABLES,
   PORTABLE_SYNC_SCHEMA_VERSION,
@@ -21,7 +21,7 @@ import {
   type PortableSyncSizeResponse,
   type PortableSyncStatusResponse,
   type PortableSyncValidationResponse,
-} from './types.js';
+} from "./types.js";
 
 export function validatePortableSyncDatabase(dbPath: string): PortableSyncValidationResponse {
   const resolvedPath = path.resolve(dbPath);
@@ -29,16 +29,22 @@ export function validatePortableSyncDatabase(dbPath: string): PortableSyncValida
   try {
     const tableNames = listTables(db);
     const missingTables = PORTABLE_SYNC_TABLES.filter((name) => !tableNames.has(name));
-    const unexpectedExcludedTables = PORTABLE_SYNC_EXCLUDED_TABLES.filter((name) => tableNames.has(name));
-    const metadata = tableNames.has('portable_metadata') ? readPortableMetadata(db) : {};
+    const unexpectedExcludedTables = PORTABLE_SYNC_EXCLUDED_TABLES.filter((name) =>
+      tableNames.has(name),
+    );
+    const metadata = tableNames.has("portable_metadata") ? readPortableMetadata(db) : {};
     const integrity = readIntegrityCheck(db);
     const foreignKeyViolations = readForeignKeyViolations(db);
     const schema = metadata.schema ?? null;
     const errors = [
       ...missingTables.map((name) => `missing required table: ${name}`),
       ...unexpectedExcludedTables.map((name) => `excluded cache table is present: ${name}`),
-      ...(schema === PORTABLE_SYNC_SCHEMA_VERSION ? [] : [`unexpected schema: ${schema ?? 'missing'}`]),
-      ...integrity.filter((message) => message !== 'ok').map((message) => `integrity_check: ${message}`),
+      ...(schema === PORTABLE_SYNC_SCHEMA_VERSION
+        ? []
+        : [`unexpected schema: ${schema ?? "missing"}`]),
+      ...integrity
+        .filter((message) => message !== "ok")
+        .map((message) => `integrity_check: ${message}`),
       ...foreignKeyViolations.map((violation) => `foreign_key_check: ${JSON.stringify(violation)}`),
     ];
 
@@ -51,7 +57,10 @@ export function validatePortableSyncDatabase(dbPath: string): PortableSyncValida
       foreignKeyViolations,
       missingTables,
       unexpectedExcludedTables,
-      tables: PORTABLE_SYNC_TABLES.filter((name) => tableNames.has(name)).map((name) => ({ name, rows: countRows(db, name) })),
+      tables: PORTABLE_SYNC_TABLES.filter((name) => tableNames.has(name)).map((name) => ({
+        name,
+        rows: countRows(db, name),
+      })),
       errors,
     };
   } finally {
@@ -86,18 +95,22 @@ export function portableSyncStatusReport(params: {
   const portableDb = openReadonlyDb(resolvedPath);
   try {
     const portableRepo = portableDb
-      .prepare('select id from repositories where full_name = ?')
+      .prepare("select id from repositories where full_name = ?")
       .get(params.repository.fullName) as { id: number } | undefined;
     const portableRepoId = portableRepo?.id ?? null;
     const liveSnapshot = readRepoSnapshot(params.liveDb, params.repository.id);
-    const portableSnapshot = portableRepoId === null ? emptyRepoSnapshot() : readRepoSnapshot(portableDb, portableRepoId);
+    const portableSnapshot =
+      portableRepoId === null ? emptyRepoSnapshot() : readRepoSnapshot(portableDb, portableRepoId);
 
     const liveThreads = readThreadComparableRows(params.liveDb, params.repository.id);
-    const portableThreads = portableRepoId === null ? [] : readThreadComparableRows(portableDb, portableRepoId);
+    const portableThreads =
+      portableRepoId === null ? [] : readThreadComparableRows(portableDb, portableRepoId);
     const liveClusters = readClusterComparableRows(params.liveDb, params.repository.id);
-    const portableClusters = portableRepoId === null ? [] : readClusterComparableRows(portableDb, portableRepoId);
+    const portableClusters =
+      portableRepoId === null ? [] : readClusterComparableRows(portableDb, portableRepoId);
     const liveMemberships = readMembershipComparableRows(params.liveDb, params.repository.id);
-    const portableMemberships = portableRepoId === null ? [] : readMembershipComparableRows(portableDb, portableRepoId);
+    const portableMemberships =
+      portableRepoId === null ? [] : readMembershipComparableRows(portableDb, portableRepoId);
     const threadDrift = compareComparableRows(liveThreads, portableThreads);
     const clusterDrift = compareComparableRows(liveClusters, portableClusters);
     const membershipDrift = compareComparableRows(liveMemberships, portableMemberships);
@@ -239,7 +252,14 @@ function readThreadComparableRows(db: SqliteDatabase, repoId: number): Comparabl
   }>;
   return rows.map((row) => ({
     key: `${row.kind}:${row.number}`,
-    value: JSON.stringify([row.state, row.title, row.content_hash, row.updated_at_gh, row.closed_at_gh, row.closed_at_local]),
+    value: JSON.stringify([
+      row.state,
+      row.title,
+      row.content_hash,
+      row.updated_at_gh,
+      row.closed_at_gh,
+      row.closed_at_local,
+    ]),
   }));
 }
 
@@ -261,7 +281,13 @@ function readClusterComparableRows(db: SqliteDatabase, repoId: number): Comparab
   }>;
   return rows.map((row) => ({
     key: row.stable_key,
-    value: JSON.stringify([row.stable_slug, row.status, row.cluster_type, row.title, row.closed_at]),
+    value: JSON.stringify([
+      row.stable_slug,
+      row.status,
+      row.cluster_type,
+      row.title,
+      row.closed_at,
+    ]),
   }));
 }
 
@@ -288,11 +314,21 @@ function readMembershipComparableRows(db: SqliteDatabase, repoId: number): Compa
   }>;
   return rows.map((row) => ({
     key: `${row.stable_key}:${row.kind}:${row.number}`,
-    value: JSON.stringify([row.role, row.state, row.score_to_representative, row.added_by, row.removed_by, row.removed_at]),
+    value: JSON.stringify([
+      row.role,
+      row.state,
+      row.score_to_representative,
+      row.added_by,
+      row.removed_by,
+      row.removed_at,
+    ]),
   }));
 }
 
-function compareComparableRows(liveRows: ComparableRow[], portableRows: ComparableRow[]): { liveOnly: number; portableOnly: number; changed: number } {
+function compareComparableRows(
+  liveRows: ComparableRow[],
+  portableRows: ComparableRow[],
+): { liveOnly: number; portableOnly: number; changed: number } {
   const live = new Map(liveRows.map((row) => [row.key, row.value]));
   const portable = new Map(portableRows.map((row) => [row.key, row.value]));
   let liveOnly = 0;

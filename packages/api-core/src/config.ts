@@ -1,16 +1,16 @@
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
-import dotenv from 'dotenv';
+import dotenv from "dotenv";
 
-export type ConfigValueSource = 'env' | 'config' | 'dotenv' | 'default' | 'none';
-export type TuiSortPreference = 'recent' | 'size';
-export type TuiMemberSortPreference = 'kind' | 'recent' | 'number' | 'state' | 'title';
+export type ConfigValueSource = "env" | "config" | "dotenv" | "default" | "none";
+export type TuiSortPreference = "recent" | "size";
+export type TuiMemberSortPreference = "kind" | "recent" | "number" | "state" | "title";
 export type TuiMinClusterSize = 0 | 1 | 2 | 5 | 10 | 20 | 50;
-export type TuiWideLayoutPreference = 'columns' | 'right-stack';
-export type EmbeddingBasis = 'title_original' | 'title_summary' | 'llm_key_summary';
-export type VectorBackend = 'vectorlite';
+export type TuiWideLayoutPreference = "columns" | "right-stack";
+export type EmbeddingBasis = "title_original" | "title_summary" | "llm_key_summary";
+export type VectorBackend = "vectorlite";
 
 export type TuiRepositoryPreference = {
   minClusterSize: TuiMinClusterSize;
@@ -81,13 +81,13 @@ type LayeredValue<T> = {
 };
 
 function pathModuleForPlatform(platform: NodeJS.Platform) {
-  return platform === 'win32' ? path.win32 : path;
+  return platform === "win32" ? path.win32 : path;
 }
 
 function findWorkspaceRoot(start: string): string {
   let current = path.resolve(start);
   while (true) {
-    if (fs.existsSync(path.join(current, 'pnpm-workspace.yaml'))) {
+    if (fs.existsSync(path.join(current, "pnpm-workspace.yaml"))) {
       return current;
     }
     const parent = path.dirname(current);
@@ -109,12 +109,12 @@ export function getConfigDir(options: LoadConfigOptions = {}): string {
   const platform = options.platform ?? process.platform;
   const pathModule = pathModuleForPlatform(platform);
   if (env.XDG_CONFIG_HOME) {
-    return pathModule.resolve(env.XDG_CONFIG_HOME, 'ghcrawl');
+    return pathModule.resolve(env.XDG_CONFIG_HOME, "ghcrawl");
   }
-  if (platform === 'win32' && env.APPDATA) {
-    return pathModule.resolve(env.APPDATA, 'ghcrawl');
+  if (platform === "win32" && env.APPDATA) {
+    return pathModule.resolve(env.APPDATA, "ghcrawl");
   }
-  return pathModule.join(resolveHomeDirectory(env), '.config', 'ghcrawl');
+  return pathModule.join(resolveHomeDirectory(env), ".config", "ghcrawl");
 }
 
 export function getConfigPath(options: LoadConfigOptions = {}): string {
@@ -123,15 +123,15 @@ export function getConfigPath(options: LoadConfigOptions = {}): string {
   }
   const platform = options.platform ?? process.platform;
   const pathModule = pathModuleForPlatform(platform);
-  return pathModule.join(getConfigDir(options), 'config.json');
+  return pathModule.join(getConfigDir(options), "config.json");
 }
 
 function readDotenvFile(workspaceRoot: string): Record<string, string> {
-  const dotenvPath = path.join(workspaceRoot, '.env.local');
+  const dotenvPath = path.join(workspaceRoot, ".env.local");
   if (!fs.existsSync(dotenvPath)) {
     return {};
   }
-  return dotenv.parse(fs.readFileSync(dotenvPath, 'utf8'));
+  return dotenv.parse(fs.readFileSync(dotenvPath, "utf8"));
 }
 
 function pickDefined<T>(...values: Array<LayeredValue<T>>): LayeredValue<T> {
@@ -140,64 +140,88 @@ function pickDefined<T>(...values: Array<LayeredValue<T>>): LayeredValue<T> {
       return entry;
     }
   }
-  return { source: 'none', value: undefined };
+  return { source: "none", value: undefined };
 }
 
 function getString(value: unknown): string | undefined {
-  return typeof value === 'string' && value.trim().length > 0 ? value : undefined;
+  return typeof value === "string" && value.trim().length > 0 ? value : undefined;
 }
 
-function getEnvString(env: NodeJS.ProcessEnv, primary: string, legacy?: string): string | undefined {
+function getEnvString(
+  env: NodeJS.ProcessEnv,
+  primary: string,
+  legacy?: string,
+): string | undefined {
   return getString(env[primary]) ?? (legacy ? getString(env[legacy]) : undefined);
 }
 
-function getDotenvString(values: Record<string, string>, primary: string, legacy?: string): string | undefined {
+function getDotenvString(
+  values: Record<string, string>,
+  primary: string,
+  legacy?: string,
+): string | undefined {
   return getString(values[primary]) ?? (legacy ? getString(values[legacy]) : undefined);
 }
 
 function getNumber(value: unknown): number | undefined {
-  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 function getTuiSortPreference(value: unknown): TuiSortPreference | undefined {
-  return value === 'recent' || value === 'size' ? value : undefined;
+  return value === "recent" || value === "size" ? value : undefined;
 }
 
 function getTuiMemberSortPreference(value: unknown): TuiMemberSortPreference | undefined {
-  return value === 'kind' || value === 'recent' || value === 'number' || value === 'state' || value === 'title' ? value : undefined;
+  return value === "kind" ||
+    value === "recent" ||
+    value === "number" ||
+    value === "state" ||
+    value === "title"
+    ? value
+    : undefined;
 }
 
 function getTuiMinClusterSize(value: unknown): TuiMinClusterSize | undefined {
-  return value === 0 || value === 1 || value === 2 || value === 5 || value === 10 || value === 20 || value === 50 ? value : undefined;
+  return value === 0 ||
+    value === 1 ||
+    value === 2 ||
+    value === 5 ||
+    value === 10 ||
+    value === 20 ||
+    value === 50
+    ? value
+    : undefined;
 }
 
 function getTuiWideLayoutPreference(value: unknown): TuiWideLayoutPreference | undefined {
-  return value === 'columns' || value === 'right-stack' ? value : undefined;
+  return value === "columns" || value === "right-stack" ? value : undefined;
 }
 
 function getEmbeddingBasis(value: unknown): EmbeddingBasis | undefined {
-  return value === 'title_original' || value === 'title_summary' || value === 'llm_key_summary' ? value : undefined;
+  return value === "title_original" || value === "title_summary" || value === "llm_key_summary"
+    ? value
+    : undefined;
 }
 
 function getVectorBackend(value: unknown): VectorBackend | undefined {
-  return value === 'vectorlite' ? value : undefined;
+  return value === "vectorlite" ? value : undefined;
 }
 
 function getTuiPreferences(value: unknown): Record<string, TuiRepositoryPreference> | undefined {
-  if (!value || typeof value !== 'object') {
+  if (!value || typeof value !== "object") {
     return undefined;
   }
 
   const preferences: Record<string, TuiRepositoryPreference> = {};
   for (const [fullName, preference] of Object.entries(value as Record<string, unknown>)) {
-    if (!preference || typeof preference !== 'object') {
+    if (!preference || typeof preference !== "object") {
       continue;
     }
     const record = preference as Record<string, unknown>;
     const minClusterSize = getTuiMinClusterSize(record.minClusterSize);
     const sortMode = getTuiSortPreference(record.sortMode);
-    const memberSortMode = getTuiMemberSortPreference(record.memberSortMode) ?? 'kind';
-    const wideLayout = getTuiWideLayoutPreference(record.wideLayout) ?? 'columns';
+    const memberSortMode = getTuiMemberSortPreference(record.memberSortMode) ?? "kind";
+    const wideLayout = getTuiWideLayoutPreference(record.wideLayout) ?? "columns";
     if (minClusterSize === undefined || sortMode === undefined) {
       continue;
     }
@@ -214,7 +238,7 @@ export function readPersistedConfig(options: LoadConfigOptions = {}): LoadedStor
     return { configDir, configPath, exists: false, data: {} };
   }
 
-  const raw = JSON.parse(fs.readFileSync(configPath, 'utf8')) as Record<string, unknown>;
+  const raw = JSON.parse(fs.readFileSync(configPath, "utf8")) as Record<string, unknown>;
   return {
     configDir,
     configPath,
@@ -238,7 +262,10 @@ export function readPersistedConfig(options: LoadConfigOptions = {}): LoadedStor
   };
 }
 
-export function writePersistedConfig(values: PersistedGitcrawlConfig, options: LoadConfigOptions = {}): { configPath: string } {
+export function writePersistedConfig(
+  values: PersistedGitcrawlConfig,
+  options: LoadConfigOptions = {},
+): { configPath: string } {
   const current = readPersistedConfig(options);
   fs.mkdirSync(current.configDir, { recursive: true });
   const next = {
@@ -254,7 +281,7 @@ function resolveConfiguredPath(configDir: string, value: string): string {
 }
 
 function getWorkspaceDbPath(workspaceRoot: string): string | null {
-  const workspacePath = path.join(workspaceRoot, 'data', 'ghcrawl.db');
+  const workspacePath = path.join(workspaceRoot, "data", "ghcrawl.db");
   return fs.existsSync(workspacePath) ? workspacePath : null;
 }
 
@@ -283,93 +310,166 @@ export function loadConfig(options: LoadConfigOptions = {}): GitcrawlConfig {
   const dotenvValues = readDotenvFile(workspaceRoot);
 
   const githubToken = pickDefined<string>(
-    { source: 'env', value: getString(env.GITHUB_TOKEN) },
-    { source: 'config', value: stored.data.githubToken },
-    { source: 'dotenv', value: getString(dotenvValues.GITHUB_TOKEN) },
+    { source: "env", value: getString(env.GITHUB_TOKEN) },
+    { source: "config", value: stored.data.githubToken },
+    { source: "dotenv", value: getString(dotenvValues.GITHUB_TOKEN) },
   );
   const openaiApiKey = pickDefined<string>(
-    { source: 'env', value: getString(env.OPENAI_API_KEY) },
-    { source: 'config', value: stored.data.openaiApiKey },
-    { source: 'dotenv', value: getString(dotenvValues.OPENAI_API_KEY) },
+    { source: "env", value: getString(env.OPENAI_API_KEY) },
+    { source: "config", value: stored.data.openaiApiKey },
+    { source: "dotenv", value: getString(dotenvValues.OPENAI_API_KEY) },
   );
   const configuredDbPath = pickDefined<string>(
-    { source: 'env', value: getEnvString(env, 'GHCRAWL_DB_PATH', 'GHCRAWL_DB_PATH') },
-    { source: 'config', value: stored.data.dbPath },
-    { source: 'dotenv', value: getDotenvString(dotenvValues, 'GHCRAWL_DB_PATH', 'GHCRAWL_DB_PATH') },
+    { source: "env", value: getEnvString(env, "GHCRAWL_DB_PATH", "GHCRAWL_DB_PATH") },
+    { source: "config", value: stored.data.dbPath },
+    {
+      source: "dotenv",
+      value: getDotenvString(dotenvValues, "GHCRAWL_DB_PATH", "GHCRAWL_DB_PATH"),
+    },
   );
-  const workspaceDbPath = configuredDbPath.value === undefined ? getWorkspaceDbPath(workspaceRoot) : null;
+  const workspaceDbPath =
+    configuredDbPath.value === undefined ? getWorkspaceDbPath(workspaceRoot) : null;
   const dbPathValue =
     workspaceDbPath !== null
-      ? { source: 'default' as const, value: workspaceDbPath }
-      : pickDefined<string>(configuredDbPath, { source: 'default', value: 'ghcrawl.db' });
+      ? { source: "default" as const, value: workspaceDbPath }
+      : pickDefined<string>(configuredDbPath, { source: "default", value: "ghcrawl.db" });
   const apiPortValue = pickDefined<string | number>(
-    { source: 'env', value: getEnvString(env, 'GHCRAWL_API_PORT', 'GHCRAWL_API_PORT') },
-    { source: 'config', value: stored.data.apiPort },
-    { source: 'dotenv', value: getDotenvString(dotenvValues, 'GHCRAWL_API_PORT', 'GHCRAWL_API_PORT') },
-    { source: 'default', value: '5179' },
+    { source: "env", value: getEnvString(env, "GHCRAWL_API_PORT", "GHCRAWL_API_PORT") },
+    { source: "config", value: stored.data.apiPort },
+    {
+      source: "dotenv",
+      value: getDotenvString(dotenvValues, "GHCRAWL_API_PORT", "GHCRAWL_API_PORT"),
+    },
+    { source: "default", value: "5179" },
   );
   const embedBatchSizeValue = pickDefined<string | number>(
-    { source: 'env', value: getEnvString(env, 'GHCRAWL_EMBED_BATCH_SIZE', 'GHCRAWL_EMBED_BATCH_SIZE') },
-    { source: 'config', value: stored.data.embedBatchSize },
-    { source: 'dotenv', value: getDotenvString(dotenvValues, 'GHCRAWL_EMBED_BATCH_SIZE', 'GHCRAWL_EMBED_BATCH_SIZE') },
-    { source: 'default', value: '8' },
+    {
+      source: "env",
+      value: getEnvString(env, "GHCRAWL_EMBED_BATCH_SIZE", "GHCRAWL_EMBED_BATCH_SIZE"),
+    },
+    { source: "config", value: stored.data.embedBatchSize },
+    {
+      source: "dotenv",
+      value: getDotenvString(dotenvValues, "GHCRAWL_EMBED_BATCH_SIZE", "GHCRAWL_EMBED_BATCH_SIZE"),
+    },
+    { source: "default", value: "8" },
   );
   const embedConcurrencyValue = pickDefined<string | number>(
-    { source: 'env', value: getEnvString(env, 'GHCRAWL_EMBED_CONCURRENCY', 'GHCRAWL_EMBED_CONCURRENCY') },
-    { source: 'config', value: stored.data.embedConcurrency },
-    { source: 'dotenv', value: getDotenvString(dotenvValues, 'GHCRAWL_EMBED_CONCURRENCY', 'GHCRAWL_EMBED_CONCURRENCY') },
-    { source: 'default', value: '10' },
+    {
+      source: "env",
+      value: getEnvString(env, "GHCRAWL_EMBED_CONCURRENCY", "GHCRAWL_EMBED_CONCURRENCY"),
+    },
+    { source: "config", value: stored.data.embedConcurrency },
+    {
+      source: "dotenv",
+      value: getDotenvString(
+        dotenvValues,
+        "GHCRAWL_EMBED_CONCURRENCY",
+        "GHCRAWL_EMBED_CONCURRENCY",
+      ),
+    },
+    { source: "default", value: "10" },
   );
   const embedMaxUnreadValue = pickDefined<string | number>(
-    { source: 'env', value: getEnvString(env, 'GHCRAWL_EMBED_MAX_UNREAD', 'GHCRAWL_EMBED_MAX_UNREAD') },
-    { source: 'config', value: stored.data.embedMaxUnread },
-    { source: 'dotenv', value: getDotenvString(dotenvValues, 'GHCRAWL_EMBED_MAX_UNREAD', 'GHCRAWL_EMBED_MAX_UNREAD') },
-    { source: 'default', value: '20' },
+    {
+      source: "env",
+      value: getEnvString(env, "GHCRAWL_EMBED_MAX_UNREAD", "GHCRAWL_EMBED_MAX_UNREAD"),
+    },
+    { source: "config", value: stored.data.embedMaxUnread },
+    {
+      source: "dotenv",
+      value: getDotenvString(dotenvValues, "GHCRAWL_EMBED_MAX_UNREAD", "GHCRAWL_EMBED_MAX_UNREAD"),
+    },
+    { source: "default", value: "20" },
   );
   const summaryModel = pickDefined<string>(
-    { source: 'env', value: getEnvString(env, 'GHCRAWL_SUMMARY_MODEL', 'GHCRAWL_SUMMARY_MODEL') },
-    { source: 'config', value: stored.data.summaryModel },
-    { source: 'dotenv', value: getDotenvString(dotenvValues, 'GHCRAWL_SUMMARY_MODEL', 'GHCRAWL_SUMMARY_MODEL') },
-    { source: 'default', value: 'gpt-5.4' },
+    { source: "env", value: getEnvString(env, "GHCRAWL_SUMMARY_MODEL", "GHCRAWL_SUMMARY_MODEL") },
+    { source: "config", value: stored.data.summaryModel },
+    {
+      source: "dotenv",
+      value: getDotenvString(dotenvValues, "GHCRAWL_SUMMARY_MODEL", "GHCRAWL_SUMMARY_MODEL"),
+    },
+    { source: "default", value: "gpt-5.4" },
   );
   const embedModel = pickDefined<string>(
-    { source: 'env', value: getEnvString(env, 'GHCRAWL_EMBED_MODEL', 'GHCRAWL_EMBED_MODEL') },
-    { source: 'config', value: stored.data.embedModel },
-    { source: 'dotenv', value: getDotenvString(dotenvValues, 'GHCRAWL_EMBED_MODEL', 'GHCRAWL_EMBED_MODEL') },
-    { source: 'default', value: 'text-embedding-3-large' },
+    { source: "env", value: getEnvString(env, "GHCRAWL_EMBED_MODEL", "GHCRAWL_EMBED_MODEL") },
+    { source: "config", value: stored.data.embedModel },
+    {
+      source: "dotenv",
+      value: getDotenvString(dotenvValues, "GHCRAWL_EMBED_MODEL", "GHCRAWL_EMBED_MODEL"),
+    },
+    { source: "default", value: "text-embedding-3-large" },
   );
   const embeddingBasis = pickDefined<EmbeddingBasis>(
-    { source: 'env', value: getEmbeddingBasis(getEnvString(env, 'GHCRAWL_EMBEDDING_BASIS', 'GHCRAWL_EMBEDDING_BASIS')) },
-    { source: 'config', value: stored.data.embeddingBasis },
-    { source: 'dotenv', value: getEmbeddingBasis(getDotenvString(dotenvValues, 'GHCRAWL_EMBEDDING_BASIS', 'GHCRAWL_EMBEDDING_BASIS')) },
-    { source: 'default', value: 'title_original' },
+    {
+      source: "env",
+      value: getEmbeddingBasis(
+        getEnvString(env, "GHCRAWL_EMBEDDING_BASIS", "GHCRAWL_EMBEDDING_BASIS"),
+      ),
+    },
+    { source: "config", value: stored.data.embeddingBasis },
+    {
+      source: "dotenv",
+      value: getEmbeddingBasis(
+        getDotenvString(dotenvValues, "GHCRAWL_EMBEDDING_BASIS", "GHCRAWL_EMBEDDING_BASIS"),
+      ),
+    },
+    { source: "default", value: "title_original" },
   );
   const vectorBackend = pickDefined<VectorBackend>(
-    { source: 'env', value: getVectorBackend(getEnvString(env, 'GHCRAWL_VECTOR_BACKEND', 'GHCRAWL_VECTOR_BACKEND')) },
-    { source: 'config', value: stored.data.vectorBackend },
-    { source: 'dotenv', value: getVectorBackend(getDotenvString(dotenvValues, 'GHCRAWL_VECTOR_BACKEND', 'GHCRAWL_VECTOR_BACKEND')) },
-    { source: 'default', value: 'vectorlite' },
+    {
+      source: "env",
+      value: getVectorBackend(
+        getEnvString(env, "GHCRAWL_VECTOR_BACKEND", "GHCRAWL_VECTOR_BACKEND"),
+      ),
+    },
+    { source: "config", value: stored.data.vectorBackend },
+    {
+      source: "dotenv",
+      value: getVectorBackend(
+        getDotenvString(dotenvValues, "GHCRAWL_VECTOR_BACKEND", "GHCRAWL_VECTOR_BACKEND"),
+      ),
+    },
+    { source: "default", value: "vectorlite" },
   );
   const openSearchUrl = pickDefined<string>(
-    { source: 'env', value: getEnvString(env, 'GHCRAWL_OPENSEARCH_URL', 'GHCRAWL_OPENSEARCH_URL') },
-    { source: 'config', value: stored.data.openSearchUrl },
-    { source: 'dotenv', value: getDotenvString(dotenvValues, 'GHCRAWL_OPENSEARCH_URL', 'GHCRAWL_OPENSEARCH_URL') },
+    { source: "env", value: getEnvString(env, "GHCRAWL_OPENSEARCH_URL", "GHCRAWL_OPENSEARCH_URL") },
+    { source: "config", value: stored.data.openSearchUrl },
+    {
+      source: "dotenv",
+      value: getDotenvString(dotenvValues, "GHCRAWL_OPENSEARCH_URL", "GHCRAWL_OPENSEARCH_URL"),
+    },
   );
   const openSearchIndex = pickDefined<string>(
-    { source: 'env', value: getEnvString(env, 'GHCRAWL_OPENSEARCH_INDEX', 'GHCRAWL_OPENSEARCH_INDEX') },
-    { source: 'config', value: stored.data.openSearchIndex },
-    { source: 'dotenv', value: getDotenvString(dotenvValues, 'GHCRAWL_OPENSEARCH_INDEX', 'GHCRAWL_OPENSEARCH_INDEX') },
-    { source: 'default', value: 'ghcrawl-threads' },
+    {
+      source: "env",
+      value: getEnvString(env, "GHCRAWL_OPENSEARCH_INDEX", "GHCRAWL_OPENSEARCH_INDEX"),
+    },
+    { source: "config", value: stored.data.openSearchIndex },
+    {
+      source: "dotenv",
+      value: getDotenvString(dotenvValues, "GHCRAWL_OPENSEARCH_INDEX", "GHCRAWL_OPENSEARCH_INDEX"),
+    },
+    { source: "default", value: "ghcrawl-threads" },
   );
 
   const dbPath =
     dbPathValue.value && path.isAbsolute(dbPathValue.value)
       ? dbPathValue.value
-      : resolveConfiguredPath(stored.configDir, dbPathValue.value ?? 'ghcrawl.db');
-  const apiPort = parseIntegerSetting('GHCRAWL_API_PORT', String(apiPortValue.value ?? '5179'));
-  const embedBatchSize = parseIntegerSetting('GHCRAWL_EMBED_BATCH_SIZE', String(embedBatchSizeValue.value ?? '8'));
-  const embedConcurrency = parseIntegerSetting('GHCRAWL_EMBED_CONCURRENCY', String(embedConcurrencyValue.value ?? '10'));
-  const embedMaxUnread = parseIntegerSetting('GHCRAWL_EMBED_MAX_UNREAD', String(embedMaxUnreadValue.value ?? '20'));
+      : resolveConfiguredPath(stored.configDir, dbPathValue.value ?? "ghcrawl.db");
+  const apiPort = parseIntegerSetting("GHCRAWL_API_PORT", String(apiPortValue.value ?? "5179"));
+  const embedBatchSize = parseIntegerSetting(
+    "GHCRAWL_EMBED_BATCH_SIZE",
+    String(embedBatchSizeValue.value ?? "8"),
+  );
+  const embedConcurrency = parseIntegerSetting(
+    "GHCRAWL_EMBED_CONCURRENCY",
+    String(embedConcurrencyValue.value ?? "10"),
+  );
+  const embedMaxUnread = parseIntegerSetting(
+    "GHCRAWL_EMBED_MAX_UNREAD",
+    String(embedMaxUnreadValue.value ?? "20"),
+  );
 
   return {
     workspaceRoot,
@@ -383,15 +483,15 @@ export function loadConfig(options: LoadConfigOptions = {}): GitcrawlConfig {
     githubTokenSource: githubToken.source,
     openaiApiKey: openaiApiKey.value,
     openaiApiKeySource: openaiApiKey.source,
-    summaryModel: summaryModel.value ?? 'gpt-5.4',
-    embedModel: embedModel.value ?? 'text-embedding-3-large',
-    embeddingBasis: embeddingBasis.value ?? 'title_original',
-    vectorBackend: vectorBackend.value ?? 'vectorlite',
+    summaryModel: summaryModel.value ?? "gpt-5.4",
+    embedModel: embedModel.value ?? "text-embedding-3-large",
+    embeddingBasis: embeddingBasis.value ?? "title_original",
+    vectorBackend: vectorBackend.value ?? "vectorlite",
     embedBatchSize,
     embedConcurrency,
     embedMaxUnread,
     openSearchUrl: openSearchUrl.value,
-    openSearchIndex: openSearchIndex.value ?? 'ghcrawl-threads',
+    openSearchIndex: openSearchIndex.value ?? "ghcrawl-threads",
     tuiPreferences: stored.data.tuiPreferences ?? {},
   };
 }
@@ -399,11 +499,22 @@ export function loadConfig(options: LoadConfigOptions = {}): GitcrawlConfig {
 export function ensureRuntimeDirs(config: GitcrawlConfig): void {
   fs.mkdirSync(config.configDir, { recursive: true });
   fs.mkdirSync(path.dirname(config.dbPath), { recursive: true });
-  fs.mkdirSync(path.join(config.configDir, 'vectors'), { recursive: true });
+  fs.mkdirSync(path.join(config.configDir, "vectors"), { recursive: true });
 }
 
-export function getTuiRepositoryPreference(config: GitcrawlConfig, owner: string, repo: string): TuiRepositoryPreference {
-  return config.tuiPreferences[`${owner}/${repo}`] ?? { minClusterSize: 5, sortMode: 'size', memberSortMode: 'kind', wideLayout: 'columns' };
+export function getTuiRepositoryPreference(
+  config: GitcrawlConfig,
+  owner: string,
+  repo: string,
+): TuiRepositoryPreference {
+  return (
+    config.tuiPreferences[`${owner}/${repo}`] ?? {
+      minClusterSize: 5,
+      sortMode: "size",
+      memberSortMode: "kind",
+      wideLayout: "columns",
+    }
+  );
 }
 
 export function writeTuiRepositoryPreference(
@@ -424,14 +535,14 @@ export function writeTuiRepositoryPreference(
     [fullName]: {
       minClusterSize: params.minClusterSize,
       sortMode: params.sortMode,
-      memberSortMode: params.memberSortMode ?? previousPreference?.memberSortMode ?? 'kind',
+      memberSortMode: params.memberSortMode ?? previousPreference?.memberSortMode ?? "kind",
       wideLayout: params.wideLayout,
     },
   };
   config.tuiPreferences = nextPreferences;
   const next = fs.existsSync(config.configPath)
     ? ({
-        ...(JSON.parse(fs.readFileSync(config.configPath, 'utf8')) as PersistedGitcrawlConfig),
+        ...(JSON.parse(fs.readFileSync(config.configPath, "utf8")) as PersistedGitcrawlConfig),
         tuiPreferences: nextPreferences,
       } satisfies PersistedGitcrawlConfig)
     : ({
@@ -444,14 +555,18 @@ export function writeTuiRepositoryPreference(
 
 export function requireGithubToken(config: GitcrawlConfig): string {
   if (!config.githubToken) {
-    throw new Error(`Missing GitHub token. Set GITHUB_TOKEN or add githubToken to ${config.configPath}.`);
+    throw new Error(
+      `Missing GitHub token. Set GITHUB_TOKEN or add githubToken to ${config.configPath}.`,
+    );
   }
   return config.githubToken;
 }
 
 export function requireOpenAiKey(config: GitcrawlConfig): string {
   if (!config.openaiApiKey) {
-    throw new Error(`Missing OpenAI API key. Set OPENAI_API_KEY or add openaiApiKey to ${config.configPath}.`);
+    throw new Error(
+      `Missing OpenAI API key. Set OPENAI_API_KEY or add openaiApiKey to ${config.configPath}.`,
+    );
   }
   return config.openaiApiKey;
 }

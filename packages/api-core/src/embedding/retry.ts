@@ -4,10 +4,10 @@ import {
   EMBED_CONTEXT_RETRY_FALLBACK_SHRINK_RATIO,
   EMBED_CONTEXT_RETRY_TARGET_BUFFER_RATIO,
   EMBED_TRUNCATION_MARKER,
-} from '../service-constants.js';
-import type { ActiveVectorTask } from '../service-types.js';
-import { stableContentHash } from '../service-utils.js';
-import { estimateEmbeddingTokens } from './tasks.js';
+} from "../service-constants.js";
+import type { ActiveVectorTask } from "../service-types.js";
+import { stableContentHash } from "../service-utils.js";
+import { estimateEmbeddingTokens } from "./tasks.js";
 
 export type EmbeddingContextError = { limitTokens: number | null; requestedTokens: number | null };
 
@@ -72,12 +72,16 @@ function projectEmbeddingRetryLength(
   const requestedTokens = context?.requestedTokens ?? null;
   if (limitTokens && requestedTokens && requestedTokens > limitTokens) {
     const targetRatio = (limitTokens * EMBED_CONTEXT_RETRY_TARGET_BUFFER_RATIO) / requestedTokens;
-    return Math.floor(textLength * Math.max(0.1, Math.min(targetRatio, EMBED_CONTEXT_RETRY_FALLBACK_SHRINK_RATIO)));
+    return Math.floor(
+      textLength * Math.max(0.1, Math.min(targetRatio, EMBED_CONTEXT_RETRY_FALLBACK_SHRINK_RATIO)),
+    );
   }
 
   if (limitTokens && estimatedTokens > limitTokens) {
     const targetRatio = (limitTokens * EMBED_CONTEXT_RETRY_TARGET_BUFFER_RATIO) / estimatedTokens;
-    return Math.floor(textLength * Math.max(0.1, Math.min(targetRatio, EMBED_CONTEXT_RETRY_FALLBACK_SHRINK_RATIO)));
+    return Math.floor(
+      textLength * Math.max(0.1, Math.min(targetRatio, EMBED_CONTEXT_RETRY_FALLBACK_SHRINK_RATIO)),
+    );
   }
 
   return Math.floor(textLength * EMBED_CONTEXT_RETRY_FALLBACK_SHRINK_RATIO);

@@ -1,17 +1,17 @@
-import test from 'node:test';
-import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
-import { VectorliteStore } from './vectorlite-store.js';
+import { VectorliteStore } from "./vectorlite-store.js";
 
 function makeStorePath(): string {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ghcrawl-vector-store-test-'));
-  return path.join(dir, 'repo.sqlite');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ghcrawl-vector-store-test-"));
+  return path.join(dir, "repo.sqlite");
 }
 
-test('vectorlite store persists vectors across reopen', () => {
+test("vectorlite store persists vectors across reopen", () => {
   const storePath = makeStorePath();
   const vector = [1, 0, 0, 0];
   const neighbor = [0.9, 0.1, 0, 0];
@@ -38,14 +38,17 @@ test('vectorlite store persists vectors across reopen', () => {
       excludeThreadId: 1,
       candidateK: 3,
     });
-    assert.deepEqual(results.map((row) => row.threadId), [2, 3]);
+    assert.deepEqual(
+      results.map((row) => row.threadId),
+      [2, 3],
+    );
     assert.ok(results[0]!.score > results[1]!.score);
   } finally {
     reopened.close();
   }
 });
 
-test('vectorlite store update and delete affect later queries', () => {
+test("vectorlite store update and delete affect later queries", () => {
   const storePath = makeStorePath();
   const store = new VectorliteStore();
   try {
@@ -59,7 +62,10 @@ test('vectorlite store update and delete affect later queries', () => {
       excludeThreadId: 1,
       candidateK: 2,
     });
-    assert.deepEqual(results.map((row) => row.threadId), [2]);
+    assert.deepEqual(
+      results.map((row) => row.threadId),
+      [2],
+    );
 
     store.upsertVector({ storePath, dimensions: 3, threadId: 2, vector: [0, 1, 0] });
     results = store.queryNearest({

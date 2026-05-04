@@ -1,4 +1,4 @@
-import blessed from 'neo-blessed';
+import blessed from "neo-blessed";
 
 import type {
   GHCrawlService,
@@ -8,8 +8,8 @@ import type {
   TuiSnapshot,
   TuiThreadDetail,
   TuiWideLayoutPreference,
-} from '@ghcrawl/api-core';
-import { getTuiRepositoryPreference, writeTuiRepositoryPreference } from '@ghcrawl/api-core';
+} from "@ghcrawl/api-core";
+import { getTuiRepositoryPreference, writeTuiRepositoryPreference } from "@ghcrawl/api-core";
 import {
   buildMemberRows,
   cycleMemberSortMode,
@@ -25,8 +25,8 @@ import {
   type TuiFocusPane,
   type TuiMemberSortMode,
   type TuiMinSizeFilter,
-} from './state.js';
-import { computeTuiLayout } from './layout.js';
+} from "./state.js";
+import { computeTuiLayout } from "./layout.js";
 import {
   buildThreadContextMenuItems,
   escapeBlessedText,
@@ -39,33 +39,30 @@ import {
   getThreadReferenceLinks,
   renderDetailPane,
   type DetailMode,
-} from './detail-render.js';
+} from "./detail-render.js";
 import {
-  formatClusterDateColumn,
   formatClusterListHeader,
   formatClusterListLabel,
-  formatClusterShortName,
   resolveClusterHeaderSortFromClick,
   splitClusterDisplayTitle,
-} from './cluster-render.js';
-import { promptHelp } from './help.js';
-import { copyTextToClipboard, openUrl } from './platform.js';
+} from "./cluster-render.js";
+import { promptHelp } from "./help.js";
+import { copyTextToClipboard, openUrl } from "./platform.js";
 import {
   promptRepositoryChoice,
   promptRepositoryInput,
   type RepositoryTarget,
-} from './repository-picker.js';
+} from "./repository-picker.js";
 import {
   applyRect,
   createWidgets,
   getListItemIndexFromMouse,
   updatePaneStyles,
   type MouseEventArg,
-  type Widgets,
-} from './widgets.js';
+} from "./widgets.js";
 
-export { resolveBlessedTerminal } from './widgets.js';
-export { buildHelpContent } from './help.js';
+export { resolveBlessedTerminal } from "./widgets.js";
+export { buildHelpContent } from "./help.js";
 
 type StartTuiParams = {
   service: GHCrawlService;
@@ -84,35 +81,39 @@ type ContextMenuItem = {
 };
 
 const ACTIVITY_LOG_LIMIT = 200;
-const FOOTER_LOG_LINES = 1;
 const CLUSTER_LIST_HEADER_INDEX = 0;
 const CLUSTER_LIST_FIRST_ITEM_INDEX = 1;
 const TUI_AUTO_REFRESH_INTERVAL_MS = 15_000;
 
 export async function startTui(params: StartTuiParams): Promise<void> {
-  const selectedRepository = params.owner && params.repo ? { owner: params.owner, repo: params.repo } : null;
-  let currentRepository = selectedRepository ?? { owner: '', repo: '' };
+  const selectedRepository =
+    params.owner && params.repo ? { owner: params.owner, repo: params.repo } : null;
+  let currentRepository = selectedRepository ?? { owner: "", repo: "" };
   const widgets = createWidgets(currentRepository.owner, currentRepository.repo);
 
-  let focusPane: TuiFocusPane = 'clusters';
+  let focusPane: TuiFocusPane = "clusters";
   let isRendering = false;
   const initialPreference = selectedRepository
-    ? getTuiRepositoryPreference(params.service.config, currentRepository.owner, currentRepository.repo)
+    ? getTuiRepositoryPreference(
+        params.service.config,
+        currentRepository.owner,
+        currentRepository.repo,
+      )
     : {
-        sortMode: 'size' as TuiClusterSortMode,
-        memberSortMode: 'kind' as TuiMemberSortMode,
+        sortMode: "size" as TuiClusterSortMode,
+        memberSortMode: "kind" as TuiMemberSortMode,
         minClusterSize: 5 as TuiMinSizeFilter,
-        wideLayout: 'columns' as TuiWideLayoutPreference,
+        wideLayout: "columns" as TuiWideLayoutPreference,
       };
   let sortMode: TuiClusterSortMode = initialPreference.sortMode;
   let memberSortMode: TuiMemberSortMode = initialPreference.memberSortMode;
-  let detailMode: DetailMode = 'full';
+  let detailMode: DetailMode = "full";
   let minSize: TuiMinSizeFilter = initialPreference.minClusterSize;
   let wideLayout: TuiWideLayoutPreference = initialPreference.wideLayout;
   let showClosed = true;
-  let search = '';
+  let search = "";
   let snapshot: TuiSnapshot | null = null;
-  let clusterItems: string[] = ['Pick a repository with p'];
+  let clusterItems: string[] = ["Pick a repository with p"];
   let clusterIndexById = new Map<number, number>();
   let clusterDetail: TuiClusterDetail | null = null;
   let threadDetail: TuiThreadDetail | null = null;
@@ -120,7 +121,7 @@ export async function startTui(params: StartTuiParams): Promise<void> {
   let selectedMemberThreadId: number | null = null;
   let memberRows: MemberListRow[] = [];
   let memberIndex = -1;
-  let status = 'Ready';
+  let status = "Ready";
   const activityLines: string[] = [];
   const clusterDetailCache = new Map<number, TuiClusterDetail>();
   const threadDetailCache = new Map<number, ThreadDetailCacheEntry>();
@@ -135,7 +136,8 @@ export async function startTui(params: StartTuiParams): Promise<void> {
     threadDetailCache.clear();
   };
 
-  const formatTuiError = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+  const formatTuiError = (error: unknown): string =>
+    error instanceof Error ? error.message : String(error);
 
   const clearModal = (): void => {
     modalOpen = false;
@@ -158,7 +160,7 @@ export async function startTui(params: StartTuiParams): Promise<void> {
 
   const rebuildClusterItems = (): void => {
     if (!snapshot) {
-      clusterItems = ['Pick a repository with p'];
+      clusterItems = ["Pick a repository with p"];
       clusterIndexById = new Map();
       widgets.clusters.setItems(clusterItems);
       return;
@@ -166,11 +168,15 @@ export async function startTui(params: StartTuiParams): Promise<void> {
 
     clusterIndexById = new Map();
     clusterItems = [`{bold}${formatClusterListHeader(sortMode)}{/bold}`];
-    clusterItems.push(...snapshot.clusters.map((cluster, index) => {
-      clusterIndexById.set(cluster.clusterId, index + CLUSTER_LIST_FIRST_ITEM_INDEX);
-      const label = formatClusterListLabel(cluster);
-      return cluster.isClosed ? `{gray-fg}${escapeBlessedText(label)}{/gray-fg}` : `{green-fg}${escapeBlessedText(label)}{/green-fg}`;
-    }));
+    clusterItems.push(
+      ...snapshot.clusters.map((cluster, index) => {
+        clusterIndexById.set(cluster.clusterId, index + CLUSTER_LIST_FIRST_ITEM_INDEX);
+        const label = formatClusterListLabel(cluster);
+        return cluster.isClosed
+          ? `{gray-fg}${escapeBlessedText(label)}{/gray-fg}`
+          : `{green-fg}${escapeBlessedText(label)}{/green-fg}`;
+      }),
+    );
     widgets.clusters.setItems(clusterItems);
   };
 
@@ -212,12 +218,15 @@ export async function startTui(params: StartTuiParams): Promise<void> {
   };
 
   const loadSelectedThreadDetail = (includeNeighbors: boolean): void => {
-    threadDetail = selectedMemberThreadId !== null ? loadThreadDetail(selectedMemberThreadId, includeNeighbors) : null;
+    threadDetail =
+      selectedMemberThreadId !== null
+        ? loadThreadDetail(selectedMemberThreadId, includeNeighbors)
+        : null;
   };
 
   const jumpToThread = (threadId: number, clusterId: number | null | undefined): boolean => {
     if (clusterId == null) {
-      status = 'Selected thread is not assigned to a cluster';
+      status = "Selected thread is not assigned to a cluster";
       render();
       return false;
     }
@@ -230,17 +239,20 @@ export async function startTui(params: StartTuiParams): Promise<void> {
       selectedClusterId = cluster.clusterId;
       try {
         clusterDetail = loadClusterDetail(cluster.clusterId);
-      } catch (error) {
+      } catch {
         status = `Cluster ${cluster.clusterId} changed; refreshing view`;
         refreshAll(true);
         return false;
       }
-      memberRows = buildMemberRows(clusterDetail, { includeClosedMembers: showClosed, sortMode: memberSortMode });
+      memberRows = buildMemberRows(clusterDetail, {
+        includeClosedMembers: showClosed,
+        sortMode: memberSortMode,
+      });
       selectedMemberThreadId = threadId;
       memberIndex = findSelectableIndex(memberRows, selectedMemberThreadId);
       loadSelectedThreadDetail(false);
       resetDetailScroll();
-      status = `Cluster ${cluster.clusterId} / #${threadDetail?.thread.number ?? '?'}`;
+      status = `Cluster ${cluster.clusterId} / #${threadDetail?.thread.number ?? "?"}`;
       render();
       return true;
     };
@@ -251,7 +263,7 @@ export async function startTui(params: StartTuiParams): Promise<void> {
 
     if (minSize !== 0 || search) {
       minSize = 0;
-      search = '';
+      search = "";
       refreshAll(false);
       return selectFromSnapshot();
     }
@@ -272,13 +284,16 @@ export async function startTui(params: StartTuiParams): Promise<void> {
       sort: sortMode,
       search,
       includeClosedClusters: showClosed,
-      embeddingStatsMode: 'pipeline',
+      embeddingStatsMode: "pipeline",
     });
     lastRefreshState = params.service.getTuiRefreshState({
       owner: currentRepository.owner,
       repo: currentRepository.repo,
     });
-    selectedClusterId = preserveSelectedId(snapshot.clusters.map((cluster) => cluster.clusterId), previousClusterId);
+    selectedClusterId = preserveSelectedId(
+      snapshot.clusters.map((cluster) => cluster.clusterId),
+      previousClusterId,
+    );
     rebuildClusterItems();
 
     if (selectedClusterId !== null) {
@@ -292,16 +307,22 @@ export async function startTui(params: StartTuiParams): Promise<void> {
           sort: sortMode,
           search,
           includeClosedClusters: showClosed,
-          embeddingStatsMode: 'pipeline',
+          embeddingStatsMode: "pipeline",
         });
         rebuildClusterItems();
-        selectedClusterId = preserveSelectedId(snapshot.clusters.map((cluster) => cluster.clusterId), null);
+        selectedClusterId = preserveSelectedId(
+          snapshot.clusters.map((cluster) => cluster.clusterId),
+          null,
+        );
         clusterDetail = selectedClusterId !== null ? loadClusterDetail(selectedClusterId) : null;
       }
     }
 
     if (selectedClusterId !== null && clusterDetail) {
-      memberRows = buildMemberRows(clusterDetail, { includeClosedMembers: showClosed, sortMode: memberSortMode });
+      memberRows = buildMemberRows(clusterDetail, {
+        includeClosedMembers: showClosed,
+        sortMode: memberSortMode,
+      });
       selectedMemberThreadId = preserveSelectedId(
         memberRows.filter((row) => row.selectable).map((row) => row.threadId),
         previousMemberId,
@@ -329,9 +350,12 @@ export async function startTui(params: StartTuiParams): Promise<void> {
         owner: currentRepository.owner,
         repo: currentRepository.repo,
       });
-      if (lastRefreshState && formatTuiRefreshStateKey(nextState) !== formatTuiRefreshStateKey(lastRefreshState)) {
+      if (
+        lastRefreshState &&
+        formatTuiRefreshStateKey(nextState) !== formatTuiRefreshStateKey(lastRefreshState)
+      ) {
         refreshAll(true);
-        status = 'External DB update detected; refreshed';
+        status = "External DB update detected; refreshed";
         render();
         return;
       }
@@ -344,12 +368,12 @@ export async function startTui(params: StartTuiParams): Promise<void> {
 
   const updateFocus = (nextFocus: TuiFocusPane): void => {
     focusPane = nextFocus;
-    if (focusPane === 'detail' && selectedMemberThreadId !== null) {
+    if (focusPane === "detail" && selectedMemberThreadId !== null) {
       loadSelectedThreadDetail(true);
     }
-    if (focusPane === 'clusters') widgets.clusters.focus();
-    if (focusPane === 'members') widgets.members.focus();
-    if (focusPane === 'detail') widgets.detail.focus();
+    if (focusPane === "clusters") widgets.clusters.focus();
+    if (focusPane === "members") widgets.members.focus();
+    if (focusPane === "detail") widgets.detail.focus();
     render();
   };
 
@@ -363,8 +387,15 @@ export async function startTui(params: StartTuiParams): Promise<void> {
     applyRect(widgets.detail, layout.detail);
     applyRect(widgets.footer, layout.footer);
 
-    widgets.screen.title = currentRepository.owner && currentRepository.repo ? `ghcrawl ${currentRepository.owner}/${currentRepository.repo}` : 'ghcrawl';
-    const repoLabel = snapshot?.repository.fullName ?? (currentRepository.owner && currentRepository.repo ? `${currentRepository.owner}/${currentRepository.repo}` : 'ghcrawl');
+    widgets.screen.title =
+      currentRepository.owner && currentRepository.repo
+        ? `ghcrawl ${currentRepository.owner}/${currentRepository.repo}`
+        : "ghcrawl";
+    const repoLabel =
+      snapshot?.repository.fullName ??
+      (currentRepository.owner && currentRepository.repo
+        ? `${currentRepository.owner}/${currentRepository.repo}`
+        : "ghcrawl");
     const ghStatus = formatRelativeTime(snapshot?.stats.lastGithubReconciliationAt ?? null);
     const embedAge = formatRelativeTime(snapshot?.stats.lastEmbedRefreshAt ?? null);
     const embedStatus =
@@ -374,18 +405,22 @@ export async function startTui(params: StartTuiParams): Promise<void> {
     const clusterStatus =
       snapshot?.stats.latestClusterRunId != null
         ? `#${snapshot.stats.latestClusterRunId} ${formatRelativeTime(snapshot.stats.latestClusterRunFinishedAt ?? null)}`
-        : 'never';
+        : "never";
     widgets.header.setContent(
-      `{bold}${repoLabel}{/bold}  {cyan-fg}${snapshot?.stats.openPullRequestCount ?? 0} PR{/cyan-fg}  {green-fg}${snapshot?.stats.openIssueCount ?? 0} issues{/green-fg}  GH:${ghStatus}  Emb:${embedStatus}  Cl:${clusterStatus}  sort:${sortMode}  members:${memberSortMode}  min:${minSize === 0 ? 'all' : `${minSize}+`}  layout:${wideLayout === 'columns' ? 'cols' : 'stack'}  closed:${showClosed ? 'shown' : 'hidden'}  filter:${search || 'none'}`,
+      `{bold}${repoLabel}{/bold}  {cyan-fg}${snapshot?.stats.openPullRequestCount ?? 0} PR{/cyan-fg}  {green-fg}${snapshot?.stats.openIssueCount ?? 0} issues{/green-fg}  GH:${ghStatus}  Emb:${embedStatus}  Cl:${clusterStatus}  sort:${sortMode}  members:${memberSortMode}  min:${minSize === 0 ? "all" : `${minSize}+`}  layout:${wideLayout === "columns" ? "cols" : "stack"}  closed:${showClosed ? "shown" : "hidden"}  filter:${search || "none"}`,
     );
 
     isRendering = true;
     try {
       const clusterIndex =
-        snapshot && selectedClusterId !== null ? Math.max(CLUSTER_LIST_FIRST_ITEM_INDEX, clusterIndexById.get(selectedClusterId) ?? -1) : CLUSTER_LIST_HEADER_INDEX;
+        snapshot && selectedClusterId !== null
+          ? Math.max(CLUSTER_LIST_FIRST_ITEM_INDEX, clusterIndexById.get(selectedClusterId) ?? -1)
+          : CLUSTER_LIST_HEADER_INDEX;
       widgets.clusters.select(clusterIndex);
 
-      widgets.members.setItems(memberRows.length > 0 ? memberRows.map((row) => row.label) : ['No members']);
+      widgets.members.setItems(
+        memberRows.length > 0 ? memberRows.map((row) => row.label) : ["No members"],
+      );
       if (memberIndex >= 0) {
         widgets.members.select(memberIndex);
       }
@@ -393,13 +428,15 @@ export async function startTui(params: StartTuiParams): Promise<void> {
       isRendering = false;
     }
 
-    widgets.detail.setContent(renderDetailPane(threadDetail, clusterDetail, focusPane, snapshot, detailMode));
+    widgets.detail.setContent(
+      renderDetailPane(threadDetail, clusterDetail, focusPane, snapshot, detailMode),
+    );
     updatePaneStyles(widgets, focusPane);
     const footerLines = [
       activityLines.at(-1) ?? status,
-      `focus:${focusPane} sort:${sortMode} members:${memberSortMode} min:${minSize === 0 ? 'all' : `${minSize}+`}  Tab focus  / filter  s sort  m members  f min  o open  h help`,
+      `focus:${focusPane} sort:${sortMode} members:${memberSortMode} min:${minSize === 0 ? "all" : `${minSize}+`}  Tab focus  / filter  s sort  m members  f min  o open  h help`,
     ];
-    widgets.footer.setContent(footerLines.join('\n'));
+    widgets.footer.setContent(footerLines.join("\n"));
     widgets.screen.render();
   };
 
@@ -408,7 +445,7 @@ export async function startTui(params: StartTuiParams): Promise<void> {
   };
 
   const scrollDetail = (offset: number): void => {
-    if (focusPane !== 'detail') return;
+    if (focusPane !== "detail") return;
     widgets.detail.scroll(offset);
     widgets.screen.render();
   };
@@ -417,24 +454,32 @@ export async function startTui(params: StartTuiParams): Promise<void> {
     if (!snapshot) return;
     const steps = Math.max(1, options?.steps ?? 1);
     const wrap = options?.wrap ?? true;
-    if (focusPane === 'clusters') {
+    if (focusPane === "clusters") {
       if (snapshot.clusters.length === 0) return;
       const currentIndex = Math.max(
         CLUSTER_LIST_FIRST_ITEM_INDEX,
-        selectedClusterId === null ? CLUSTER_LIST_FIRST_ITEM_INDEX : (clusterIndexById.get(selectedClusterId) ?? CLUSTER_LIST_FIRST_ITEM_INDEX),
+        selectedClusterId === null
+          ? CLUSTER_LIST_FIRST_ITEM_INDEX
+          : (clusterIndexById.get(selectedClusterId) ?? CLUSTER_LIST_FIRST_ITEM_INDEX),
       );
       let nextIndex = currentIndex + delta * steps;
       if (wrap) {
         const relativeIndex = nextIndex - CLUSTER_LIST_FIRST_ITEM_INDEX;
-        nextIndex = ((relativeIndex % snapshot.clusters.length) + snapshot.clusters.length) % snapshot.clusters.length + CLUSTER_LIST_FIRST_ITEM_INDEX;
+        nextIndex =
+          (((relativeIndex % snapshot.clusters.length) + snapshot.clusters.length) %
+            snapshot.clusters.length) +
+          CLUSTER_LIST_FIRST_ITEM_INDEX;
       } else {
-        nextIndex = Math.max(CLUSTER_LIST_FIRST_ITEM_INDEX, Math.min(snapshot.clusters.length, nextIndex));
+        nextIndex = Math.max(
+          CLUSTER_LIST_FIRST_ITEM_INDEX,
+          Math.min(snapshot.clusters.length, nextIndex),
+        );
       }
       selectClusterIndex(nextIndex);
       return;
     }
 
-    if (focusPane === 'members') {
+    if (focusPane === "members") {
       if (memberRows.length === 0) return;
       let nextIndex = memberIndex < 0 ? 0 : memberIndex;
       for (let index = 0; index < steps; index += 1) {
@@ -449,21 +494,22 @@ export async function startTui(params: StartTuiParams): Promise<void> {
   };
 
   const getFocusedListPageSize = (): number => {
-    const listHeight = focusPane === 'clusters' ? Number(widgets.clusters.height) : Number(widgets.members.height);
+    const listHeight =
+      focusPane === "clusters" ? Number(widgets.clusters.height) : Number(widgets.members.height);
     return Math.max(1, listHeight - 4);
   };
 
   const pageFocusedPane = (delta: -1 | 1): void => {
-    if (focusPane === 'detail') {
+    if (focusPane === "detail") {
       scrollDetail(delta * 12);
       return;
     }
     moveSelection(delta, { steps: getFocusedListPageSize(), wrap: false });
   };
 
-  const jumpFocusedPaneToEdge = (edge: 'start' | 'end'): void => {
-    if (focusPane === 'detail') {
-      if (edge === 'start') {
+  const jumpFocusedPaneToEdge = (edge: "start" | "end"): void => {
+    if (focusPane === "detail") {
+      if (edge === "start") {
         widgets.detail.setScroll(0);
       } else {
         widgets.detail.setScrollPerc(100);
@@ -472,17 +518,19 @@ export async function startTui(params: StartTuiParams): Promise<void> {
       return;
     }
 
-    if (focusPane === 'clusters') {
+    if (focusPane === "clusters") {
       if (!snapshot || snapshot.clusters.length === 0) return;
-      selectClusterIndex(edge === 'start' ? CLUSTER_LIST_FIRST_ITEM_INDEX : snapshot.clusters.length);
+      selectClusterIndex(
+        edge === "start" ? CLUSTER_LIST_FIRST_ITEM_INDEX : snapshot.clusters.length,
+      );
       return;
     }
 
-    if (focusPane === 'members') {
+    if (focusPane === "members") {
       const selectable = memberRows
         .map((row, index) => ({ row, index }))
         .filter((item) => item.row.selectable);
-      const target = edge === 'start' ? selectable.at(0) : selectable.at(-1);
+      const target = edge === "start" ? selectable.at(0) : selectable.at(-1);
       if (target) {
         selectMemberIndex(target.index);
       }
@@ -505,7 +553,9 @@ export async function startTui(params: StartTuiParams): Promise<void> {
 
   const toggleClosedVisibility = (): void => {
     showClosed = !showClosed;
-    status = showClosed ? 'Showing closed clusters and members' : 'Hiding closed clusters and members';
+    status = showClosed
+      ? "Showing closed clusters and members"
+      : "Hiding closed clusters and members";
     refreshAll(true);
   };
 
@@ -517,7 +567,10 @@ export async function startTui(params: StartTuiParams): Promise<void> {
     memberSortMode = nextMemberSortMode;
     persistRepositoryPreference();
     if (clusterDetail) {
-      memberRows = buildMemberRows(clusterDetail, { includeClosedMembers: showClosed, sortMode: memberSortMode });
+      memberRows = buildMemberRows(clusterDetail, {
+        includeClosedMembers: showClosed,
+        sortMode: memberSortMode,
+      });
       selectedMemberThreadId = preserveSelectedId(
         memberRows.filter((row) => row.selectable).map((row) => row.threadId),
         previousMemberId,
@@ -539,7 +592,7 @@ export async function startTui(params: StartTuiParams): Promise<void> {
     }
     minSize = nextMinSize;
     persistRepositoryPreference();
-    status = `Min size: ${minSize === 0 ? 'all' : `${minSize}+`}`;
+    status = `Min size: ${minSize === 0 ? "all" : `${minSize}+`}`;
     refreshAll(true);
   };
 
@@ -549,17 +602,23 @@ export async function startTui(params: StartTuiParams): Promise<void> {
       toggleSortMode();
       return;
     }
-    const snapshotIndex = Math.max(0, Math.min(snapshot.clusters.length - 1, nextIndex - CLUSTER_LIST_FIRST_ITEM_INDEX));
+    const snapshotIndex = Math.max(
+      0,
+      Math.min(snapshot.clusters.length - 1, nextIndex - CLUSTER_LIST_FIRST_ITEM_INDEX),
+    );
     selectedClusterId = snapshot.clusters[snapshotIndex]?.clusterId ?? null;
     if (selectedClusterId !== null) {
       try {
         clusterDetail = loadClusterDetail(selectedClusterId);
       } catch {
-        status = 'Cluster data changed; refreshing view';
+        status = "Cluster data changed; refreshing view";
         refreshAll(true);
         return;
       }
-      memberRows = buildMemberRows(clusterDetail, { includeClosedMembers: showClosed, sortMode: memberSortMode });
+      memberRows = buildMemberRows(clusterDetail, {
+        includeClosedMembers: showClosed,
+        sortMode: memberSortMode,
+      });
       selectedMemberThreadId = preserveSelectedId(
         memberRows.filter((row) => row.selectable).map((row) => row.threadId),
         null,
@@ -586,7 +645,10 @@ export async function startTui(params: StartTuiParams): Promise<void> {
     selectedMemberThreadId = row.threadId;
     loadSelectedThreadDetail(false);
     resetDetailScroll();
-    status = selectedMemberThreadId !== null ? `Selected #${threadDetail?.thread.number ?? '?'}` : 'No selectable member';
+    status =
+      selectedMemberThreadId !== null
+        ? `Selected #${threadDetail?.thread.number ?? "?"}`
+        : "No selectable member";
     render();
   };
 
@@ -594,18 +656,18 @@ export async function startTui(params: StartTuiParams): Promise<void> {
     modalOpen = true;
     const prompt = blessed.prompt({
       parent: widgets.screen,
-      border: 'line',
+      border: "line",
       height: 7,
-      width: '60%',
-      top: 'center',
-      left: 'center',
-      label: ' Cluster Filter ',
+      width: "60%",
+      top: "center",
+      left: "center",
+      label: " Cluster Filter ",
       tags: true,
       keys: true,
       vi: true,
       style: {
-        border: { fg: 'cyan' },
-        bg: '#101522',
+        border: { fg: "cyan" },
+        bg: "#101522",
       },
     });
     let closed = false;
@@ -620,15 +682,15 @@ export async function startTui(params: StartTuiParams): Promise<void> {
     dismissModal = () => {
       closePrompt();
     };
-    prompt.input('Filter clusters', search, (_error, value) => {
+    prompt.input("Filter clusters", search, (_error, value) => {
       if (closed) return;
       closed = true;
-      search = (value ?? '').trim();
-      status = search ? `Filter: ${search}` : 'Filter cleared';
+      search = (value ?? "").trim();
+      status = search ? `Filter: ${search}` : "Filter cleared";
       refreshAll(false);
       prompt.destroy();
       clearModal();
-      updateFocus('clusters');
+      updateFocus("clusters");
     });
   };
 
@@ -637,18 +699,18 @@ export async function startTui(params: StartTuiParams): Promise<void> {
     modalOpen = true;
     const prompt = blessed.prompt({
       parent: widgets.screen,
-      border: 'line',
+      border: "line",
       height: 7,
-      width: '60%',
-      top: 'center',
-      left: 'center',
-      label: ' Jump To Issue/PR ',
+      width: "60%",
+      top: "center",
+      left: "center",
+      label: " Jump To Issue/PR ",
       tags: true,
       keys: true,
       vi: true,
       style: {
-        border: { fg: '#fde74c' },
-        bg: '#101522',
+        border: { fg: "#fde74c" },
+        bg: "#101522",
       },
     });
     let closed = false;
@@ -663,14 +725,14 @@ export async function startTui(params: StartTuiParams): Promise<void> {
     dismissModal = () => {
       closePrompt();
     };
-    prompt.input('Issue or PR number', '', (_error, value) => {
+    prompt.input("Issue or PR number", "", (_error, value) => {
       if (closed) return;
       closed = true;
       prompt.destroy();
       clearModal();
-      const parsed = Number((value ?? '').trim());
+      const parsed = Number((value ?? "").trim());
       if (!Number.isInteger(parsed) || parsed <= 0) {
-        status = 'Enter a positive issue or PR number';
+        status = "Enter a positive issue or PR number";
         render();
         return;
       }
@@ -683,8 +745,8 @@ export async function startTui(params: StartTuiParams): Promise<void> {
         });
         const jumped = jumpToThread(detail.thread.id, detail.thread.clusterId ?? null);
         if (jumped) {
-          status = `Jumped to #${detail.thread.number} in cluster ${detail.thread.clusterId ?? '?'}`;
-          updateFocus('members');
+          status = `Jumped to #${detail.thread.number} in cluster ${detail.thread.clusterId ?? "?"}`;
+          updateFocus("members");
           return;
         }
         render();
@@ -698,7 +760,7 @@ export async function startTui(params: StartTuiParams): Promise<void> {
   const openSelectedThread = (): void => {
     const url = threadDetail?.thread.htmlUrl;
     if (!url) {
-      status = 'No thread selected to open';
+      status = "No thread selected to open";
       render();
       return;
     }
@@ -712,11 +774,11 @@ export async function startTui(params: StartTuiParams): Promise<void> {
       status = `No ${label} to copy`;
       return;
     }
-    status = copyTextToClipboard(value) ? `Copied ${label}` : 'Clipboard copy failed';
+    status = copyTextToClipboard(value) ? `Copied ${label}` : "Clipboard copy failed";
   };
 
   const toggleDetailMode = (): void => {
-    detailMode = detailMode === 'full' ? 'compact' : 'full';
+    detailMode = detailMode === "full" ? "compact" : "full";
     status = `Detail mode: ${detailMode}`;
     render();
   };
@@ -724,7 +786,7 @@ export async function startTui(params: StartTuiParams): Promise<void> {
   const runLocalMutation = (action: () => { message?: string }): void => {
     try {
       const result = action();
-      status = result.message ?? 'Updated local state';
+      status = result.message ?? "Updated local state";
       clearCaches();
       refreshAll(true);
     } catch (error) {
@@ -738,69 +800,82 @@ export async function startTui(params: StartTuiParams): Promise<void> {
     modalOpen = true;
     const box = blessed.box({
       parent: widgets.screen,
-      border: 'line',
-      label: ' Confirm ',
-      top: 'center',
-      left: 'center',
-      width: '62%',
+      border: "line",
+      label: " Confirm ",
+      top: "center",
+      left: "center",
+      width: "62%",
       height: 7,
       tags: true,
       mouse: true,
       content: `${message}\n\nDefault: no. Press y to confirm, Enter/Esc/n/q to cancel.`,
       style: {
-        border: { fg: '#fde74c' },
-        fg: 'white',
-        bg: '#101522',
+        border: { fg: "#fde74c" },
+        fg: "white",
+        bg: "#101522",
       },
     });
     let closed = false;
     const closeConfirm = (confirmed: boolean): void => {
       if (closed) return;
       closed = true;
-      widgets.screen.off('keypress', handleKeypress);
+      widgets.screen.off("keypress", handleKeypress);
       box.destroy();
       clearModal();
       if (confirmed) {
         runLocalMutation(action);
         return;
       }
-      status = 'Cancelled';
+      status = "Cancelled";
       render();
     };
     const handleKeypress = (_char: string, key: blessed.Widgets.Events.IKeyEventArg): void => {
-      if (key.name === 'y') {
+      if (key.name === "y") {
         closeConfirm(true);
         return;
       }
-      if (key.name === 'enter' || key.name === 'escape' || key.name === 'n' || key.name === 'q') {
+      if (key.name === "enter" || key.name === "escape" || key.name === "n" || key.name === "q") {
         closeConfirm(false);
       }
     };
-    box.on('mousedown', (event: MouseEventArg) => {
-      if (event.button === 'right') {
+    box.on("mousedown", (event: MouseEventArg) => {
+      if (event.button === "right") {
         closeConfirm(false);
       }
     });
     dismissModal = () => closeConfirm(false);
-    widgets.screen.on('keypress', handleKeypress);
+    widgets.screen.on("keypress", handleKeypress);
     box.focus();
     widgets.screen.render();
   };
 
-  const openContextMenu = (label: string, items: ContextMenuItem[], event?: MouseEventArg): void => {
+  const openContextMenu = (
+    label: string,
+    items: ContextMenuItem[],
+    event?: MouseEventArg,
+  ): void => {
     if (modalOpen || items.length === 0) {
       return;
     }
     modalOpen = true;
-    const width = Math.max(26, Math.min(42, Math.max(...items.map((item) => item.label.length)) + 4));
+    const width = Math.max(
+      26,
+      Math.min(42, Math.max(...items.map((item) => item.label.length)) + 4),
+    );
     const height = items.length + 2;
     const screenWidth = Number(widgets.screen.width);
     const screenHeight = Number(widgets.screen.height);
-    const left = Math.max(0, Math.min((event?.x ?? Math.floor(screenWidth * 0.72)) - 1, screenWidth - width));
-    const top = Math.max(0, Math.min((event?.y ?? Math.floor(screenHeight * 0.35)) - 1, screenHeight - height));
+    const left = Math.max(
+      0,
+      Math.min((event?.x ?? Math.floor(screenWidth * 0.72)) - 1, screenWidth - width),
+    );
+    const top = Math.max(
+      0,
+      Math.min((event?.y ?? Math.floor(screenHeight * 0.35)) - 1, screenHeight - height),
+    );
     const menu = blessed.list({
       parent: widgets.screen,
-      border: 'line',
+      border: "line",
       top,
       left,
       width,
@@ -811,10 +886,10 @@ export async function startTui(params: StartTuiParams): Promise<void> {
       label: ` ${label} `,
       items: items.map((item) => item.label),
       style: {
-        border: { fg: '#fde74c' },
-        selected: { bg: '#f7f7ff', fg: 'black', bold: true },
-        item: { fg: 'white' },
-        bg: '#101522',
+        border: { fg: "#fde74c" },
+        selected: { bg: "#f7f7ff", fg: "black", bold: true },
+        item: { fg: "white" },
+        bg: "#101522",
       },
     });
 
@@ -827,13 +902,13 @@ export async function startTui(params: StartTuiParams): Promise<void> {
       render();
     };
     dismissModal = closeMenu;
-    menu.key(['escape', 'q'], closeMenu);
-    menu.on('mousedown', (mouseEvent: MouseEventArg) => {
-      if (mouseEvent.button === 'right') {
+    menu.key(["escape", "q"], closeMenu);
+    menu.on("mousedown", (mouseEvent: MouseEventArg) => {
+      if (mouseEvent.button === "right") {
         closeMenu();
       }
     });
-    menu.on('select', (_item, index) => {
+    menu.on("select", (_item, index) => {
       const item = items[Number(index)];
       closeMenu();
       const shouldRender = item?.run();
@@ -848,51 +923,61 @@ export async function startTui(params: StartTuiParams): Promise<void> {
   const threadContextItems = (): ContextMenuItem[] => {
     const selectedThread = threadDetail?.thread;
     if (!selectedThread) {
-      return [{ label: 'Close', run: () => undefined }];
+      return [{ label: "Close", run: () => undefined }];
     }
     return [
       ...buildThreadContextMenuItems(threadDetail).map((item) => ({
-      label: item.label,
-      run: () => {
-        if (item.action === 'open') {
-          openUrl(selectedThread.htmlUrl);
-          status = `Opened ${selectedThread.htmlUrl}`;
-        } else if (item.action === 'copy-url') {
-          status = copyTextToClipboard(selectedThread.htmlUrl) ? 'Copied URL' : 'Clipboard copy failed';
-        } else if (item.action === 'copy-title') {
-          status = copyTextToClipboard(`#${selectedThread.number} ${selectedThread.title}`) ? 'Copied title' : 'Clipboard copy failed';
-        } else if (item.action === 'copy-markdown-link') {
-          const markdownLink = `[#${selectedThread.number} ${selectedThread.title}](${selectedThread.htmlUrl})`;
-          status = copyTextToClipboard(markdownLink) ? 'Copied markdown link' : 'Clipboard copy failed';
-        } else if (item.action === 'open-first-link') {
-          const url = getThreadReferenceLinks(threadDetail).at(0);
-          if (url) {
-            openUrl(url);
-            status = `Opened ${url}`;
-          } else {
-            status = 'No referenced links found';
+        label: item.label,
+        run: () => {
+          if (item.action === "open") {
+            openUrl(selectedThread.htmlUrl);
+            status = `Opened ${selectedThread.htmlUrl}`;
+          } else if (item.action === "copy-url") {
+            status = copyTextToClipboard(selectedThread.htmlUrl)
+              ? "Copied URL"
+              : "Clipboard copy failed";
+          } else if (item.action === "copy-title") {
+            status = copyTextToClipboard(`#${selectedThread.number} ${selectedThread.title}`)
+              ? "Copied title"
+              : "Clipboard copy failed";
+          } else if (item.action === "copy-markdown-link") {
+            const markdownLink = `[#${selectedThread.number} ${selectedThread.title}](${selectedThread.htmlUrl})`;
+            status = copyTextToClipboard(markdownLink)
+              ? "Copied markdown link"
+              : "Clipboard copy failed";
+          } else if (item.action === "open-first-link") {
+            const url = getThreadReferenceLinks(threadDetail).at(0);
+            if (url) {
+              openUrl(url);
+              status = `Opened ${url}`;
+            } else {
+              status = "No referenced links found";
+            }
+          } else if (item.action === "copy-first-link") {
+            const url = getThreadReferenceLinks(threadDetail).at(0);
+            status = url
+              ? copyTextToClipboard(url)
+                ? "Copied referenced link"
+                : "Clipboard copy failed"
+              : "No referenced links found";
+          } else if (item.action === "open-link-picker") {
+            openLinkPicker("open");
+          } else if (item.action === "copy-link-picker") {
+            openLinkPicker("copy");
+          } else if (item.action === "load-neighbors") {
+            loadSelectedThreadDetail(true);
+            status = `Loaded neighbors for #${threadDetail?.thread.number ?? selectedThread.number}`;
+            focusPane = "detail";
           }
-        } else if (item.action === 'copy-first-link') {
-          const url = getThreadReferenceLinks(threadDetail).at(0);
-          status = url ? (copyTextToClipboard(url) ? 'Copied referenced link' : 'Clipboard copy failed') : 'No referenced links found';
-        } else if (item.action === 'open-link-picker') {
-          openLinkPicker('open');
-        } else if (item.action === 'copy-link-picker') {
-          openLinkPicker('copy');
-        } else if (item.action === 'load-neighbors') {
-          loadSelectedThreadDetail(true);
-          status = `Loaded neighbors for #${threadDetail?.thread.number ?? selectedThread.number}`;
-          focusPane = 'detail';
-        }
-      },
+        },
       })),
       ...detailCopyContextItems(),
       ...clusterCopyContextItems({ includeVisibleClusters: false }),
       {
-        label: 'Close thread locally',
+        label: "Close thread locally",
         run: () =>
           confirmMutation(
-            `Close ${selectedThread.kind === 'pull_request' ? 'PR' : 'issue'} #${selectedThread.number} locally? This hides it from active sync/cluster views.`,
+            `Close ${selectedThread.kind === "pull_request" ? "PR" : "issue"} #${selectedThread.number} locally? This hides it from active sync/cluster views.`,
             () =>
               params.service.closeThreadLocally({
                 owner: currentRepository.owner,
@@ -902,32 +987,32 @@ export async function startTui(params: StartTuiParams): Promise<void> {
           ),
       },
       {
-        label: 'Remove from durable cluster',
+        label: "Remove from durable cluster",
         run: () =>
           confirmMutation(
-            `Remove #${selectedThread.number} from durable cluster ${clusterDetail?.clusterId ?? selectedThread.clusterId ?? '?'}? Future clustering should respect this override.`,
+            `Remove #${selectedThread.number} from durable cluster ${clusterDetail?.clusterId ?? selectedThread.clusterId ?? "?"}? Future clustering should respect this override.`,
             () =>
               params.service.excludeThreadFromCluster({
                 owner: currentRepository.owner,
                 repo: currentRepository.repo,
                 clusterId: clusterDetail?.clusterId ?? selectedThread.clusterId ?? 0,
                 threadNumber: selectedThread.number,
-                reason: 'TUI manual remove',
+                reason: "TUI manual remove",
               }),
           ),
       },
       {
-        label: 'Set as durable canonical',
+        label: "Set as durable canonical",
         run: () =>
           confirmMutation(
-            `Set #${selectedThread.number} as canonical for durable cluster ${clusterDetail?.clusterId ?? selectedThread.clusterId ?? '?'}?`,
+            `Set #${selectedThread.number} as canonical for durable cluster ${clusterDetail?.clusterId ?? selectedThread.clusterId ?? "?"}?`,
             () =>
               params.service.setClusterCanonicalThread({
                 owner: currentRepository.owner,
                 repo: currentRepository.repo,
                 clusterId: clusterDetail?.clusterId ?? selectedThread.clusterId ?? 0,
                 threadNumber: selectedThread.number,
-                reason: 'TUI manual canonical',
+                reason: "TUI manual canonical",
               }),
           ),
       },
@@ -939,41 +1024,44 @@ export async function startTui(params: StartTuiParams): Promise<void> {
     const selectedThreadDetail = threadDetail;
     return [
       {
-        label: detailMode === 'full' ? 'Use compact detail' : 'Use full detail',
+        label: detailMode === "full" ? "Use compact detail" : "Use full detail",
         run: toggleDetailMode,
       },
       {
-        label: 'Copy all detail',
+        label: "Copy all detail",
         run: () => {
-          copyToStatus('detail', formatThreadDetailForClipboard(selectedThreadDetail, clusterDetail));
+          copyToStatus(
+            "detail",
+            formatThreadDetailForClipboard(selectedThreadDetail, clusterDetail),
+          );
         },
       },
       {
-        label: 'Copy body',
+        label: "Copy body",
         run: () => {
-          copyToStatus('body', selectedThreadDetail.thread.body ?? '');
+          copyToStatus("body", selectedThreadDetail.thread.body ?? "");
         },
       },
       {
-        label: 'Copy summaries',
+        label: "Copy summaries",
         run: () => {
-          copyToStatus('summaries', formatSummariesForClipboard(selectedThreadDetail.summaries));
+          copyToStatus("summaries", formatSummariesForClipboard(selectedThreadDetail.summaries));
         },
       },
       {
-        label: 'Copy links',
+        label: "Copy links",
         run: () => {
           const links = getThreadReferenceLinks(selectedThreadDetail);
-          copyToStatus('links', links.join('\n'));
+          copyToStatus("links", links.join("\n"));
         },
       },
     ];
   };
 
-  const openLinkPicker = (mode: 'open' | 'copy'): void => {
+  const openLinkPicker = (mode: "open" | "copy"): void => {
     const links = getThreadReferenceLinks(threadDetail);
     if (links.length === 0 || modalOpen) {
-      status = 'No referenced links found';
+      status = "No referenced links found";
       render();
       return;
     }
@@ -982,10 +1070,10 @@ export async function startTui(params: StartTuiParams): Promise<void> {
     const height = Math.min(Number(widgets.screen.height) - 4, Math.max(5, links.length + 2));
     const picker = blessed.list({
       parent: widgets.screen,
-      border: 'line',
-      label: mode === 'open' ? ' Open Link ' : ' Copy Link ',
-      top: 'center',
-      left: 'center',
+      border: "line",
+      label: mode === "open" ? " Open Link " : " Copy Link ",
+      top: "center",
+      left: "center",
       width,
       height,
       tags: false,
@@ -993,12 +1081,12 @@ export async function startTui(params: StartTuiParams): Promise<void> {
       vi: true,
       mouse: true,
       items: links.map((url, index) => formatLinkChoiceLabel(url, index)),
-      scrollbar: { ch: ' ' },
+      scrollbar: { ch: " " },
       style: {
-        border: { fg: '#fde74c' },
-        selected: { bg: '#f7f7ff', fg: 'black', bold: true },
-        item: { fg: 'white' },
-        bg: '#101522',
+        border: { fg: "#fde74c" },
+        selected: { bg: "#f7f7ff", fg: "black", bold: true },
+        item: { fg: "white" },
+        bg: "#101522",
       },
     });
 
@@ -1011,23 +1099,23 @@ export async function startTui(params: StartTuiParams): Promise<void> {
       render();
     };
     dismissModal = closePicker;
-    picker.key(['escape', 'q'], closePicker);
-    picker.on('mousedown', (mouseEvent: MouseEventArg) => {
-      if (mouseEvent.button === 'right') {
+    picker.key(["escape", "q"], closePicker);
+    picker.on("mousedown", (mouseEvent: MouseEventArg) => {
+      if (mouseEvent.button === "right") {
         closePicker();
       }
     });
-    picker.on('select', (_item, index) => {
+    picker.on("select", (_item, index) => {
       const url = links[Number(index)];
       if (!url) {
         closePicker();
         return;
       }
-      if (mode === 'open') {
+      if (mode === "open") {
         openUrl(url);
         status = `Opened ${url}`;
       } else {
-        status = copyTextToClipboard(url) ? 'Copied referenced link' : 'Clipboard copy failed';
+        status = copyTextToClipboard(url) ? "Copied referenced link" : "Clipboard copy failed";
       }
       closePicker();
     });
@@ -1038,16 +1126,12 @@ export async function startTui(params: StartTuiParams): Promise<void> {
   const clusterContextItems = (): ContextMenuItem[] => {
     const selectedCluster = clusterDetail;
     return [
-      ...(selectedCluster
-        ? [
-            { label: 'Focus members', run: () => updateFocus('members') },
-          ]
-        : []),
+      ...(selectedCluster ? [{ label: "Focus members", run: () => updateFocus("members") }] : []),
       ...clusterCopyContextItems({ includeVisibleClusters: true }),
       ...(selectedCluster
         ? [
             {
-              label: 'Close cluster locally',
+              label: "Close cluster locally",
               run: () =>
                 confirmMutation(
                   `Close cluster ${selectedCluster.clusterId} locally? Default is no.`,
@@ -1061,44 +1145,47 @@ export async function startTui(params: StartTuiParams): Promise<void> {
             },
           ]
         : []),
-      { label: 'Sort by size', run: () => setSortMode('size') },
-      { label: 'Sort by recent', run: () => setSortMode('recent') },
-      { label: 'Member sort grouped', run: () => setMemberSortMode('kind') },
-      { label: 'Member sort recent', run: () => setMemberSortMode('recent') },
-      { label: 'Member sort number', run: () => setMemberSortMode('number') },
-      { label: 'Member sort state', run: () => setMemberSortMode('state') },
-      { label: 'Min size 1+', run: () => setMinSize(1) },
-      { label: 'Min size 5+', run: () => setMinSize(5) },
-      { label: 'Min size 10+', run: () => setMinSize(10) },
-      { label: 'Min size all', run: () => setMinSize(0) },
-      { label: showClosed ? 'Hide closed' : 'Show closed', run: () => toggleClosedVisibility() },
-      { label: 'Filter clusters', run: promptFilter },
-      { label: 'Refresh', run: () => refreshAll(true) },
-      { label: 'Help', run: openHelp },
+      { label: "Sort by size", run: () => setSortMode("size") },
+      { label: "Sort by recent", run: () => setSortMode("recent") },
+      { label: "Member sort grouped", run: () => setMemberSortMode("kind") },
+      { label: "Member sort recent", run: () => setMemberSortMode("recent") },
+      { label: "Member sort number", run: () => setMemberSortMode("number") },
+      { label: "Member sort state", run: () => setMemberSortMode("state") },
+      { label: "Min size 1+", run: () => setMinSize(1) },
+      { label: "Min size 5+", run: () => setMinSize(5) },
+      { label: "Min size 10+", run: () => setMinSize(10) },
+      { label: "Min size all", run: () => setMinSize(0) },
+      { label: showClosed ? "Hide closed" : "Show closed", run: () => toggleClosedVisibility() },
+      { label: "Filter clusters", run: promptFilter },
+      { label: "Refresh", run: () => refreshAll(true) },
+      { label: "Help", run: openHelp },
     ];
   };
 
   const globalContextItems = (): ContextMenuItem[] => [
-    { label: 'Refresh', run: () => refreshAll(true) },
-    { label: 'Repository browser', run: browseRepositories },
+    { label: "Refresh", run: () => refreshAll(true) },
+    { label: "Repository browser", run: browseRepositories },
     {
-      label: 'Copy visible clusters',
+      label: "Copy visible clusters",
       run: () => {
-        copyToStatus('visible clusters', formatVisibleClustersForClipboard(snapshot?.clusters ?? []));
+        copyToStatus(
+          "visible clusters",
+          formatVisibleClustersForClipboard(snapshot?.clusters ?? []),
+        );
       },
     },
-    { label: 'Sort by size', run: () => setSortMode('size') },
-    { label: 'Sort by recent', run: () => setSortMode('recent') },
-    { label: 'Member sort grouped', run: () => setMemberSortMode('kind') },
-    { label: 'Member sort recent', run: () => setMemberSortMode('recent') },
-    { label: 'Min size 1+', run: () => setMinSize(1) },
-    { label: 'Min size 5+', run: () => setMinSize(5) },
-    { label: 'Min size 10+', run: () => setMinSize(10) },
-    { label: 'Min size all', run: () => setMinSize(0) },
-    { label: showClosed ? 'Hide closed' : 'Show closed', run: () => toggleClosedVisibility() },
-    { label: 'Help', run: openHelp },
+    { label: "Sort by size", run: () => setSortMode("size") },
+    { label: "Sort by recent", run: () => setSortMode("recent") },
+    { label: "Member sort grouped", run: () => setMemberSortMode("kind") },
+    { label: "Member sort recent", run: () => setMemberSortMode("recent") },
+    { label: "Min size 1+", run: () => setMinSize(1) },
+    { label: "Min size 5+", run: () => setMinSize(5) },
+    { label: "Min size 10+", run: () => setMinSize(10) },
+    { label: "Min size all", run: () => setMinSize(0) },
+    { label: showClosed ? "Hide closed" : "Show closed", run: () => toggleClosedVisibility() },
+    { label: "Help", run: openHelp },
     {
-      label: 'Quit',
+      label: "Quit",
       run: () => {
         requestQuit();
         return false;
@@ -1106,39 +1193,47 @@ export async function startTui(params: StartTuiParams): Promise<void> {
     },
   ];
 
-  const clusterCopyContextItems = (options: { includeVisibleClusters: boolean }): ContextMenuItem[] => {
+  const clusterCopyContextItems = (options: {
+    includeVisibleClusters: boolean;
+  }): ContextMenuItem[] => {
     const selectedCluster = clusterDetail;
     const title = selectedCluster ? splitClusterDisplayTitle(selectedCluster.displayTitle) : null;
     return [
       ...(selectedCluster && title
         ? [
             {
-              label: 'Copy cluster name',
-              run: () => copyToStatus('cluster name', title.name),
+              label: "Copy cluster name",
+              run: () => copyToStatus("cluster name", title.name),
             },
             {
-              label: 'Copy cluster title',
-              run: () => copyToStatus('cluster title', title.title),
+              label: "Copy cluster title",
+              run: () => copyToStatus("cluster title", title.title),
             },
             {
-              label: 'Copy cluster id',
-              run: () => copyToStatus('cluster id', String(selectedCluster.clusterId)),
+              label: "Copy cluster id",
+              run: () => copyToStatus("cluster id", String(selectedCluster.clusterId)),
             },
             {
-              label: 'Copy cluster details',
-              run: () => copyToStatus('cluster details', formatClusterForClipboard(selectedCluster)),
+              label: "Copy cluster details",
+              run: () =>
+                copyToStatus("cluster details", formatClusterForClipboard(selectedCluster)),
             },
             {
-              label: 'Copy member list',
-              run: () => copyToStatus('member list', formatClusterMembersForClipboard(selectedCluster)),
+              label: "Copy member list",
+              run: () =>
+                copyToStatus("member list", formatClusterMembersForClipboard(selectedCluster)),
             },
           ]
         : []),
       ...(options.includeVisibleClusters
         ? [
             {
-              label: 'Copy visible clusters',
-              run: () => copyToStatus('visible clusters', formatVisibleClustersForClipboard(snapshot?.clusters ?? [])),
+              label: "Copy visible clusters",
+              run: () =>
+                copyToStatus(
+                  "visible clusters",
+                  formatVisibleClustersForClipboard(snapshot?.clusters ?? []),
+                ),
             },
           ]
         : []),
@@ -1177,18 +1272,18 @@ export async function startTui(params: StartTuiParams): Promise<void> {
   const withLoadingOverlay = async <T>(message: string, task: () => T | Promise<T>): Promise<T> => {
     const box = blessed.box({
       parent: widgets.screen,
-      border: 'line',
-      label: ' Loading ',
-      width: '56%',
+      border: "line",
+      label: " Loading ",
+      width: "56%",
       height: 7,
-      top: 'center',
-      left: 'center',
+      top: "center",
+      left: "center",
       tags: true,
       content: `${message}\n\nThis can take a few seconds on large repos.`,
       style: {
-        border: { fg: '#5bc0eb' },
-        fg: 'white',
-        bg: '#101522',
+        border: { fg: "#5bc0eb" },
+        fg: "white",
+        bg: "#101522",
       },
     });
     widgets.screen.render();
@@ -1217,9 +1312,9 @@ export async function startTui(params: StartTuiParams): Promise<void> {
     wideLayout = preference.wideLayout;
     persistRepositoryPreference();
     clearCaches();
-    search = '';
+    search = "";
     snapshot = null;
-    clusterItems = ['Pick a repository with p'];
+    clusterItems = ["Pick a repository with p"];
     clusterIndexById = new Map();
     widgets.clusters.setItems(clusterItems);
     clusterDetail = null;
@@ -1255,12 +1350,15 @@ export async function startTui(params: StartTuiParams): Promise<void> {
           return;
         }
 
-        if (choice.kind === 'existing') {
-          await withLoadingOverlay(`Opening ${choice.target.owner}/${choice.target.repo}...`, async () => {
-            switchRepository(choice.target);
-          });
+        if (choice.kind === "existing") {
+          await withLoadingOverlay(
+            `Opening ${choice.target.owner}/${choice.target.repo}...`,
+            async () => {
+              switchRepository(choice.target);
+            },
+          );
           pushActivity(`[repo] switched to ${choice.target.owner}/${choice.target.repo}`);
-          updateFocus('clusters');
+          updateFocus("clusters");
           return;
         }
 
@@ -1273,10 +1371,12 @@ export async function startTui(params: StartTuiParams): Promise<void> {
           minClusterSize: 5,
           status: `No local data for ${target.owner}/${target.repo}; run sync/embed/cluster in the CLI, then press r`,
         });
-        pushActivity(`[repo] selected ${target.owner}/${target.repo}; run ghcrawl sync/embed/cluster from the shell`);
-        updateFocus('clusters');
+        pushActivity(
+          `[repo] selected ${target.owner}/${target.repo}; run ghcrawl sync/embed/cluster from the shell`,
+        );
+        updateFocus("clusters");
       } catch (error) {
-        status = 'Repository action failed';
+        status = "Repository action failed";
         pushActivity(`[repo] action failed: ${formatTuiError(error)}`);
       } finally {
         clearModal();
@@ -1296,12 +1396,15 @@ export async function startTui(params: StartTuiParams): Promise<void> {
         return false;
       }
 
-      if (choice.kind === 'existing') {
-        await withLoadingOverlay(`Opening ${choice.target.owner}/${choice.target.repo}...`, async () => {
-          switchRepository(choice.target);
-        });
+      if (choice.kind === "existing") {
+        await withLoadingOverlay(
+          `Opening ${choice.target.owner}/${choice.target.repo}...`,
+          async () => {
+            switchRepository(choice.target);
+          },
+        );
         pushActivity(`[repo] opened ${choice.target.owner}/${choice.target.repo}`);
-        updateFocus('clusters');
+        updateFocus("clusters");
         return true;
       }
 
@@ -1313,11 +1416,13 @@ export async function startTui(params: StartTuiParams): Promise<void> {
         minClusterSize: 5,
         status: `No local data for ${target.owner}/${target.repo}; run sync/embed/cluster in the CLI, then press r`,
       });
-      pushActivity(`[repo] selected ${target.owner}/${target.repo}; run ghcrawl sync/embed/cluster from the shell`);
-      updateFocus('clusters');
+      pushActivity(
+        `[repo] selected ${target.owner}/${target.repo}; run ghcrawl sync/embed/cluster from the shell`,
+      );
+      updateFocus("clusters");
       return true;
     } catch (error) {
-      status = 'Repository selection failed';
+      status = "Repository selection failed";
       pushActivity(`[repo] selection failed: ${formatTuiError(error)}`);
       return false;
     } finally {
@@ -1325,243 +1430,260 @@ export async function startTui(params: StartTuiParams): Promise<void> {
     }
   };
 
-  widgets.screen.key(['q'], () => {
+  widgets.screen.key(["q"], () => {
     requestQuit();
   });
-  widgets.screen.key(['C-c'], () => {
+  widgets.screen.key(["C-c"], () => {
     widgets.screen.destroy();
   });
-  widgets.screen.key(['escape'], () => {
+  widgets.screen.key(["escape"], () => {
     dismissActiveModal();
   });
-  widgets.screen.key(['tab', 'right'], () => {
+  widgets.screen.key(["tab", "right"], () => {
     if (modalOpen) return;
     updateFocus(cycleFocusPane(focusPane, 1));
   });
-  widgets.screen.key(['S-tab', 'left'], () => {
+  widgets.screen.key(["S-tab", "left"], () => {
     if (modalOpen) return;
     updateFocus(cycleFocusPane(focusPane, -1));
   });
-  widgets.screen.key(['down'], () => {
+  widgets.screen.key(["down"], () => {
     if (modalOpen) return;
-    if (focusPane === 'detail') {
+    if (focusPane === "detail") {
       scrollDetail(3);
       return;
     }
     moveSelection(1);
   });
-  widgets.screen.key(['up'], () => {
+  widgets.screen.key(["up"], () => {
     if (modalOpen) return;
-    if (focusPane === 'detail') {
+    if (focusPane === "detail") {
       scrollDetail(-3);
       return;
     }
     moveSelection(-1);
   });
-  widgets.screen.key(['pageup'], () => {
+  widgets.screen.key(["pageup"], () => {
     if (modalOpen) return;
     pageFocusedPane(-1);
   });
-  widgets.screen.key(['pagedown'], () => {
+  widgets.screen.key(["pagedown"], () => {
     if (modalOpen) return;
     pageFocusedPane(1);
   });
-  widgets.screen.key(['home'], () => {
+  widgets.screen.key(["home"], () => {
     if (modalOpen) return;
-    jumpFocusedPaneToEdge('start');
+    jumpFocusedPaneToEdge("start");
   });
-  widgets.screen.key(['end'], () => {
+  widgets.screen.key(["end"], () => {
     if (modalOpen) return;
-    jumpFocusedPaneToEdge('end');
+    jumpFocusedPaneToEdge("end");
   });
-  widgets.screen.key(['enter'], () => {
+  widgets.screen.key(["enter"], () => {
     if (modalOpen) return;
-    if (focusPane === 'clusters') {
-      updateFocus('members');
+    if (focusPane === "clusters") {
+      updateFocus("members");
       return;
     }
-    if (focusPane === 'members') {
+    if (focusPane === "members") {
       loadSelectedThreadDetail(true);
-      status = selectedMemberThreadId !== null ? `Loaded neighbors for #${threadDetail?.thread.number ?? '?'}` : status;
-      updateFocus('detail');
+      status =
+        selectedMemberThreadId !== null
+          ? `Loaded neighbors for #${threadDetail?.thread.number ?? "?"}`
+          : status;
+      updateFocus("detail");
     }
   });
-  widgets.screen.key(['s'], () => {
+  widgets.screen.key(["s"], () => {
     if (modalOpen) return;
     toggleSortMode();
   });
-  widgets.screen.key(['m'], () => {
+  widgets.screen.key(["m"], () => {
     if (modalOpen) return;
     toggleMemberSortMode();
   });
-  widgets.screen.key(['f'], () => {
+  widgets.screen.key(["f"], () => {
     if (modalOpen) return;
     setMinSize(cycleMinSizeFilter(minSize));
   });
-  widgets.screen.key(['l'], () => {
+  widgets.screen.key(["l"], () => {
     if (modalOpen) return;
-    wideLayout = wideLayout === 'columns' ? 'right-stack' : 'columns';
+    wideLayout = wideLayout === "columns" ? "right-stack" : "columns";
     persistRepositoryPreference();
-    status = `Layout: ${wideLayout === 'columns' ? 'three columns' : 'wide left + stacked right'}`;
+    status = `Layout: ${wideLayout === "columns" ? "three columns" : "wide left + stacked right"}`;
     render();
   });
-  widgets.screen.key(['x'], () => {
+  widgets.screen.key(["x"], () => {
     if (modalOpen) return;
     toggleClosedVisibility();
   });
-  widgets.screen.key(['/'], () => {
+  widgets.screen.key(["/"], () => {
     if (modalOpen) return;
     promptFilter();
   });
-  widgets.screen.key(['#'], () => {
+  widgets.screen.key(["#"], () => {
     if (modalOpen) return;
     promptThreadJump();
   });
-  widgets.screen.key(['h', '?'], () => {
+  widgets.screen.key(["h", "?"], () => {
     if (modalOpen) return;
     openHelp();
   });
-  widgets.screen.key(['p'], () => browseRepositories());
-  widgets.screen.key(['r'], () => {
+  widgets.screen.key(["p"], () => browseRepositories());
+  widgets.screen.key(["r"], () => {
     if (modalOpen) return;
-    status = 'Refreshing';
+    status = "Refreshing";
     refreshAll(true);
   });
-  widgets.screen.key(['o'], () => {
+  widgets.screen.key(["o"], () => {
     if (modalOpen) return;
     openSelectedThread();
   });
-  widgets.clusters.on('select item', (_item, index) => {
+  widgets.clusters.on("select item", (_item, index) => {
     if (isRendering || modalOpen) return;
     if (suppressNextClusterSelect) {
       suppressNextClusterSelect = false;
       return;
     }
-    focusPane = 'clusters';
+    focusPane = "clusters";
     widgets.clusters.focus();
     selectClusterIndex(Number(index));
   });
-  widgets.clusters.on('select', () => {
+  widgets.clusters.on("select", () => {
     if (isRendering || modalOpen) return;
-    updateFocus('members');
+    updateFocus("members");
   });
-  widgets.clusters.on('mousedown', (event: MouseEventArg) => {
+  widgets.clusters.on("mousedown", (event: MouseEventArg) => {
     if (isRendering || modalOpen) return;
     const itemIndex = getListItemIndexFromMouse(widgets.clusters, event);
-    if (event.button === 'left' && itemIndex === CLUSTER_LIST_HEADER_INDEX) {
+    if (event.button === "left" && itemIndex === CLUSTER_LIST_HEADER_INDEX) {
       suppressNextClusterSelect = true;
       const relativeX = Math.max(0, Number(event.x) - Number(widgets.clusters.aleft) - 2);
       const innerWidth = Math.max(1, Number(widgets.clusters.width) - 2);
       setSortMode(resolveClusterHeaderSortFromClick(relativeX, innerWidth, sortMode));
       return;
     }
-    if (event.button !== 'right') return;
-    focusPane = 'clusters';
+    if (event.button !== "right") return;
+    focusPane = "clusters";
     widgets.clusters.focus();
     if (itemIndex !== null && itemIndex >= CLUSTER_LIST_FIRST_ITEM_INDEX) {
       selectClusterIndex(itemIndex);
     } else {
       render();
     }
-    openContextMenu('Cluster', clusterContextItems(), event);
+    openContextMenu("Cluster", clusterContextItems(), event);
   });
-  widgets.clusters.on('wheelup', () => {
+  widgets.clusters.on("wheelup", () => {
     if (isRendering || modalOpen) return;
-    focusPane = 'clusters';
+    focusPane = "clusters";
     widgets.clusters.focus();
     moveSelection(-1, { wrap: false });
   });
-  widgets.clusters.on('wheeldown', () => {
+  widgets.clusters.on("wheeldown", () => {
     if (isRendering || modalOpen) return;
-    focusPane = 'clusters';
+    focusPane = "clusters";
     widgets.clusters.focus();
     moveSelection(1, { wrap: false });
   });
-  widgets.members.on('select item', (_item, index) => {
+  widgets.members.on("select item", (_item, index) => {
     if (isRendering || modalOpen) return;
     if (suppressNextMemberSelect) {
       suppressNextMemberSelect = false;
       return;
     }
-    focusPane = 'members';
+    focusPane = "members";
     widgets.members.focus();
     selectMemberIndex(Number(index));
   });
-  widgets.members.on('select', () => {
+  widgets.members.on("select", () => {
     if (isRendering || modalOpen) return;
     loadSelectedThreadDetail(true);
-    status = selectedMemberThreadId !== null ? `Loaded neighbors for #${threadDetail?.thread.number ?? '?'}` : status;
-    updateFocus('detail');
+    status =
+      selectedMemberThreadId !== null
+        ? `Loaded neighbors for #${threadDetail?.thread.number ?? "?"}`
+        : status;
+    updateFocus("detail");
   });
-  widgets.members.on('mousedown', (event: MouseEventArg) => {
+  widgets.members.on("mousedown", (event: MouseEventArg) => {
     if (isRendering || modalOpen) return;
-    focusPane = 'members';
+    focusPane = "members";
     widgets.members.focus();
     const itemIndex = getListItemIndexFromMouse(widgets.members, event);
-    if (event.button === 'left' && itemIndex === 0) {
+    if (event.button === "left" && itemIndex === 0) {
       suppressNextMemberSelect = true;
       const relativeX = Math.max(0, Number(event.x) - Number(widgets.members.aleft) - 2);
       setMemberSortMode(resolveMemberHeaderSortFromClick(relativeX, memberSortMode));
       return;
     }
-    if (event.button !== 'right') return;
-    const row = itemIndex !== null && itemIndex >= 0 && itemIndex < memberRows.length ? memberRows[itemIndex] : null;
+    if (event.button !== "right") return;
+    const row =
+      itemIndex !== null && itemIndex >= 0 && itemIndex < memberRows.length
+        ? memberRows[itemIndex]
+        : null;
     if (!row?.selectable) {
-      openContextMenu('Members', clusterContextItems(), event);
+      openContextMenu("Members", clusterContextItems(), event);
       return;
     }
     if (row.threadId !== selectedMemberThreadId) {
       selectMemberIndex(itemIndex ?? 0);
     }
-    openContextMenu('Thread', threadContextItems(), event);
+    openContextMenu("Thread", threadContextItems(), event);
   });
-  widgets.members.on('wheelup', () => {
+  widgets.members.on("wheelup", () => {
     if (isRendering || modalOpen) return;
-    focusPane = 'members';
+    focusPane = "members";
     widgets.members.focus();
     moveSelection(-1, { wrap: false });
   });
-  widgets.members.on('wheeldown', () => {
+  widgets.members.on("wheeldown", () => {
     if (isRendering || modalOpen) return;
-    focusPane = 'members';
+    focusPane = "members";
     widgets.members.focus();
     moveSelection(1, { wrap: false });
   });
-  widgets.detail.on('click', () => {
+  widgets.detail.on("click", () => {
     if (modalOpen) return;
-    updateFocus('detail');
+    updateFocus("detail");
   });
-  widgets.detail.on('mousedown', (event: MouseEventArg) => {
-    if (modalOpen || event.button !== 'right') return;
-    updateFocus('detail');
-    openContextMenu(threadDetail ? 'Thread' : clusterDetail ? 'Cluster' : 'ghcrawl', threadDetail ? threadContextItems() : clusterDetail ? clusterContextItems() : globalContextItems(), event);
+  widgets.detail.on("mousedown", (event: MouseEventArg) => {
+    if (modalOpen || event.button !== "right") return;
+    updateFocus("detail");
+    openContextMenu(
+      threadDetail ? "Thread" : clusterDetail ? "Cluster" : "ghcrawl",
+      threadDetail
+        ? threadContextItems()
+        : clusterDetail
+          ? clusterContextItems()
+          : globalContextItems(),
+      event,
+    );
   });
-  widgets.detail.on('wheelup', () => {
+  widgets.detail.on("wheelup", () => {
     if (modalOpen) return;
-    focusPane = 'detail';
+    focusPane = "detail";
     widgets.detail.focus();
     scrollDetail(-3);
   });
-  widgets.detail.on('wheeldown', () => {
+  widgets.detail.on("wheeldown", () => {
     if (modalOpen) return;
-    focusPane = 'detail';
+    focusPane = "detail";
     widgets.detail.focus();
     scrollDetail(3);
   });
-  widgets.header.on('mousedown', (event: MouseEventArg) => {
-    if (modalOpen || event.button !== 'right') return;
-    openContextMenu('ghcrawl', globalContextItems(), event);
+  widgets.header.on("mousedown", (event: MouseEventArg) => {
+    if (modalOpen || event.button !== "right") return;
+    openContextMenu("ghcrawl", globalContextItems(), event);
   });
-  widgets.footer.on('mousedown', (event: MouseEventArg) => {
-    if (modalOpen || event.button !== 'right') return;
-    openContextMenu('ghcrawl', globalContextItems(), event);
+  widgets.footer.on("mousedown", (event: MouseEventArg) => {
+    if (modalOpen || event.button !== "right") return;
+    openContextMenu("ghcrawl", globalContextItems(), event);
   });
-  widgets.screen.on('resize', () => render());
+  widgets.screen.on("resize", () => render());
 
   const autoRefreshTimer = setInterval(autoRefreshIfChanged, TUI_AUTO_REFRESH_INTERVAL_MS);
   autoRefreshTimer.unref?.();
 
-  widgets.screen.on('destroy', () => {
+  widgets.screen.on("destroy", () => {
     clearInterval(autoRefreshTimer);
     widgets.screen.program.showCursor();
   });
@@ -1570,7 +1692,7 @@ export async function startTui(params: StartTuiParams): Promise<void> {
   if (selectedRepository) {
     refreshAll(false);
   } else {
-    status = 'Pick a repository';
+    status = "Pick a repository";
     render();
     const ready = await initializeRepositorySelection();
     if (!ready) {
@@ -1578,23 +1700,23 @@ export async function startTui(params: StartTuiParams): Promise<void> {
       return;
     }
   }
-  updateFocus('clusters');
+  updateFocus("clusters");
 
-  await new Promise<void>((resolve) => widgets.screen.once('destroy', () => resolve()));
+  await new Promise<void>((resolve) => widgets.screen.once("destroy", () => resolve()));
 }
 
 function formatTuiRefreshStateKey(state: TuiRefreshState): string {
   return [
-    state.repositoryUpdatedAt ?? '',
-    state.threadUpdatedAt ?? '',
-    state.threadClosedAt ?? '',
-    state.clusterClosedAt ?? '',
-    state.durableClusterUpdatedAt ?? '',
-    state.durableMembershipUpdatedAt ?? '',
-    state.latestSyncRunId ?? '',
-    state.latestEmbeddingRunId ?? '',
-    state.latestClusterRunId ?? '',
-  ].join('|');
+    state.repositoryUpdatedAt ?? "",
+    state.threadUpdatedAt ?? "",
+    state.threadClosedAt ?? "",
+    state.clusterClosedAt ?? "",
+    state.durableClusterUpdatedAt ?? "",
+    state.durableMembershipUpdatedAt ?? "",
+    state.latestSyncRunId ?? "",
+    state.latestEmbeddingRunId ?? "",
+    state.latestClusterRunId ?? "",
+  ].join("|");
 }
 
 function formatActivityTimestamp(now: Date = new Date()): string {

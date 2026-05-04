@@ -1,15 +1,15 @@
-import { spawn } from 'node:child_process';
-import path from 'node:path';
-import readline from 'node:readline';
-import { fileURLToPath } from 'node:url';
+import { spawn } from "node:child_process";
+import path from "node:path";
+import readline from "node:readline";
+import { fileURLToPath } from "node:url";
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const serviceModulePath = path.join(repoRoot, 'packages', 'api-core', 'dist', 'service.js');
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const serviceModulePath = path.join(repoRoot, "packages", "api-core", "dist", "service.js");
 
 const { GHCrawlService } = await import(serviceModulePath);
 
 function parseArgs(argv) {
-  let repo = 'openclaw/openclaw';
+  let repo = "openclaw/openclaw";
   let k;
   let threshold;
   let candidateK;
@@ -21,52 +21,52 @@ function parseArgs(argv) {
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
     if (!token) continue;
-    if (token === '--repo') {
+    if (token === "--repo") {
       repo = argv[index + 1] ?? repo;
       index += 1;
       continue;
     }
-    if (token === '--k') {
+    if (token === "--k") {
       k = Number(argv[index + 1]);
       index += 1;
       continue;
     }
-    if (token === '--threshold') {
+    if (token === "--threshold") {
       threshold = Number(argv[index + 1]);
       index += 1;
       continue;
     }
-    if (token === '--candidate-k') {
+    if (token === "--candidate-k") {
       candidateK = Number(argv[index + 1]);
       index += 1;
       continue;
     }
-    if (token === '--ef-search') {
+    if (token === "--ef-search") {
       efSearch = Number(argv[index + 1]);
       index += 1;
       continue;
     }
-    if (token === '--child-backend') {
+    if (token === "--child-backend") {
       childBackend = argv[index + 1] ?? null;
       index += 1;
       continue;
     }
-    if (token === '--top') {
+    if (token === "--top") {
       top = Number(argv[index + 1]);
       index += 1;
       continue;
     }
-    if (token === '--sample-members') {
+    if (token === "--sample-members") {
       sampleMembers = Number(argv[index + 1]);
       index += 1;
       continue;
     }
-    if (!token.startsWith('--')) {
+    if (!token.startsWith("--")) {
       repo = token;
     }
   }
 
-  const [owner, name] = repo.split('/');
+  const [owner, name] = repo.split("/");
   if (!owner || !name) {
     throw new Error(`Expected owner/repo, received: ${repo}`);
   }
@@ -108,52 +108,52 @@ async function runChild(args) {
 async function runBackend(backend, args) {
   return await new Promise((resolve, reject) => {
     const childArgs = [
-      '--expose-gc',
-      path.join(repoRoot, 'scripts', 'cluster-topology-compare.mjs'),
+      "--expose-gc",
+      path.join(repoRoot, "scripts", "cluster-topology-compare.mjs"),
       args.fullName,
-      '--child-backend',
+      "--child-backend",
       backend,
-      '--top',
+      "--top",
       String(args.top),
-      '--sample-members',
+      "--sample-members",
       String(args.sampleMembers),
     ];
     if (args.k !== undefined) {
-      childArgs.push('--k', String(args.k));
+      childArgs.push("--k", String(args.k));
     }
     if (args.threshold !== undefined) {
-      childArgs.push('--threshold', String(args.threshold));
+      childArgs.push("--threshold", String(args.threshold));
     }
     if (args.candidateK !== undefined) {
-      childArgs.push('--candidate-k', String(args.candidateK));
+      childArgs.push("--candidate-k", String(args.candidateK));
     }
     if (args.efSearch !== undefined) {
-      childArgs.push('--ef-search', String(args.efSearch));
+      childArgs.push("--ef-search", String(args.efSearch));
     }
 
     const child = spawn(process.execPath, childArgs, {
       cwd: repoRoot,
       env: process.env,
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: ["ignore", "pipe", "pipe"],
     });
 
     let result = null;
     const pipeStream = (stream, label) => {
       const rl = readline.createInterface({ input: stream });
-      rl.on('line', (line) => {
-        if (label === 'stdout' && line.startsWith('__GHCRAWL_RESULT__')) {
-          result = JSON.parse(line.slice('__GHCRAWL_RESULT__'.length));
+      rl.on("line", (line) => {
+        if (label === "stdout" && line.startsWith("__GHCRAWL_RESULT__")) {
+          result = JSON.parse(line.slice("__GHCRAWL_RESULT__".length));
           return;
         }
         process.stdout.write(`[${backend}] ${line}\n`);
       });
     };
 
-    pipeStream(child.stdout, 'stdout');
-    pipeStream(child.stderr, 'stderr');
+    pipeStream(child.stdout, "stdout");
+    pipeStream(child.stderr, "stderr");
 
-    child.on('error', reject);
-    child.on('close', (code, signal) => {
+    child.on("error", reject);
+    child.on("close", (code, signal) => {
       if (code !== 0) {
         const detail = signal ? `signal ${signal}` : `code ${code}`;
         reject(new Error(`${backend} topology comparison exited with ${detail}`));
@@ -238,7 +238,7 @@ function fetchThreadMeta(ids) {
 
   const service = new GHCrawlService();
   try {
-    const placeholders = ids.map(() => '?').join(', ');
+    const placeholders = ids.map(() => "?").join(", ");
     const rows = service.db
       .prepare(
         `select id, number, kind, title
@@ -257,7 +257,7 @@ function describeThread(threadId, metaById) {
   if (!meta) {
     return `thread:${threadId}`;
   }
-  const kind = meta.kind === 'pull_request' ? 'PR' : 'Issue';
+  const kind = meta.kind === "pull_request" ? "PR" : "Issue";
   return `${kind} #${meta.number} ${meta.title}`;
 }
 
@@ -267,7 +267,12 @@ function formatContributor(contributor, targetSize) {
 }
 
 function buildSummaryTable(exactTop, vectorTop, matches) {
-  const lines = ['## Top Cluster Size Comparison', '', 'rank  exact  vectorlite  best exact overlap', '----  -----  ----------  ------------------'];
+  const lines = [
+    "## Top Cluster Size Comparison",
+    "",
+    "rank  exact  vectorlite  best exact overlap",
+    "----  -----  ----------  ------------------",
+  ];
   for (let index = 0; index < Math.max(exactTop.length, vectorTop.length); index += 1) {
     const exactSize = exactTop[index]?.size ?? 0;
     const vectorSize = vectorTop[index]?.size ?? 0;
@@ -276,12 +281,12 @@ function buildSummaryTable(exactTop, vectorTop, matches) {
       `${String(index + 1).padStart(4)}  ${String(exactSize).padStart(5)}  ${String(vectorSize).padStart(10)}  ${String(overlap).padStart(18)}`,
     );
   }
-  lines.push('');
+  lines.push("");
   return lines;
 }
 
 function buildDetailLines(vectorTop, matches, metaById, sampleMembers) {
-  const lines = ['## Largest Vectorlite Clusters Vs Exact', ''];
+  const lines = ["## Largest Vectorlite Clusters Vs Exact", ""];
 
   for (let index = 0; index < vectorTop.length; index += 1) {
     const vectorCluster = vectorTop[index];
@@ -293,18 +298,21 @@ function buildDetailLines(vectorTop, matches, metaById, sampleMembers) {
     );
 
     if (!match.bestContributor) {
-      lines.push('- No overlapping exact cluster found.');
-      lines.push('');
+      lines.push("- No overlapping exact cluster found.");
+      lines.push("");
       continue;
     }
 
     const contributorSummary = match.contributors
       .slice(0, 5)
       .map((contributor) => formatContributor(contributor, vectorCluster.size))
-      .join('; ');
+      .join("; ");
     lines.push(`- Top exact contributors: ${contributorSummary}`);
 
-    const bestRepresentative = describeThread(match.bestContributor.representativeThreadId, metaById);
+    const bestRepresentative = describeThread(
+      match.bestContributor.representativeThreadId,
+      metaById,
+    );
     lines.push(`- Best exact representative: ${bestRepresentative}`);
     lines.push(
       `- Members only in vectorlite vs best exact: ${match.vectorOnly.length}; members only in best exact vs vectorlite: ${match.bestExactOnly.length}`,
@@ -315,7 +323,7 @@ function buildDetailLines(vectorTop, matches, metaById, sampleMembers) {
         `- Sample vectorlite-only members: ${match.vectorOnly
           .slice(0, sampleMembers)
           .map((threadId) => describeThread(threadId, metaById))
-          .join(' | ')}`,
+          .join(" | ")}`,
       );
     }
 
@@ -324,11 +332,11 @@ function buildDetailLines(vectorTop, matches, metaById, sampleMembers) {
         `- Sample exact-only members: ${match.bestExactOnly
           .slice(0, sampleMembers)
           .map((threadId) => describeThread(threadId, metaById))
-          .join(' | ')}`,
+          .join(" | ")}`,
       );
     }
 
-    lines.push('');
+    lines.push("");
   }
 
   return lines;
@@ -336,10 +344,10 @@ function buildDetailLines(vectorTop, matches, metaById, sampleMembers) {
 
 async function runParent(args) {
   process.stdout.write(`[exact] starting topology comparison for ${args.fullName}\n`);
-  const exactResult = await runBackend('exact', args);
+  const exactResult = await runBackend("exact", args);
 
   process.stdout.write(`[vectorlite] starting topology comparison for ${args.fullName}\n`);
-  const vectorliteResult = await runBackend('vectorlite', args);
+  const vectorliteResult = await runBackend("vectorlite", args);
 
   const exactClusters = buildClusterIndex(sortClusters(exactResult.clustersDetail ?? []));
   const vectorClusters = buildClusterIndex(sortClusters(vectorliteResult.clustersDetail ?? []));
@@ -352,9 +360,13 @@ async function runParent(args) {
     const bestExactSet = bestContributor
       ? exactClusters[bestContributor.rank - 1].memberSet
       : new Set();
-    const vectorOnly = vectorCluster.memberThreadIds.filter((threadId) => !bestExactSet.has(threadId));
+    const vectorOnly = vectorCluster.memberThreadIds.filter(
+      (threadId) => !bestExactSet.has(threadId),
+    );
     const bestExactOnly = bestContributor
-      ? exactClusters[bestContributor.rank - 1].memberThreadIds.filter((threadId) => !vectorCluster.memberSet.has(threadId))
+      ? exactClusters[bestContributor.rank - 1].memberThreadIds.filter(
+          (threadId) => !vectorCluster.memberSet.has(threadId),
+        )
       : [];
 
     return {
@@ -365,26 +377,28 @@ async function runParent(args) {
     };
   });
 
-  const metaById = fetchThreadMeta(collectSampleIds(vectorTop, exactTop, matches, args.sampleMembers));
+  const metaById = fetchThreadMeta(
+    collectSampleIds(vectorTop, exactTop, matches, args.sampleMembers),
+  );
 
   const lines = [
-    '## Cluster Topology Comparison',
-    '',
+    "## Cluster Topology Comparison",
+    "",
     `- Repo: ${args.fullName}`,
-    `- Parameters: k=${args.k ?? 'default'} threshold=${args.threshold ?? 'default'} candidateK=${args.candidateK ?? 'default'}`,
-    `- Vectorlite efSearch: ${args.efSearch ?? 'default(10)'}`,
+    `- Parameters: k=${args.k ?? "default"} threshold=${args.threshold ?? "default"} candidateK=${args.candidateK ?? "default"}`,
+    `- Vectorlite efSearch: ${args.efSearch ?? "default(10)"}`,
     `- Exact clusters: ${exactResult.clusters}`,
     `- Vectorlite clusters: ${vectorliteResult.clusters}`,
-    '',
+    "",
     ...buildSummaryTable(exactTop, vectorTop, matches),
     ...buildDetailLines(vectorTop, matches, metaById, args.sampleMembers),
   ];
 
-  process.stdout.write(`\n${lines.join('\n')}`);
+  process.stdout.write(`\n${lines.join("\n")}`);
 }
 
 const args = parseArgs(process.argv.slice(2));
-if (args.childBackend === 'exact' || args.childBackend === 'vectorlite') {
+if (args.childBackend === "exact" || args.childBackend === "vectorlite") {
   await runChild(args);
 } else {
   await runParent(args);

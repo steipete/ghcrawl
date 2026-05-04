@@ -1,11 +1,11 @@
-import { LLM_KEY_SUMMARY_PROMPT_VERSION } from '../cluster/llm-key-summary.js';
-import type { GitcrawlConfig } from '../config.js';
-import type { SqliteDatabase } from '../db/sqlite.js';
-import { isRepoVectorStateCurrent } from '../pipeline-state.js';
-import { ACTIVE_EMBED_DIMENSIONS, SUMMARY_PROMPT_VERSION } from '../service-constants.js';
-import type { EmbeddingWorkset } from '../service-types.js';
-import { normalizeSummaryText } from '../service-utils.js';
-import { buildActiveVectorTask } from './tasks.js';
+import { LLM_KEY_SUMMARY_PROMPT_VERSION } from "../cluster/llm-key-summary.js";
+import type { GitcrawlConfig } from "../config.js";
+import type { SqliteDatabase } from "../db/sqlite.js";
+import { isRepoVectorStateCurrent } from "../pipeline-state.js";
+import { ACTIVE_EMBED_DIMENSIONS, SUMMARY_PROMPT_VERSION } from "../service-constants.js";
+import type { EmbeddingWorkset } from "../service-types.js";
+import { normalizeSummaryText } from "../service-utils.js";
+import { buildActiveVectorTask } from "./tasks.js";
 
 export function getEmbeddingWorkset(params: {
   db: SqliteDatabase;
@@ -13,8 +13,7 @@ export function getEmbeddingWorkset(params: {
   repoId: number;
   threadNumber?: number;
 }): EmbeddingWorkset {
-  let sql =
-    `select t.id, t.number, t.title, t.body
+  let sql = `select t.id, t.number, t.title, t.body
      from threads t
      where t.repo_id = ? and t.state = 'open' and t.closed_at_local is null
        and not exists (
@@ -26,10 +25,10 @@ export function getEmbeddingWorkset(params: {
        )`;
   const args: Array<string | number> = [params.repoId];
   if (params.threadNumber) {
-    sql += ' and t.number = ?';
+    sql += " and t.number = ?";
     args.push(params.threadNumber);
   }
-  sql += ' order by t.number asc';
+  sql += " order by t.number asc";
   const rows = params.db.prepare(sql).all(...args) as Array<{
     id: number;
     number: number;
@@ -47,20 +46,25 @@ export function getEmbeddingWorkset(params: {
          and tv.basis = ?
          and tv.dimensions = ?`,
     )
-    .all(params.repoId, params.config.embedModel, params.config.embeddingBasis, ACTIVE_EMBED_DIMENSIONS) as Array<{
-      thread_id: number;
-      content_hash: string;
-    }>;
+    .all(
+      params.repoId,
+      params.config.embedModel,
+      params.config.embeddingBasis,
+      ACTIVE_EMBED_DIMENSIONS,
+    ) as Array<{
+    thread_id: number;
+    content_hash: string;
+  }>;
   const existing = new Map<string, string>();
   for (const row of existingRows) {
     existing.set(String(row.thread_id), row.content_hash);
   }
   const summaryTexts =
-    params.config.embeddingBasis === 'title_summary'
+    params.config.embeddingBasis === "title_summary"
       ? loadDedupeSummaryTextMap(params)
       : new Map<number, string>();
   const keySummaryTexts =
-    params.config.embeddingBasis === 'llm_key_summary'
+    params.config.embeddingBasis === "llm_key_summary"
       ? loadKeySummaryTextMap(params)
       : new Map<number, string>();
   const missingSummaryThreadNumbers: number[] = [];
@@ -79,7 +83,8 @@ export function getEmbeddingWorkset(params: {
       return [task];
     }
     if (
-      (params.config.embeddingBasis === 'title_summary' || params.config.embeddingBasis === 'llm_key_summary') &&
+      (params.config.embeddingBasis === "title_summary" ||
+        params.config.embeddingBasis === "llm_key_summary") &&
       (!pipelineCurrent || !existing.has(String(row.id)))
     ) {
       missingSummaryThreadNumbers.push(row.number);
@@ -98,8 +103,7 @@ function loadDedupeSummaryTextMap(params: {
   repoId: number;
   threadNumber?: number;
 }): Map<number, string> {
-  let sql =
-    `select s.thread_id, s.summary_text
+  let sql = `select s.thread_id, s.summary_text
      from document_summaries s
      join threads t on t.id = s.thread_id
      where t.repo_id = ?
@@ -108,12 +112,16 @@ function loadDedupeSummaryTextMap(params: {
        and s.model = ?
        and s.summary_kind = 'dedupe_summary'
        and s.prompt_version = ?`;
-  const args: Array<number | string> = [params.repoId, params.config.summaryModel, SUMMARY_PROMPT_VERSION];
+  const args: Array<number | string> = [
+    params.repoId,
+    params.config.summaryModel,
+    SUMMARY_PROMPT_VERSION,
+  ];
   if (params.threadNumber) {
-    sql += ' and t.number = ?';
+    sql += " and t.number = ?";
     args.push(params.threadNumber);
   }
-  sql += ' order by t.number asc';
+  sql += " order by t.number asc";
 
   const rows = params.db.prepare(sql).all(...args) as Array<{
     thread_id: number;
@@ -135,8 +143,7 @@ function loadKeySummaryTextMap(params: {
   repoId: number;
   threadNumber?: number;
 }): Map<number, string> {
-  let sql =
-    `select tr.thread_id, ks.key_text
+  let sql = `select tr.thread_id, ks.key_text
      from thread_key_summaries ks
      join thread_revisions tr on tr.id = ks.thread_revision_id
      join threads t on t.id = tr.thread_id
@@ -146,12 +153,16 @@ function loadKeySummaryTextMap(params: {
        and ks.summary_kind = 'llm_key_3line'
        and ks.prompt_version = ?
        and ks.model = ?`;
-  const args: Array<number | string> = [params.repoId, LLM_KEY_SUMMARY_PROMPT_VERSION, params.config.summaryModel];
+  const args: Array<number | string> = [
+    params.repoId,
+    LLM_KEY_SUMMARY_PROMPT_VERSION,
+    params.config.summaryModel,
+  ];
   if (params.threadNumber) {
-    sql += ' and t.number = ?';
+    sql += " and t.number = ?";
     args.push(params.threadNumber);
   }
-  sql += ' order by tr.id asc';
+  sql += " order by tr.id asc";
 
   const rows = params.db.prepare(sql).all(...args) as Array<{
     thread_id: number;

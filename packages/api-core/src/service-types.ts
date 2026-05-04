@@ -5,18 +5,18 @@ import type {
   SearchHitDto,
   SearchResponse,
   ThreadDto,
-} from '@ghcrawl/api-contract';
+} from "@ghcrawl/api-contract";
 
-import type { ConfigValueSource, EmbeddingBasis } from './config.js';
-import type { PortableSyncProfile } from './portable/sync-store.js';
+import type { ConfigValueSource, EmbeddingBasis } from "./config.js";
+import type { PortableSyncProfile } from "./portable/sync-store.js";
 
-export type RunTable = 'sync_runs' | 'summary_runs' | 'embedding_runs' | 'cluster_runs';
+export type RunTable = "sync_runs" | "summary_runs" | "embedding_runs" | "cluster_runs";
 
 export type ThreadRow = {
   id: number;
   repo_id: number;
   number: number;
-  kind: 'issue' | 'pull_request';
+  kind: "issue" | "pull_request";
   state: string;
   closed_at_gh: string | null;
   closed_at_local: string | null;
@@ -43,8 +43,8 @@ export type CommentSeed = {
   updatedAtGh: string | null;
 };
 
-export type EmbeddingSourceKind = 'title' | 'body' | 'dedupe_summary' | 'llm_key_summary';
-export type SimilaritySourceKind = EmbeddingSourceKind | 'deterministic_fingerprint';
+export type EmbeddingSourceKind = "title" | "body" | "dedupe_summary" | "llm_key_summary";
+export type SimilaritySourceKind = EmbeddingSourceKind | "deterministic_fingerprint";
 export type AggregatedClusterEdge = {
   leftThreadId: number;
   rightThreadId: number;
@@ -106,7 +106,7 @@ export type SqliteMaintenanceStats = {
 
 export type DurableTuiClosure = {
   clusterId: number;
-  status: 'active' | 'closed' | 'merged' | 'split';
+  status: "active" | "closed" | "merged" | "split";
   closedAt: string | null;
   reason: string | null;
 };
@@ -152,14 +152,14 @@ export type ClusterExperimentCluster = {
 };
 
 export type ClusterExperimentResult = {
-  backend: 'exact' | 'vectorlite';
+  backend: "exact" | "vectorlite";
   repository: RepositoryDto;
   tempDbPath: string | null;
   threads: number;
   sourceKinds: number;
   edges: number;
   clusters: number;
-  timingBasis: 'cluster-only';
+  timingBasis: "cluster-only";
   durationMs: number;
   totalDurationMs: number;
   loadMs: number;
@@ -222,7 +222,7 @@ export type SyncRunStats = {
   reconciledOpenCloseAt: string | null;
 };
 
-export type TuiClusterSortMode = 'recent' | 'size';
+export type TuiClusterSortMode = "recent" | "size";
 
 export type TuiRepoStats = {
   openIssueCount: number;
@@ -247,14 +247,14 @@ export type TuiClusterSummary = {
   latestUpdatedAt: string | null;
   representativeThreadId: number | null;
   representativeNumber: number | null;
-  representativeKind: 'issue' | 'pull_request' | null;
+  representativeKind: "issue" | "pull_request" | null;
   searchText: string;
 };
 
 export type TuiClusterMember = {
   id: number;
   number: number;
-  kind: 'issue' | 'pull_request';
+  kind: "issue" | "pull_request";
   isClosed: boolean;
   title: string;
   updatedAtGh: string | null;
@@ -275,13 +275,18 @@ export type TuiClusterDetail = {
   latestUpdatedAt: string | null;
   representativeThreadId: number | null;
   representativeNumber: number | null;
-  representativeKind: 'issue' | 'pull_request' | null;
+  representativeKind: "issue" | "pull_request" | null;
   members: TuiClusterMember[];
 };
 
 export type TuiThreadDetail = {
   thread: ThreadDto;
-  summaries: Partial<Record<'problem_summary' | 'solution_summary' | 'maintainer_signal_summary' | 'dedupe_summary', string>>;
+  summaries: Partial<
+    Record<
+      "problem_summary" | "solution_summary" | "maintainer_signal_summary" | "dedupe_summary",
+      string
+    >
+  >;
   keySummary: {
     summaryKind: string;
     promptVersion: string;
@@ -294,7 +299,7 @@ export type TuiThreadDetail = {
     additions: number;
     deletions: number;
   }>;
-  neighbors: SearchHitDto['neighbors'];
+  neighbors: SearchHitDto["neighbors"];
 };
 
 export type TuiSnapshot = {

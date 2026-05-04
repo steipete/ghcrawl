@@ -1,7 +1,7 @@
-import { buildCodeSnapshotSignature } from '../cluster/code-signature.js';
-import { upsertThreadCodeSnapshot, upsertThreadRevision } from '../cluster/persistent-store.js';
-import { blobStoreRoot } from '../db/raw-json-store.js';
-import type { SqliteDatabase } from '../db/sqlite.js';
+import { buildCodeSnapshotSignature } from "../cluster/code-signature.js";
+import { upsertThreadCodeSnapshot, upsertThreadRevision } from "../cluster/persistent-store.js";
+import { blobStoreRoot } from "../db/raw-json-store.js";
+import type { SqliteDatabase } from "../db/sqlite.js";
 import {
   asJson,
   nowIso,
@@ -10,7 +10,7 @@ import {
   stableContentHash,
   userLogin,
   userType,
-} from '../service-utils.js';
+} from "../service-utils.js";
 
 export function upsertRepository(params: {
   db: SqliteDatabase;
@@ -28,23 +28,32 @@ export function upsertRepository(params: {
          raw_json = excluded.raw_json,
          updated_at = excluded.updated_at`,
     )
-    .run(params.owner, params.repo, fullName, params.payload.id ? String(params.payload.id) : null, asJson(params.payload), nowIso());
-  const row = params.db.prepare('select id from repositories where full_name = ?').get(fullName) as { id: number };
+    .run(
+      params.owner,
+      params.repo,
+      fullName,
+      params.payload.id ? String(params.payload.id) : null,
+      asJson(params.payload),
+      nowIso(),
+    );
+  const row = params.db
+    .prepare("select id from repositories where full_name = ?")
+    .get(fullName) as { id: number };
   return row.id;
 }
 
 export function upsertThread(params: {
   db: SqliteDatabase;
   repoId: number;
-  kind: 'issue' | 'pull_request';
+  kind: "issue" | "pull_request";
   payload: Record<string, unknown>;
   pulledAt: string;
 }): number {
   const title = String(params.payload.title ?? `#${params.payload.number}`);
-  const body = typeof params.payload.body === 'string' ? params.payload.body : null;
+  const body = typeof params.payload.body === "string" ? params.payload.body : null;
   const labels = parseLabels(params.payload);
   const assignees = parseAssignees(params.payload);
-  const contentHash = stableContentHash(`${title}\n${body ?? ''}`);
+  const contentHash = stableContentHash(`${title}\n${body ?? ""}`);
   params.db
     .prepare(
       `insert into threads (
@@ -77,7 +86,7 @@ export function upsertThread(params: {
       String(params.payload.id),
       Number(params.payload.number),
       params.kind,
-      String(params.payload.state ?? 'open'),
+      String(params.payload.state ?? "open"),
       title,
       body,
       userLogin(params.payload),
@@ -88,16 +97,16 @@ export function upsertThread(params: {
       asJson(params.payload),
       contentHash,
       params.payload.draft ? 1 : 0,
-      typeof params.payload.created_at === 'string' ? params.payload.created_at : null,
-      typeof params.payload.updated_at === 'string' ? params.payload.updated_at : null,
-      typeof params.payload.closed_at === 'string' ? params.payload.closed_at : null,
-      typeof params.payload.merged_at === 'string' ? params.payload.merged_at : null,
+      typeof params.payload.created_at === "string" ? params.payload.created_at : null,
+      typeof params.payload.updated_at === "string" ? params.payload.updated_at : null,
+      typeof params.payload.closed_at === "string" ? params.payload.closed_at : null,
+      typeof params.payload.merged_at === "string" ? params.payload.merged_at : null,
       params.pulledAt,
       params.pulledAt,
       nowIso(),
     );
   const row = params.db
-    .prepare('select id from threads where repo_id = ? and kind = ? and number = ?')
+    .prepare("select id from threads where repo_id = ? and kind = ? and number = ?")
     .get(params.repoId, params.kind, Number(params.payload.number)) as { id: number };
   return row.id;
 }
@@ -110,10 +119,11 @@ export function persistThreadCodeSnapshot(params: {
   files: Array<Record<string, unknown>>;
 }): void {
   const title = String(params.threadPayload.title ?? `#${params.threadPayload.number}`);
-  const body = typeof params.threadPayload.body === 'string' ? params.threadPayload.body : null;
+  const body = typeof params.threadPayload.body === "string" ? params.threadPayload.body : null;
   const revisionId = upsertThreadRevision(params.db, {
     threadId: params.threadId,
-    sourceUpdatedAt: typeof params.threadPayload.updated_at === 'string' ? params.threadPayload.updated_at : null,
+    sourceUpdatedAt:
+      typeof params.threadPayload.updated_at === "string" ? params.threadPayload.updated_at : null,
     title,
     body,
     labels: parseLabels(params.threadPayload),
@@ -123,8 +133,8 @@ export function persistThreadCodeSnapshot(params: {
   const head = params.threadPayload.head as Record<string, unknown> | undefined;
   upsertThreadCodeSnapshot(params.db, {
     threadRevisionId: revisionId,
-    baseSha: typeof base?.sha === 'string' ? base.sha : null,
-    headSha: typeof head?.sha === 'string' ? head.sha : null,
+    baseSha: typeof base?.sha === "string" ? base.sha : null,
+    headSha: typeof head?.sha === "string" ? head.sha : null,
     signature: buildCodeSnapshotSignature(params.files),
     storeRoot: blobStoreRoot(params.dbPath),
   });

@@ -1,10 +1,17 @@
-import type { GitcrawlConfig } from './config.js';
-import type { SqliteDatabase } from './db/sqlite.js';
-import { ACTIVE_EMBED_DIMENSIONS, ACTIVE_EMBED_PIPELINE_VERSION, SUMMARY_PROMPT_VERSION } from './service-constants.js';
-import type { RepoPipelineStateRow } from './service-types.js';
-import { nowIso } from './service-utils.js';
+import type { GitcrawlConfig } from "./config.js";
+import type { SqliteDatabase } from "./db/sqlite.js";
+import {
+  ACTIVE_EMBED_DIMENSIONS,
+  ACTIVE_EMBED_PIPELINE_VERSION,
+  SUMMARY_PROMPT_VERSION,
+} from "./service-constants.js";
+import type { RepoPipelineStateRow } from "./service-types.js";
+import { nowIso } from "./service-utils.js";
 
-type DesiredPipelineState = Omit<RepoPipelineStateRow, 'repo_id' | 'vectors_current_at' | 'clusters_current_at' | 'updated_at'>;
+type DesiredPipelineState = Omit<
+  RepoPipelineStateRow,
+  "repo_id" | "vectors_current_at" | "clusters_current_at" | "updated_at"
+>;
 
 export function getDesiredPipelineState(config: GitcrawlConfig): DesiredPipelineState {
   return {
@@ -18,11 +25,22 @@ export function getDesiredPipelineState(config: GitcrawlConfig): DesiredPipeline
   };
 }
 
-export function getRepoPipelineState(db: SqliteDatabase, repoId: number): RepoPipelineStateRow | null {
-  return (db.prepare('select * from repo_pipeline_state where repo_id = ? limit 1').get(repoId) as RepoPipelineStateRow | undefined) ?? null;
+export function getRepoPipelineState(
+  db: SqliteDatabase,
+  repoId: number,
+): RepoPipelineStateRow | null {
+  return (
+    (db.prepare("select * from repo_pipeline_state where repo_id = ? limit 1").get(repoId) as
+      | RepoPipelineStateRow
+      | undefined) ?? null
+  );
 }
 
-export function isRepoVectorStateCurrent(db: SqliteDatabase, config: GitcrawlConfig, repoId: number): boolean {
+export function isRepoVectorStateCurrent(
+  db: SqliteDatabase,
+  config: GitcrawlConfig,
+  repoId: number,
+): boolean {
   const state = getRepoPipelineState(db, repoId);
   if (!state || !state.vectors_current_at) {
     return false;
@@ -39,12 +57,20 @@ export function isRepoVectorStateCurrent(db: SqliteDatabase, config: GitcrawlCon
   );
 }
 
-export function isRepoClusterStateCurrent(db: SqliteDatabase, config: GitcrawlConfig, repoId: number): boolean {
+export function isRepoClusterStateCurrent(
+  db: SqliteDatabase,
+  config: GitcrawlConfig,
+  repoId: number,
+): boolean {
   const state = getRepoPipelineState(db, repoId);
   return isRepoVectorStateCurrent(db, config, repoId) && Boolean(state?.clusters_current_at);
 }
 
-export function hasLegacyEmbeddings(db: SqliteDatabase, embedModel: string, repoId: number): boolean {
+export function hasLegacyEmbeddings(
+  db: SqliteDatabase,
+  embedModel: string,
+  repoId: number,
+): boolean {
   const row = db
     .prepare(
       `select count(*) as count
@@ -63,7 +89,7 @@ export function writeRepoPipelineState(
   db: SqliteDatabase,
   config: GitcrawlConfig,
   repoId: number,
-  overrides: Partial<Pick<RepoPipelineStateRow, 'vectors_current_at' | 'clusters_current_at'>>,
+  overrides: Partial<Pick<RepoPipelineStateRow, "vectors_current_at" | "clusters_current_at">>,
 ): void {
   const desired = getDesiredPipelineState(config);
   const current = getRepoPipelineState(db, repoId);
@@ -107,14 +133,22 @@ export function writeRepoPipelineState(
   );
 }
 
-export function markRepoVectorsCurrent(db: SqliteDatabase, config: GitcrawlConfig, repoId: number): void {
+export function markRepoVectorsCurrent(
+  db: SqliteDatabase,
+  config: GitcrawlConfig,
+  repoId: number,
+): void {
   writeRepoPipelineState(db, config, repoId, {
     vectors_current_at: nowIso(),
     clusters_current_at: null,
   });
 }
 
-export function markRepoClustersCurrent(db: SqliteDatabase, config: GitcrawlConfig, repoId: number): void {
+export function markRepoClustersCurrent(
+  db: SqliteDatabase,
+  config: GitcrawlConfig,
+  repoId: number,
+): void {
   const state = getRepoPipelineState(db, repoId);
   writeRepoPipelineState(db, config, repoId, {
     vectors_current_at: state?.vectors_current_at ?? nowIso(),

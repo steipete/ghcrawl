@@ -1,13 +1,13 @@
-import { parentPort, workerData } from 'node:worker_threads';
+import { parentPort, workerData } from "node:worker_threads";
 
-import { openDb } from '../db/sqlite.js';
-import { normalizeEmbedding } from '../search/exact.js';
-import { buildSourceKindEdges } from './exact-edges.js';
+import { openDb } from "../db/sqlite.js";
+import { normalizeEmbedding } from "../search/exact.js";
+import { buildSourceKindEdges } from "./exact-edges.js";
 
 type WorkerInput = {
   dbPath: string;
   repoId: number;
-  sourceKind: 'title' | 'body' | 'dedupe_summary' | 'llm_key_summary';
+  sourceKind: "title" | "body" | "dedupe_summary" | "llm_key_summary";
   limit: number;
   minScore: number;
 };
@@ -19,7 +19,7 @@ type Row = {
 
 const port = parentPort;
 if (!port) {
-  throw new Error('edge-worker requires a parent port');
+  throw new Error("edge-worker requires a parent port");
 }
 
 const { dbPath, repoId, sourceKind, limit, minScore } = workerData as WorkerInput;
@@ -51,7 +51,7 @@ try {
     minScore,
     onProgress: (progress) => {
       port.postMessage({
-        type: 'progress',
+        type: "progress",
         sourceKind,
         ...progress,
       });
@@ -59,7 +59,7 @@ try {
   });
 
   port.postMessage({
-    type: 'result',
+    type: "result",
     sourceKind,
     edges,
   });

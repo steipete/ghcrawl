@@ -1,15 +1,15 @@
-import { spawn } from 'node:child_process';
-import path from 'node:path';
-import readline from 'node:readline';
-import { fileURLToPath } from 'node:url';
+import { spawn } from "node:child_process";
+import path from "node:path";
+import readline from "node:readline";
+import { fileURLToPath } from "node:url";
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const serviceModulePath = path.join(repoRoot, 'packages', 'api-core', 'dist', 'service.js');
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const serviceModulePath = path.join(repoRoot, "packages", "api-core", "dist", "service.js");
 
 const { GHCrawlService } = await import(serviceModulePath);
 
 function formatDurationMs(durationMs) {
-  if (!Number.isFinite(durationMs)) return 'n/a';
+  if (!Number.isFinite(durationMs)) return "n/a";
   if (durationMs < 1000) return `${durationMs.toFixed(1)} ms`;
   const totalSeconds = durationMs / 1000;
   if (totalSeconds < 60) return `${totalSeconds.toFixed(2)} s`;
@@ -19,9 +19,9 @@ function formatDurationMs(durationMs) {
 }
 
 function formatBytes(bytes) {
-  if (!Number.isFinite(bytes)) return 'n/a';
+  if (!Number.isFinite(bytes)) return "n/a";
   const absoluteBytes = Math.abs(bytes);
-  const sign = bytes < 0 ? '-' : '';
+  const sign = bytes < 0 ? "-" : "";
   if (absoluteBytes < 1024 * 1024) {
     return `${sign}${(absoluteBytes / 1024).toFixed(1)} KiB`;
   }
@@ -29,63 +29,63 @@ function formatBytes(bytes) {
 }
 
 function formatPercent(value) {
-  const sign = value > 0 ? '+' : '';
+  const sign = value > 0 ? "+" : "";
   return `${sign}${value.toFixed(1)}%`;
 }
 
 function parseArgs(argv) {
-  let repo = 'openclaw/openclaw';
+  let repo = "openclaw/openclaw";
   let k;
   let threshold;
   let candidateK;
   let childBackend = null;
-  let backend = 'both';
+  let backend = "both";
   let maxOldSpaceSizeMb;
 
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
     if (!token) continue;
-    if (token === '--repo') {
+    if (token === "--repo") {
       repo = argv[index + 1] ?? repo;
       index += 1;
       continue;
     }
-    if (token === '--k') {
+    if (token === "--k") {
       k = Number(argv[index + 1]);
       index += 1;
       continue;
     }
-    if (token === '--threshold') {
+    if (token === "--threshold") {
       threshold = Number(argv[index + 1]);
       index += 1;
       continue;
     }
-    if (token === '--candidate-k') {
+    if (token === "--candidate-k") {
       candidateK = Number(argv[index + 1]);
       index += 1;
       continue;
     }
-    if (token === '--child-backend') {
+    if (token === "--child-backend") {
       childBackend = argv[index + 1] ?? null;
       index += 1;
       continue;
     }
-    if (token === '--backend') {
+    if (token === "--backend") {
       backend = argv[index + 1] ?? backend;
       index += 1;
       continue;
     }
-    if (token === '--max-old-space-size') {
+    if (token === "--max-old-space-size") {
       maxOldSpaceSizeMb = Number(argv[index + 1]);
       index += 1;
       continue;
     }
-    if (!token.startsWith('--')) {
+    if (!token.startsWith("--")) {
       repo = token;
     }
   }
 
-  const [owner, name] = repo.split('/');
+  const [owner, name] = repo.split("/");
   if (!owner || !name) {
     throw new Error(`Expected owner/repo, received: ${repo}`);
   }
@@ -105,7 +105,7 @@ function parseArgs(argv) {
 
 function getRepoStats(service, fullName) {
   const repoRow = service.db
-    .prepare('select id, full_name from repositories where full_name = ?')
+    .prepare("select id, full_name from repositories where full_name = ?")
     .get(fullName);
   if (!repoRow) {
     throw new Error(`Repository not found in local DB: ${fullName}`);
@@ -145,7 +145,7 @@ function getRepoStats(service, fullName) {
 function buildReportLines(label, result) {
   return [
     `### ${label}`,
-    '',
+    "",
     `- Cluster-only duration: ${formatDurationMs(result.durationMs)}`,
     `- Total duration: ${formatDurationMs(result.totalDurationMs)}`,
     `- Load stage: ${formatDurationMs(result.loadMs)}`,
@@ -161,26 +161,29 @@ function buildReportLines(label, result) {
     `- Candidate K: ${result.candidateK}`,
     `- Peak RSS: ${formatBytes(result.memory.peakRssBytes)}`,
     `- Peak heap used: ${formatBytes(result.memory.peakHeapUsedBytes)}`,
-    '',
+    "",
   ];
 }
 
 function buildDeltaLines(exactResult, vectorliteResult) {
   const clusterDeltaMs = vectorliteResult.durationMs - exactResult.durationMs;
-  const clusterDeltaPercent = exactResult.durationMs > 0 ? (clusterDeltaMs / exactResult.durationMs) * 100 : 0;
+  const clusterDeltaPercent =
+    exactResult.durationMs > 0 ? (clusterDeltaMs / exactResult.durationMs) * 100 : 0;
   const totalDeltaMs = vectorliteResult.totalDurationMs - exactResult.totalDurationMs;
-  const totalDeltaPercent = exactResult.totalDurationMs > 0 ? (totalDeltaMs / exactResult.totalDurationMs) * 100 : 0;
+  const totalDeltaPercent =
+    exactResult.totalDurationMs > 0 ? (totalDeltaMs / exactResult.totalDurationMs) * 100 : 0;
   const peakRssDelta = vectorliteResult.memory.peakRssBytes - exactResult.memory.peakRssBytes;
-  const peakHeapDelta = vectorliteResult.memory.peakHeapUsedBytes - exactResult.memory.peakHeapUsedBytes;
+  const peakHeapDelta =
+    vectorliteResult.memory.peakHeapUsedBytes - exactResult.memory.peakHeapUsedBytes;
 
   return [
-    '### Delta',
-    '',
+    "### Delta",
+    "",
     `- Cluster-only delta vs exact: ${formatDurationMs(clusterDeltaMs)} (${formatPercent(clusterDeltaPercent)})`,
     `- Total duration delta vs exact: ${formatDurationMs(totalDeltaMs)} (${formatPercent(totalDeltaPercent)})`,
     `- Peak RSS delta vs exact: ${formatBytes(peakRssDelta)}`,
     `- Peak heap used delta vs exact: ${formatBytes(peakHeapDelta)}`,
-    '',
+    "",
   ];
 }
 
@@ -204,49 +207,49 @@ async function runChild(args) {
 
 async function runBackend(backend, args) {
   return await new Promise((resolve, reject) => {
-    const childArgs = ['--expose-gc'];
+    const childArgs = ["--expose-gc"];
     if (args.maxOldSpaceSizeMb !== undefined) {
       childArgs.push(`--max-old-space-size=${args.maxOldSpaceSizeMb}`);
     }
     childArgs.push(
-      path.join(repoRoot, 'scripts', 'cluster-perf-real-compare.mjs'),
+      path.join(repoRoot, "scripts", "cluster-perf-real-compare.mjs"),
       `${args.fullName}`,
-      '--child-backend',
+      "--child-backend",
       backend,
     );
     if (args.k !== undefined) {
-      childArgs.push('--k', String(args.k));
+      childArgs.push("--k", String(args.k));
     }
     if (args.threshold !== undefined) {
-      childArgs.push('--threshold', String(args.threshold));
+      childArgs.push("--threshold", String(args.threshold));
     }
     if (args.candidateK !== undefined) {
-      childArgs.push('--candidate-k', String(args.candidateK));
+      childArgs.push("--candidate-k", String(args.candidateK));
     }
 
     const child = spawn(process.execPath, childArgs, {
       cwd: repoRoot,
       env: process.env,
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: ["ignore", "pipe", "pipe"],
     });
 
     let result = null;
     const pipeStream = (stream, label) => {
       const rl = readline.createInterface({ input: stream });
-      rl.on('line', (line) => {
-        if (label === 'stdout' && line.startsWith('__GHCRAWL_RESULT__')) {
-          result = JSON.parse(line.slice('__GHCRAWL_RESULT__'.length));
+      rl.on("line", (line) => {
+        if (label === "stdout" && line.startsWith("__GHCRAWL_RESULT__")) {
+          result = JSON.parse(line.slice("__GHCRAWL_RESULT__".length));
           return;
         }
         process.stdout.write(`[${backend}] ${line}\n`);
       });
     };
 
-    pipeStream(child.stdout, 'stdout');
-    pipeStream(child.stderr, 'stderr');
+    pipeStream(child.stdout, "stdout");
+    pipeStream(child.stderr, "stderr");
 
-    child.on('error', reject);
-    child.on('close', (code, signal) => {
+    child.on("error", reject);
+    child.on("close", (code, signal) => {
       if (code !== 0) {
         const detail = signal ? `signal ${signal}` : `code ${code}`;
         reject(new Error(`${backend} benchmark exited with ${detail}`));
@@ -275,45 +278,45 @@ async function runParent(args) {
   }
 
   const lines = [
-    '## Real Cluster Perf Comparison',
-    '',
+    "## Real Cluster Perf Comparison",
+    "",
     `- Repo: ${args.fullName}`,
     `- Config DB: ${dbPath}`,
     `- Embed model: ${embedModel}`,
     `- Open threads: ${stats.openThreadCount}`,
-    `- Embedding counts: ${stats.embeddingCounts.map((row) => `${row.sourceKind}=${row.count}`).join(', ') || 'none'}`,
-    `- Parameters: k=${args.k ?? 'default'} threshold=${args.threshold ?? 'default'} candidateK=${args.candidateK ?? 'default'}`,
+    `- Embedding counts: ${stats.embeddingCounts.map((row) => `${row.sourceKind}=${row.count}`).join(", ") || "none"}`,
+    `- Parameters: k=${args.k ?? "default"} threshold=${args.threshold ?? "default"} candidateK=${args.candidateK ?? "default"}`,
     `- Requested backend(s): ${args.backend}`,
-    `- Child max old space size: ${args.maxOldSpaceSizeMb ?? 'default'}`,
-    '',
+    `- Child max old space size: ${args.maxOldSpaceSizeMb ?? "default"}`,
+    "",
   ];
 
   let exactResult = null;
   let vectorliteResult = null;
 
-  if (args.backend === 'both' || args.backend === 'exact') {
+  if (args.backend === "both" || args.backend === "exact") {
     process.stdout.write(`[exact] starting real-db cluster experiment for ${args.fullName}\n`);
-    exactResult = await runBackend('exact', args);
-    lines.push(...buildReportLines('Exact', exactResult));
-    if (args.backend === 'both') {
-      process.stdout.write(`\n${lines.join('\n')}\n`);
+    exactResult = await runBackend("exact", args);
+    lines.push(...buildReportLines("Exact", exactResult));
+    if (args.backend === "both") {
+      process.stdout.write(`\n${lines.join("\n")}\n`);
     }
   }
 
-  if (args.backend === 'both' || args.backend === 'vectorlite') {
+  if (args.backend === "both" || args.backend === "vectorlite") {
     process.stdout.write(`[vectorlite] starting real-db cluster experiment for ${args.fullName}\n`);
-    vectorliteResult = await runBackend('vectorlite', args);
-    lines.push(...buildReportLines('Vectorlite', vectorliteResult));
+    vectorliteResult = await runBackend("vectorlite", args);
+    lines.push(...buildReportLines("Vectorlite", vectorliteResult));
     if (exactResult) {
       lines.push(...buildDeltaLines(exactResult, vectorliteResult));
     }
   }
 
-  process.stdout.write(`\n${lines.join('\n')}`);
+  process.stdout.write(`\n${lines.join("\n")}`);
 }
 
 const args = parseArgs(process.argv.slice(2));
-if (args.childBackend === 'exact' || args.childBackend === 'vectorlite') {
+if (args.childBackend === "exact" || args.childBackend === "vectorlite") {
   await runChild(args);
 } else {
   await runParent(args);

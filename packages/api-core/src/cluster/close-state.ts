@@ -1,8 +1,12 @@
-import type { SqliteDatabase } from '../db/sqlite.js';
-import { nowIso } from '../service-utils.js';
-import { getLatestClusterRun } from './run-queries.js';
+import type { SqliteDatabase } from "../db/sqlite.js";
+import { nowIso } from "../service-utils.js";
+import { getLatestClusterRun } from "./run-queries.js";
 
-export function reconcileClusterCloseState(db: SqliteDatabase, repoId: number, clusterIds?: number[]): number {
+export function reconcileClusterCloseState(
+  db: SqliteDatabase,
+  repoId: number,
+  clusterIds?: number[],
+): number {
   const latestRun = getLatestClusterRun(db, repoId);
   if (!latestRun) {
     return 0;
@@ -13,7 +17,9 @@ export function reconcileClusterCloseState(db: SqliteDatabase, repoId: number, c
       ? Array.from(new Set(clusterIds))
       : (
           db
-            .prepare('select id from clusters where repo_id = ? and cluster_run_id = ? order by id asc')
+            .prepare(
+              "select id from clusters where repo_id = ? and cluster_run_id = ? order by id asc",
+            )
             .all(repoId, latestRun.id) as Array<{ id: number }>
         ).map((row) => row.id);
   if (resolvedClusterIds.length === 0) {
@@ -55,7 +61,7 @@ export function reconcileClusterCloseState(db: SqliteDatabase, repoId: number, c
           closed_member_count: number;
         }
       | undefined;
-    if (!row || row.close_reason_local === 'manual') {
+    if (!row || row.close_reason_local === "manual") {
       continue;
     }
     if (row.member_count > 0 && row.closed_member_count >= row.member_count) {

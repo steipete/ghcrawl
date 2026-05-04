@@ -1,12 +1,16 @@
-import type { SqliteDatabase } from '../db/sqlite.js';
-import type { GitHubClient, GitHubReporter } from '../github/client.js';
-import { STALE_CLOSED_SWEEP_LIMIT, SYNC_BATCH_DELAY_MS, SYNC_BATCH_SIZE } from '../service-constants.js';
-import { asJson, isMissingGitHubResourceError, nowIso } from '../service-utils.js';
+import type { SqliteDatabase } from "../db/sqlite.js";
+import type { GitHubClient, GitHubReporter } from "../github/client.js";
+import {
+  STALE_CLOSED_SWEEP_LIMIT,
+  SYNC_BATCH_DELAY_MS,
+  SYNC_BATCH_SIZE,
+} from "../service-constants.js";
+import { asJson, isMissingGitHubResourceError, nowIso } from "../service-utils.js";
 
 type StaleThreadRow = {
   id: number;
   number: number;
-  kind: 'issue' | 'pull_request';
+  kind: "issue" | "pull_request";
 };
 
 export async function applyClosedOverlapSweep(params: {
@@ -38,11 +42,13 @@ export async function applyClosedOverlapSweep(params: {
     return 0;
   }
 
-  const sweepLabel = params.sweepLabel ?? 'recent closed sweep';
+  const sweepLabel = params.sweepLabel ?? "recent closed sweep";
   const sweepWindow = params.closedSweepSince
     ? `since ${params.closedSweepSince}`
     : `from the latest ${params.closedSweepLimit ?? STALE_CLOSED_SWEEP_LIMIT} closed items`;
-  params.onProgress?.(`[sync] ${sweepLabel}: scanning ${staleRows.length} unseen previously-open thread(s) against closed items ${sweepWindow}`);
+  params.onProgress?.(
+    `[sync] ${sweepLabel}: scanning ${staleRows.length} unseen previously-open thread(s) against closed items ${sweepWindow}`,
+  );
 
   const staleByNumber = new Map<number, StaleThreadRow>(staleRows.map((row) => [row.number, row]));
   const recentlyClosed = await params.github.listRepositoryIssues(
@@ -51,7 +57,7 @@ export async function applyClosedOverlapSweep(params: {
     params.closedSweepSince,
     params.closedSweepLimit ?? STALE_CLOSED_SWEEP_LIMIT,
     params.reporter,
-    'closed',
+    "closed",
   );
 
   let threadsClosed = 0;
@@ -59,8 +65,8 @@ export async function applyClosedOverlapSweep(params: {
     const number = Number(payload.number);
     const staleRow = staleByNumber.get(number);
     if (!staleRow) continue;
-    const state = String(payload.state ?? 'closed');
-    if (state === 'open') continue;
+    const state = String(payload.state ?? "closed");
+    if (state === "open") continue;
     const pulledAt = nowIso();
     params.db
       .prepare(
@@ -77,9 +83,9 @@ export async function applyClosedOverlapSweep(params: {
       .run(
         state,
         asJson(payload),
-        typeof payload.updated_at === 'string' ? payload.updated_at : null,
-        typeof payload.closed_at === 'string' ? payload.closed_at : null,
-        typeof payload.merged_at === 'string' ? payload.merged_at : null,
+        typeof payload.updated_at === "string" ? payload.updated_at : null,
+        typeof payload.closed_at === "string" ? payload.closed_at : null,
+        typeof payload.merged_at === "string" ? payload.merged_at : null,
         pulledAt,
         pulledAt,
         staleRow.id,
@@ -88,12 +94,18 @@ export async function applyClosedOverlapSweep(params: {
     threadsClosed += 1;
   }
 
-  params.onProgress?.(`[sync] ${sweepLabel} matched ${threadsClosed} stale thread(s); ${staleByNumber.size} remain open locally`);
+  params.onProgress?.(
+    `[sync] ${sweepLabel} matched ${threadsClosed} stale thread(s); ${staleByNumber.size} remain open locally`,
+  );
 
   return threadsClosed;
 }
 
-export function countStaleOpenThreads(db: SqliteDatabase, repoId: number, crawlStartedAt: string): number {
+export function countStaleOpenThreads(
+  db: SqliteDatabase,
+  repoId: number,
+  crawlStartedAt: string,
+): number {
   const row = db
     .prepare(
       `select count(*) as count
@@ -140,20 +152,22 @@ export async function reconcileMissingOpenThreads(params: {
   let threadsClosed = 0;
   for (const [index, row] of staleRows.entries()) {
     if (index > 0 && index % SYNC_BATCH_SIZE === 0) {
-      params.onProgress?.(`[sync] stale reconciliation batch boundary reached at ${index} threads; sleeping 5s before continuing`);
+      params.onProgress?.(
+        `[sync] stale reconciliation batch boundary reached at ${index} threads; sleeping 5s before continuing`,
+      );
       await new Promise((resolve) => setTimeout(resolve, SYNC_BATCH_DELAY_MS));
     }
     params.onProgress?.(`[sync] reconciling stale ${row.kind} #${row.number}`);
     const pulledAt = nowIso();
     let payload: Record<string, unknown> | null = null;
-    let state = 'closed';
+    let state = "closed";
 
     try {
       payload =
-        row.kind === 'pull_request'
+        row.kind === "pull_request"
           ? await params.github.getPull(params.owner, params.repo, row.number, params.reporter)
           : await params.github.getIssue(params.owner, params.repo, row.number, params.reporter);
-      state = String(payload.state ?? 'open');
+      state = String(payload.state ?? "open");
     } catch (error) {
       if (!isMissingGitHubResourceError(error)) {
         throw error;
@@ -179,9 +193,9 @@ export async function reconcileMissingOpenThreads(params: {
         .run(
           state,
           asJson(payload),
-          typeof payload.updated_at === 'string' ? payload.updated_at : null,
-          typeof payload.closed_at === 'string' ? payload.closed_at : null,
-          typeof payload.merged_at === 'string' ? payload.merged_at : null,
+          typeof payload.updated_at === "string" ? payload.updated_at : null,
+          typeof payload.closed_at === "string" ? payload.closed_at : null,
+          typeof payload.merged_at === "string" ? payload.merged_at : null,
           pulledAt,
           pulledAt,
           row.id,
@@ -199,13 +213,15 @@ export async function reconcileMissingOpenThreads(params: {
         .run(pulledAt, pulledAt, pulledAt, row.id);
     }
 
-    if (state !== 'open') {
+    if (state !== "open") {
       threadsClosed += 1;
     }
   }
 
   if (threadsClosed > 0) {
-    params.onProgress?.(`[sync] marked ${threadsClosed} stale thread(s) as closed after GitHub confirmation`);
+    params.onProgress?.(
+      `[sync] marked ${threadsClosed} stale thread(s) as closed after GitHub confirmation`,
+    );
   }
 
   return threadsClosed;

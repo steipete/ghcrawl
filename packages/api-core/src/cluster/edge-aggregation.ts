@@ -1,4 +1,8 @@
-import type { AggregatedClusterEdge, EmbeddingSourceKind, SimilaritySourceKind } from '../service-types.js';
+import type {
+  AggregatedClusterEdge,
+  EmbeddingSourceKind,
+  SimilaritySourceKind,
+} from "../service-types.js";
 
 export type PerSourceScoreEntry = {
   leftThreadId: number;
@@ -6,7 +10,7 @@ export type PerSourceScoreEntry = {
   scores: Map<EmbeddingSourceKind, number>;
 };
 
-export type EdgeAggregationMode = 'max' | 'mean' | 'weighted' | 'min-of-2' | 'boost';
+export type EdgeAggregationMode = "max" | "mean" | "weighted" | "min-of-2" | "boost";
 
 export function edgeKey(leftThreadId: number, rightThreadId: number): string {
   const left = Math.min(leftThreadId, rightThreadId);
@@ -38,7 +42,7 @@ export function mergeSourceKindEdges(
 
 export function pruneWeakCrossKindEdges(
   aggregated: Map<string, AggregatedClusterEdge>,
-  threadKinds: Map<number, 'issue' | 'pull_request'>,
+  threadKinds: Map<number, "issue" | "pull_request">,
   crossKindMinScore: number,
 ): number {
   let dropped = 0;
@@ -48,7 +52,7 @@ export function pruneWeakCrossKindEdges(
     if (!leftKind || !rightKind || leftKind === rightKind) {
       continue;
     }
-    if (edge.sourceKinds.has('deterministic_fingerprint') || edge.score >= crossKindMinScore) {
+    if (edge.sourceKinds.has("deterministic_fingerprint") || edge.score >= crossKindMinScore) {
       continue;
     }
     aggregated.delete(key);
@@ -92,15 +96,15 @@ export function finalizeEdgeScores(
     let finalScore: number;
 
     switch (aggregation) {
-      case 'max':
+      case "max":
         finalScore = Math.max(...scoreValues);
         break;
 
-      case 'mean':
+      case "mean":
         finalScore = scoreValues.reduce((a, b) => a + b, 0) / scoreValues.length;
         break;
 
-      case 'weighted': {
+      case "weighted": {
         let weightedSum = 0;
         let weightSum = 0;
         for (const [kind, score] of entry.scores) {
@@ -112,14 +116,14 @@ export function finalizeEdgeScores(
         break;
       }
 
-      case 'min-of-2':
+      case "min-of-2":
         if (scoreValues.length < 2) {
           continue;
         }
         finalScore = Math.max(...scoreValues);
         break;
 
-      case 'boost': {
+      case "boost": {
         const best = Math.max(...scoreValues);
         const bonusSources = scoreValues.length - 1;
         finalScore = Math.min(1.0, best + bonusSources * 0.05);

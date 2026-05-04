@@ -4,20 +4,24 @@ import {
   VECTORLITE_CLUSTER_EXPANDED_EF_SEARCH,
   VECTORLITE_CLUSTER_EXPANDED_K,
   VECTORLITE_CLUSTER_EXPANDED_MULTIPLIER,
-} from '../service-constants.js';
+} from "../service-constants.js";
 
 export function vectorBlob(values: number[]): Buffer {
   return Buffer.from(Float32Array.from(values).buffer);
 }
 
 export function parseStoredVector(value: Buffer | string): number[] {
-  if (typeof value === 'string') {
+  if (typeof value === "string") {
     if (!value) {
-      throw new Error('Stored vector payload is empty. Run refresh or embed first.');
+      throw new Error("Stored vector payload is empty. Run refresh or embed first.");
     }
     return JSON.parse(value) as number[];
   }
-  const floats = new Float32Array(value.buffer, value.byteOffset, Math.floor(value.byteLength / Float32Array.BYTES_PER_ELEMENT));
+  const floats = new Float32Array(
+    value.buffer,
+    value.byteOffset,
+    Math.floor(value.byteLength / Float32Array.BYTES_PER_ELEMENT),
+  );
   return Array.from(floats);
 }
 

@@ -1,6 +1,6 @@
 export function cosineSimilarity(left: number[], right: number[]): number {
   if (left.length !== right.length) {
-    throw new Error('Embedding dimensions do not match');
+    throw new Error("Embedding dimensions do not match");
   }
   let dot = 0;
   let leftNorm = 0;
@@ -31,7 +31,7 @@ export function normalizeEmbedding(embedding: number[]): { normalized: number[];
 
 export function dotProduct(left: number[], right: number[]): number {
   if (left.length !== right.length) {
-    throw new Error('Embedding dimensions do not match');
+    throw new Error("Embedding dimensions do not match");
   }
   let dot = 0;
   for (let index = 0; index < left.length; index += 1) {
@@ -40,7 +40,11 @@ export function dotProduct(left: number[], right: number[]): number {
   return dot;
 }
 
-function insertTopK<T>(ranked: Array<{ item: T; score: number }>, candidate: { item: T; score: number }, limit: number): void {
+function insertTopK<T>(
+  ranked: Array<{ item: T; score: number }>,
+  candidate: { item: T; score: number },
+  limit: number,
+): void {
   let insertAt = ranked.length;
   while (insertAt > 0 && candidate.score > ranked[insertAt - 1].score) {
     insertAt -= 1;

@@ -1,12 +1,11 @@
 {
   "name": "ghcrawl-workspace",
-  "private": true,
   "version": "0.0.0",
-  "type": "module",
+  "private": true,
   "description": "Local-first GitHub issue and pull request crawler with clustering and a terminal UI",
-  "author": "PwrDrvr LLC <harold@pwrdrvr.com>",
   "license": "MIT",
-  "packageManager": "pnpm@10.29.3",
+  "author": "PwrDrvr LLC <harold@pwrdrvr.com>",
+  "type": "module",
   "scripts": {
     "build": "pnpm -r build",
     "clean": "node ./scripts/clean-workspace.mjs dist tsbuildinfo",
@@ -35,20 +34,29 @@
     "pack:smoke": "node ./scripts/pack-smoke.mjs",
     "release:metadata": "node ./scripts/release-metadata.mjs",
     "release:apply-version": "node ./scripts/apply-release-version.mjs",
+    "format": "oxfmt --write package.json apps packages scripts tsconfig.base.json tsconfig.json '!**/dist/**'",
+    "format:check": "oxfmt --check package.json apps packages scripts tsconfig.base.json tsconfig.json '!**/dist/**'",
+    "lint": "pnpm format:check && oxlint --deny-warnings apps packages scripts",
     "typecheck": "pnpm build && pnpm -r typecheck",
-    "test": "pnpm -r test"
+    "test": "pnpm -r test",
+    "check": "pnpm lint && pnpm typecheck && pnpm test"
   },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^25.6.0",
+    "@typescript/native-preview": "7.0.0-dev.20260503.1",
+    "oxfmt": "^0.47.0",
+    "oxlint": "^1.62.0",
+    "oxlint-tsgolint": "^0.22.1",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.3",
+    "yaml": "^2.8.4"
+  },
+  "packageManager": "pnpm@10.29.3",
   "pnpm": {
     "onlyBuiltDependencies": [
       "better-sqlite3",
       "esbuild"
     ]
-  },
-  "devDependencies": {
-    "@types/better-sqlite3": "^7.6.13",
-    "@types/node": "^24.12.2",
-    "tsx": "^4.20.5",
-    "typescript": "^6.0.3",
-    "yaml": "^2.8.3"
   }
 }

@@ -1,22 +1,27 @@
-import path from 'node:path';
+import path from "node:path";
 
-import type { SqliteDatabase } from '../db/sqlite.js';
-import { validatePortableSyncDatabase } from './inspect.js';
-import { openReadonlyDb } from './sqlite-utils.js';
-import type { PortableSyncImportResponse } from './types.js';
+import type { SqliteDatabase } from "../db/sqlite.js";
+import { validatePortableSyncDatabase } from "./inspect.js";
+import { openReadonlyDb } from "./sqlite-utils.js";
+import type { PortableSyncImportResponse } from "./types.js";
 
-export function importPortableSyncDatabase(params: { liveDb: SqliteDatabase; portablePath: string }): PortableSyncImportResponse {
+export function importPortableSyncDatabase(params: {
+  liveDb: SqliteDatabase;
+  portablePath: string;
+}): PortableSyncImportResponse {
   const resolvedPath = path.resolve(params.portablePath);
   const validation = validatePortableSyncDatabase(resolvedPath);
   if (!validation.ok) {
-    throw new Error(`Portable sync validation failed: ${validation.errors.join('; ')}`);
+    throw new Error(`Portable sync validation failed: ${validation.errors.join("; ")}`);
   }
 
   const portableDb = openReadonlyDb(resolvedPath);
   try {
-    const portableRepo = portableDb.prepare('select * from repositories order by id limit 1').get() as PortableRepositoryRow | undefined;
+    const portableRepo = portableDb
+      .prepare("select * from repositories order by id limit 1")
+      .get() as PortableRepositoryRow | undefined;
     if (!portableRepo) {
-      throw new Error('Portable sync database has no repository row');
+      throw new Error("Portable sync database has no repository row");
     }
 
     const imported = emptyImportCounts();
@@ -36,7 +41,10 @@ export function importPortableSyncDatabase(params: { liveDb: SqliteDatabase; por
       for (const revision of readPortableThreadRevisions(portableDb)) {
         const liveThreadId = threadIdMap.get(revision.thread_id);
         if (!liveThreadId) continue;
-        revisionIdMap.set(revision.id, upsertImportedThreadRevision(params.liveDb, liveThreadId, revision));
+        revisionIdMap.set(
+          revision.id,
+          upsertImportedThreadRevision(params.liveDb, liveThreadId, revision),
+        );
         imported.threadRevisions += 1;
       }
 
@@ -54,12 +62,19 @@ export function importPortableSyncDatabase(params: { liveDb: SqliteDatabase; por
         imported.threadKeySummaries += 1;
       }
 
-      if (upsertImportedRepoSyncState(params.liveDb, repoId, portableDb, portableRepo.id)) imported.repoSyncState = 1;
-      if (upsertImportedRepoPipelineState(params.liveDb, repoId, portableDb, portableRepo.id)) imported.repoPipelineState = 1;
+      if (upsertImportedRepoSyncState(params.liveDb, repoId, portableDb, portableRepo.id))
+        imported.repoSyncState = 1;
+      if (upsertImportedRepoPipelineState(params.liveDb, repoId, portableDb, portableRepo.id))
+        imported.repoPipelineState = 1;
 
       for (const cluster of readPortableClusterGroups(portableDb, portableRepo.id)) {
-        const representativeThreadId = cluster.representative_thread_id ? (threadIdMap.get(cluster.representative_thread_id) ?? null) : null;
-        clusterIdMap.set(cluster.id, upsertImportedClusterGroup(params.liveDb, repoId, representativeThreadId, cluster));
+        const representativeThreadId = cluster.representative_thread_id
+          ? (threadIdMap.get(cluster.representative_thread_id) ?? null)
+          : null;
+        clusterIdMap.set(
+          cluster.id,
+          upsertImportedClusterGroup(params.liveDb, repoId, representativeThreadId, cluster),
+        );
         imported.clusterGroups += 1;
       }
 
@@ -191,7 +206,7 @@ type PortableClusterClosureRow = Record<string, unknown> & {
   cluster_id: number;
 };
 
-function emptyImportCounts(): PortableSyncImportResponse['imported'] {
+function emptyImportCounts(): PortableSyncImportResponse["imported"] {
   return {
     repositories: 0,
     threads: 0,
@@ -209,39 +224,60 @@ function emptyImportCounts(): PortableSyncImportResponse['imported'] {
 }
 
 function readPortableThreads(db: SqliteDatabase, repoId: number): PortableThreadRow[] {
-  return db.prepare('select * from threads where repo_id = ? order by id').all(repoId) as PortableThreadRow[];
+  return db
+    .prepare("select * from threads where repo_id = ? order by id")
+    .all(repoId) as PortableThreadRow[];
 }
 
 function readPortableThreadRevisions(db: SqliteDatabase): PortableThreadRevisionRow[] {
-  return db.prepare('select * from thread_revisions order by id').all() as PortableThreadRevisionRow[];
+  return db
+    .prepare("select * from thread_revisions order by id")
+    .all() as PortableThreadRevisionRow[];
 }
 
 function readPortableThreadFingerprints(db: SqliteDatabase): PortableThreadFingerprintRow[] {
-  return db.prepare('select * from thread_fingerprints order by id').all() as PortableThreadFingerprintRow[];
+  return db
+    .prepare("select * from thread_fingerprints order by id")
+    .all() as PortableThreadFingerprintRow[];
 }
 
 function readPortableThreadKeySummaries(db: SqliteDatabase): PortableThreadKeySummaryRow[] {
-  return db.prepare('select * from thread_key_summaries order by id').all() as PortableThreadKeySummaryRow[];
+  return db
+    .prepare("select * from thread_key_summaries order by id")
+    .all() as PortableThreadKeySummaryRow[];
 }
 
 function readPortableClusterGroups(db: SqliteDatabase, repoId: number): PortableClusterGroupRow[] {
-  return db.prepare('select * from cluster_groups where repo_id = ? order by id').all(repoId) as PortableClusterGroupRow[];
+  return db
+    .prepare("select * from cluster_groups where repo_id = ? order by id")
+    .all(repoId) as PortableClusterGroupRow[];
 }
 
 function readPortableClusterMemberships(db: SqliteDatabase): PortableClusterMembershipRow[] {
-  return db.prepare('select * from cluster_memberships order by cluster_id, thread_id').all() as PortableClusterMembershipRow[];
+  return db
+    .prepare("select * from cluster_memberships order by cluster_id, thread_id")
+    .all() as PortableClusterMembershipRow[];
 }
 
-function readPortableClusterOverrides(db: SqliteDatabase, repoId: number): PortableClusterOverrideRow[] {
-  return db.prepare('select * from cluster_overrides where repo_id = ? order by id').all(repoId) as PortableClusterOverrideRow[];
+function readPortableClusterOverrides(
+  db: SqliteDatabase,
+  repoId: number,
+): PortableClusterOverrideRow[] {
+  return db
+    .prepare("select * from cluster_overrides where repo_id = ? order by id")
+    .all(repoId) as PortableClusterOverrideRow[];
 }
 
 function readPortableClusterAliases(db: SqliteDatabase): PortableClusterAliasRow[] {
-  return db.prepare('select * from cluster_aliases order by cluster_id, alias_slug').all() as PortableClusterAliasRow[];
+  return db
+    .prepare("select * from cluster_aliases order by cluster_id, alias_slug")
+    .all() as PortableClusterAliasRow[];
 }
 
 function readPortableClusterClosures(db: SqliteDatabase): PortableClusterClosureRow[] {
-  return db.prepare('select * from cluster_closures order by cluster_id').all() as PortableClusterClosureRow[];
+  return db
+    .prepare("select * from cluster_closures order by cluster_id")
+    .all() as PortableClusterClosureRow[];
 }
 
 function upsertImportedRepository(db: SqliteDatabase, row: PortableRepositoryRow): number {
@@ -254,7 +290,9 @@ function upsertImportedRepository(db: SqliteDatabase, row: PortableRepositoryRow
        github_repo_id = excluded.github_repo_id,
        updated_at = excluded.updated_at`,
   ).run(row.owner, row.name, row.full_name, row.github_repo_id, row.updated_at);
-  const live = db.prepare('select id from repositories where full_name = ?').get(row.full_name) as { id: number };
+  const live = db.prepare("select id from repositories where full_name = ?").get(row.full_name) as {
+    id: number;
+  };
   return live.id;
 }
 
@@ -312,11 +350,17 @@ function upsertImportedThread(db: SqliteDatabase, repoId: number, row: PortableT
     row.closed_at_local,
     row.close_reason_local,
   );
-  const live = db.prepare('select id from threads where repo_id = ? and kind = ? and number = ?').get(repoId, row.kind, row.number) as { id: number };
+  const live = db
+    .prepare("select id from threads where repo_id = ? and kind = ? and number = ?")
+    .get(repoId, row.kind, row.number) as { id: number };
   return live.id;
 }
 
-function upsertImportedThreadRevision(db: SqliteDatabase, liveThreadId: number, row: PortableThreadRevisionRow): number {
+function upsertImportedThreadRevision(
+  db: SqliteDatabase,
+  liveThreadId: number,
+  row: PortableThreadRevisionRow,
+): number {
   db.prepare(
     `insert into thread_revisions (thread_id, source_updated_at, content_hash, title_hash, body_hash, labels_hash, created_at)
      values (?, ?, ?, ?, ?, ?, ?)
@@ -325,14 +369,28 @@ function upsertImportedThreadRevision(db: SqliteDatabase, liveThreadId: number, 
        title_hash = excluded.title_hash,
        body_hash = excluded.body_hash,
        labels_hash = excluded.labels_hash`,
-  ).run(liveThreadId, row.source_updated_at, row.content_hash, row.title_hash, row.body_hash, row.labels_hash, row.created_at);
-  const live = db.prepare('select id from thread_revisions where thread_id = ? and content_hash = ?').get(liveThreadId, row.content_hash) as {
+  ).run(
+    liveThreadId,
+    row.source_updated_at,
+    row.content_hash,
+    row.title_hash,
+    row.body_hash,
+    row.labels_hash,
+    row.created_at,
+  );
+  const live = db
+    .prepare("select id from thread_revisions where thread_id = ? and content_hash = ?")
+    .get(liveThreadId, row.content_hash) as {
     id: number;
   };
   return live.id;
 }
 
-function upsertImportedThreadFingerprint(db: SqliteDatabase, liveRevisionId: number, row: PortableThreadFingerprintRow): void {
+function upsertImportedThreadFingerprint(
+  db: SqliteDatabase,
+  liveRevisionId: number,
+  row: PortableThreadFingerprintRow,
+): void {
   db.prepare(
     `insert into thread_fingerprints (
        thread_revision_id, algorithm_version, fingerprint_hash, fingerprint_slug, title_tokens_json, body_token_hash,
@@ -365,7 +423,11 @@ function upsertImportedThreadFingerprint(db: SqliteDatabase, liveRevisionId: num
   );
 }
 
-function upsertImportedThreadKeySummary(db: SqliteDatabase, liveRevisionId: number, row: PortableThreadKeySummaryRow): void {
+function upsertImportedThreadKeySummary(
+  db: SqliteDatabase,
+  liveRevisionId: number,
+  row: PortableThreadKeySummaryRow,
+): void {
   db.prepare(
     `insert into thread_key_summaries (
        thread_revision_id, summary_kind, prompt_version, provider, model, input_hash, output_hash, key_text, created_at
@@ -389,8 +451,15 @@ function upsertImportedThreadKeySummary(db: SqliteDatabase, liveRevisionId: numb
   );
 }
 
-function upsertImportedRepoSyncState(db: SqliteDatabase, repoId: number, portableDb: SqliteDatabase, portableRepoId: number): boolean {
-  const row = portableDb.prepare('select * from repo_sync_state where repo_id = ?').get(portableRepoId) as Record<string, unknown> | undefined;
+function upsertImportedRepoSyncState(
+  db: SqliteDatabase,
+  repoId: number,
+  portableDb: SqliteDatabase,
+  portableRepoId: number,
+): boolean {
+  const row = portableDb
+    .prepare("select * from repo_sync_state where repo_id = ?")
+    .get(portableRepoId) as Record<string, unknown> | undefined;
   if (!row) return false;
   db.prepare(
     `insert into repo_sync_state (
@@ -415,8 +484,15 @@ function upsertImportedRepoSyncState(db: SqliteDatabase, repoId: number, portabl
   return true;
 }
 
-function upsertImportedRepoPipelineState(db: SqliteDatabase, repoId: number, portableDb: SqliteDatabase, portableRepoId: number): boolean {
-  const row = portableDb.prepare('select * from repo_pipeline_state where repo_id = ?').get(portableRepoId) as Record<string, unknown> | undefined;
+function upsertImportedRepoPipelineState(
+  db: SqliteDatabase,
+  repoId: number,
+  portableDb: SqliteDatabase,
+  portableRepoId: number,
+): boolean {
+  const row = portableDb
+    .prepare("select * from repo_pipeline_state where repo_id = ?")
+    .get(portableRepoId) as Record<string, unknown> | undefined;
   if (!row) return false;
   db.prepare(
     `insert into repo_pipeline_state (
@@ -482,7 +558,9 @@ function upsertImportedClusterGroup(
     row.updated_at,
     row.closed_at,
   );
-  const live = db.prepare('select id from cluster_groups where repo_id = ? and stable_key = ?').get(repoId, row.stable_key) as { id: number };
+  const live = db
+    .prepare("select id from cluster_groups where repo_id = ? and stable_key = ?")
+    .get(repoId, row.stable_key) as { id: number };
   return live.id;
 }
 
@@ -543,10 +621,23 @@ function upsertImportedClusterOverride(
        reason = excluded.reason,
        actor_id = excluded.actor_id,
        expires_at = excluded.expires_at`,
-  ).run(repoId, liveClusterId, liveThreadId, row.action, row.actor_id, row.reason, row.created_at, row.expires_at);
+  ).run(
+    repoId,
+    liveClusterId,
+    liveThreadId,
+    row.action,
+    row.actor_id,
+    row.reason,
+    row.created_at,
+    row.expires_at,
+  );
 }
 
-function upsertImportedClusterAlias(db: SqliteDatabase, liveClusterId: number, row: PortableClusterAliasRow): void {
+function upsertImportedClusterAlias(
+  db: SqliteDatabase,
+  liveClusterId: number,
+  row: PortableClusterAliasRow,
+): void {
   db.prepare(
     `insert into cluster_aliases (cluster_id, alias_slug, reason, created_at)
      values (?, ?, ?, ?)
@@ -554,7 +645,11 @@ function upsertImportedClusterAlias(db: SqliteDatabase, liveClusterId: number, r
   ).run(liveClusterId, row.alias_slug, row.reason, row.created_at);
 }
 
-function upsertImportedClusterClosure(db: SqliteDatabase, liveClusterId: number, row: PortableClusterClosureRow): void {
+function upsertImportedClusterClosure(
+  db: SqliteDatabase,
+  liveClusterId: number,
+  row: PortableClusterClosureRow,
+): void {
   db.prepare(
     `insert into cluster_closures (cluster_id, reason, actor_kind, created_at, updated_at)
      values (?, ?, ?, ?, ?)

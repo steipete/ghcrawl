@@ -118,15 +118,15 @@ ghcrawl refresh owner/repo
 
 ### TUI Screenshots
 
-| Issue/PR list modal | Refresh modal |
-| --- | --- |
+| Issue/PR list modal                                                                                                                 | Refresh modal                                                                                                                                 |
+| ----------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | ![User open issue and PR list modal](https://raw.githubusercontent.com/pwrdrvr/ghcrawl/main/docs/images/ghcrawl-tui-user-modal.png) | ![GitHub, embed, and cluster refresh modal](https://raw.githubusercontent.com/pwrdrvr/ghcrawl/main/docs/images/ghcrawl-tui-refresh-modal.png) |
-| Browse open issue and PR records from local SQLite. | Press `g` to open the GitHub/embed/cluster refresh modal. |
+| Browse open issue and PR records from local SQLite.                                                                                 | Press `g` to open the GitHub/embed/cluster refresh modal.                                                                                     |
 
-| Closed members in a cluster | Fully closed cluster |
-| --- | --- |
+| Closed members in a cluster                                                                                                             | Fully closed cluster                                                                                                                       |
+| --------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | ![Closed cluster members grayed out](https://raw.githubusercontent.com/pwrdrvr/ghcrawl/main/docs/images/ghcrawl-tui-closed-members.png) | ![Completely closed cluster grayed out](https://raw.githubusercontent.com/pwrdrvr/ghcrawl/main/docs/images/ghcrawl-tui-closed-cluster.png) |
-| Closed members stay visible in gray so overlap is still easy to inspect. | A cluster with no open members is grayed out as a whole until you hide closed items. |
+| Closed members stay visible in gray so overlap is still easy to inspect.                                                                | A cluster with no open members is grayed out as a whole until you hide closed items.                                                       |
 
 ![Stacked TUI layout](https://raw.githubusercontent.com/pwrdrvr/ghcrawl/main/docs/images/ghcrawl-tui-layout-stacked.png)
 

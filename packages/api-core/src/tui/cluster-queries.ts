@@ -1,15 +1,19 @@
-import { humanKeyForValue } from '../cluster/human-key.js';
-import type { SqliteDatabase } from '../db/sqlite.js';
-import type { DurableTuiClosure, TuiClusterDetail, TuiClusterSummary } from '../service-types.js';
-import { isEffectivelyClosed, parseArray } from '../service-utils.js';
+import { humanKeyForValue } from "../cluster/human-key.js";
+import type { SqliteDatabase } from "../db/sqlite.js";
+import type { DurableTuiClosure, TuiClusterDetail, TuiClusterSummary } from "../service-types.js";
+import { isEffectivelyClosed, parseArray } from "../service-utils.js";
 import {
   clusterDisplayTitle,
   collapseOverlappingClosedDurableRows,
   durableClosureReason,
   durableTuiSummaryFromRow,
-} from './cluster-format.js';
+} from "./cluster-format.js";
 
-export function clusterHumanName(repoId: number, representativeThreadId: number | null, clusterId: number): string {
+export function clusterHumanName(
+  repoId: number,
+  representativeThreadId: number | null,
+  clusterId: number,
+): string {
   return humanKeyForValue(
     representativeThreadId === null
       ? `repo:${repoId}:cluster:${clusterId}`
@@ -31,7 +35,7 @@ export function getDurableClosuresByRepresentative(
     threadId,
     stableKey: humanKeyForValue(`repo:${repoId}:cluster-representative:${threadId}`).hash,
   }));
-  const placeholders = identities.map(() => '?').join(',');
+  const placeholders = identities.map(() => "?").join(",");
   const rows = db
     .prepare(
       `select cg.id, cg.stable_key, cg.status, coalesce(cc.updated_at, cg.closed_at) as closed_at, cc.reason
@@ -44,11 +48,13 @@ export function getDurableClosuresByRepresentative(
     .all(repoId, ...identities.map((identity) => identity.stableKey)) as Array<{
     id: number;
     stable_key: string;
-    status: 'active' | 'closed' | 'merged' | 'split';
+    status: "active" | "closed" | "merged" | "split";
     closed_at: string | null;
     reason: string | null;
   }>;
-  const threadIdByStableKey = new Map(identities.map((identity) => [identity.stableKey, identity.threadId]));
+  const threadIdByStableKey = new Map(
+    identities.map((identity) => [identity.stableKey, identity.threadId]),
+  );
   const closures = new Map<number, DurableTuiClosure>();
   for (const row of rows) {
     const threadId = threadIdByStableKey.get(row.stable_key);
@@ -115,13 +121,13 @@ export function listClosedDurableTuiClusters(
     .all(repoId, minSize) as Array<{
     cluster_id: number;
     stable_slug: string;
-    status: 'active' | 'closed' | 'merged' | 'split';
+    status: "active" | "closed" | "merged" | "split";
     closed_at: string | null;
     closure_reason: string | null;
     representative_thread_id: number | null;
     title: string | null;
     representative_number: number | null;
-    representative_kind: 'issue' | 'pull_request' | null;
+    representative_kind: "issue" | "pull_request" | null;
     representative_title: string | null;
     member_count: number;
     latest_updated_at: string | null;
@@ -133,17 +139,24 @@ export function listClosedDurableTuiClusters(
   }>;
 
   return collapseOverlappingClosedDurableRows(
-    rows.filter((row) => row.representative_thread_id === null || !representedThreadIds.has(row.representative_thread_id)),
-  )
-    .map((row) =>
-      durableTuiSummaryFromRow({
-        ...row,
-        representative_title: row.representative_title ?? row.title,
-      }),
-    );
+    rows.filter(
+      (row) =>
+        row.representative_thread_id === null ||
+        !representedThreadIds.has(row.representative_thread_id),
+    ),
+  ).map((row) =>
+    durableTuiSummaryFromRow({
+      ...row,
+      representative_title: row.representative_title ?? row.title,
+    }),
+  );
 }
 
-export function getDurableTuiClusterSummary(db: SqliteDatabase, repoId: number, clusterId: number): TuiClusterSummary | null {
+export function getDurableTuiClusterSummary(
+  db: SqliteDatabase,
+  repoId: number,
+  clusterId: number,
+): TuiClusterSummary | null {
   const row = db
     .prepare(
       `select
@@ -191,7 +204,12 @@ export function getDurableTuiClusterSummary(db: SqliteDatabase, repoId: number, 
   });
 }
 
-export function listRawTuiClusters(db: SqliteDatabase, repoId: number, clusterRunId: number, minSize: number): TuiClusterSummary[] {
+export function listRawTuiClusters(
+  db: SqliteDatabase,
+  repoId: number,
+  clusterRunId: number,
+  minSize: number,
+): TuiClusterSummary[] {
   const rows = db
     .prepare(
       `select
@@ -233,7 +251,13 @@ export function listRawTuiClusters(db: SqliteDatabase, repoId: number, clusterRu
       .filter((threadId): threadId is number => threadId !== null),
   );
 
-  return rows.map((row) => rawTuiSummaryFromRow(repoId, row, durableClosures.get(row.representative_thread_id ?? -1) ?? null));
+  return rows.map((row) =>
+    rawTuiSummaryFromRow(
+      repoId,
+      row,
+      durableClosures.get(row.representative_thread_id ?? -1) ?? null,
+    ),
+  );
 }
 
 export function getRawTuiClusterSummary(
@@ -282,17 +306,19 @@ export function getRawTuiClusterSummary(
   const durableClosure =
     row.representative_thread_id === null
       ? null
-      : (getDurableClosuresByRepresentative(db, repoId, [row.representative_thread_id]).get(row.representative_thread_id) ?? null);
+      : (getDurableClosuresByRepresentative(db, repoId, [row.representative_thread_id]).get(
+          row.representative_thread_id,
+        ) ?? null);
   return rawTuiSummaryFromRow(repoId, row, durableClosure);
 }
 
 export function listTuiClusterMembers(
   db: SqliteDatabase,
   clusterId: number,
-  source: 'run_cluster' | 'durable_cluster',
-): TuiClusterDetail['members'] {
+  source: "run_cluster" | "durable_cluster",
+): TuiClusterDetail["members"] {
   const rows =
-    source === 'run_cluster'
+    source === "run_cluster"
       ? (db
           .prepare(
             `select t.id, t.number, t.kind, t.state, t.closed_at_local, t.title, t.updated_at_gh, t.html_url, t.labels_json, cm.score_to_representative
@@ -336,13 +362,13 @@ export function listTuiClusterMembers(
 type DurableTuiClusterSummaryRow = {
   cluster_id: number;
   stable_slug: string;
-  status: 'active' | 'closed' | 'merged' | 'split';
+  status: "active" | "closed" | "merged" | "split";
   closed_at: string | null;
   closure_reason: string | null;
   representative_thread_id: number | null;
   title: string | null;
   representative_number: number | null;
-  representative_kind: 'issue' | 'pull_request' | null;
+  representative_kind: "issue" | "pull_request" | null;
   representative_title: string | null;
   member_count: number;
   latest_updated_at: string | null;
@@ -359,7 +385,7 @@ type RawTuiClusterSummaryRow = {
   close_reason_local: string | null;
   representative_thread_id: number | null;
   representative_number: number | null;
-  representative_kind: 'issue' | 'pull_request' | null;
+  representative_kind: "issue" | "pull_request" | null;
   representative_title: string | null;
   latest_updated_at: string | null;
   issue_count: number;
@@ -371,7 +397,7 @@ type RawTuiClusterSummaryRow = {
 type TuiClusterMemberRow = {
   id: number;
   number: number;
-  kind: 'issue' | 'pull_request';
+  kind: "issue" | "pull_request";
   state: string;
   closed_at_local: string | null;
   title: string;
@@ -381,14 +407,22 @@ type TuiClusterMemberRow = {
   score_to_representative: number | null;
 };
 
-function rawTuiSummaryFromRow(repoId: number, row: RawTuiClusterSummaryRow, durableClosure: DurableTuiClosure | null): TuiClusterSummary {
+function rawTuiSummaryFromRow(
+  repoId: number,
+  row: RawTuiClusterSummaryRow,
+  durableClosure: DurableTuiClosure | null,
+): TuiClusterSummary {
   const clusterName = clusterHumanName(repoId, row.representative_thread_id, row.cluster_id);
   return {
     clusterId: row.cluster_id,
     displayTitle: clusterDisplayTitle(clusterName, row.representative_title, row.cluster_id),
-    isClosed: row.close_reason_local !== null || durableClosure !== null || row.closed_member_count >= row.member_count,
+    isClosed:
+      row.close_reason_local !== null ||
+      durableClosure !== null ||
+      row.closed_member_count >= row.member_count,
     closedAtLocal: row.closed_at_local ?? durableClosure?.closedAt ?? null,
-    closeReasonLocal: row.close_reason_local ?? (durableClosure ? durableClosureReason(durableClosure) : null),
+    closeReasonLocal:
+      row.close_reason_local ?? (durableClosure ? durableClosureReason(durableClosure) : null),
     totalCount: row.member_count,
     issueCount: row.issue_count,
     pullRequestCount: row.pull_request_count,
@@ -396,6 +430,7 @@ function rawTuiSummaryFromRow(repoId: number, row: RawTuiClusterSummaryRow, dura
     representativeThreadId: row.representative_thread_id,
     representativeNumber: row.representative_number,
     representativeKind: row.representative_kind,
-    searchText: `${clusterName} ${(row.representative_title ?? '').toLowerCase()} ${row.search_text ?? ''}`.trim(),
+    searchText:
+      `${clusterName} ${(row.representative_title ?? "").toLowerCase()} ${row.search_text ?? ""}`.trim(),
   };
 }

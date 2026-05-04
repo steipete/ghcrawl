@@ -1,38 +1,46 @@
-import { buildShingles, jaccard, minhashSignature, minhashSimilarity, simhash64, simhashSimilarity, winnowingFingerprints } from './fingerprint-algorithms.js';
-import { humanKeyForValue, stableHash } from './human-key.js';
+import {
+  buildShingles,
+  jaccard,
+  minhashSignature,
+  minhashSimilarity,
+  simhash64,
+  simhashSimilarity,
+  winnowingFingerprints,
+} from "./fingerprint-algorithms.js";
+import { humanKeyForValue, stableHash } from "./human-key.js";
 
 const TOKEN_RE = /[a-zA-Z0-9_]+/g;
 const TITLE_STOPWORDS = new Set([
-  'fix',
-  'bug',
-  'feat',
-  'feature',
-  'docs',
-  'chore',
-  'refactor',
-  'test',
-  'add',
-  'update',
-  'improve',
-  'support',
-  'allow',
-  'enable',
-  'with',
-  'from',
-  'when',
-  'after',
-  'before',
-  'into',
-  'for',
-  'the',
-  'and',
-  'or',
+  "fix",
+  "bug",
+  "feat",
+  "feature",
+  "docs",
+  "chore",
+  "refactor",
+  "test",
+  "add",
+  "update",
+  "improve",
+  "support",
+  "allow",
+  "enable",
+  "with",
+  "from",
+  "when",
+  "after",
+  "before",
+  "into",
+  "for",
+  "the",
+  "and",
+  "or",
 ]);
 
 export type FingerprintInput = {
   threadId: number;
   number: number;
-  kind: 'issue' | 'pull_request';
+  kind: "issue" | "pull_request";
   title: string;
   body: string | null;
   labels: string[];
@@ -74,16 +82,16 @@ export type FingerprintPairBreakdown = {
   lineage: number;
 };
 
-export const THREAD_FINGERPRINT_ALGORITHM_VERSION = 'thread-fingerprint-v2';
+export const THREAD_FINGERPRINT_ALGORITHM_VERSION = "thread-fingerprint-v2";
 
 export function tokenize(value: string | null | undefined): string[] {
   return Array.from(value?.toLowerCase().matchAll(TOKEN_RE) ?? []).map((match) => match[0]);
 }
 
 export function moduleBucket(path: string, depth = 2): string {
-  const parts = path.split('/').filter(Boolean);
-  if (parts.length === 0) return 'root/*';
-  return `${parts.slice(0, depth).join('/')}/*`;
+  const parts = path.split("/").filter(Boolean);
+  if (parts.length === 0) return "root/*";
+  return `${parts.slice(0, depth).join("/")}/*`;
 }
 
 export function fingerprintFeatureHash(input: {
@@ -94,7 +102,9 @@ export function fingerprintFeatureHash(input: {
   patchIds: string[];
 }): string {
   const changedFiles = uniqueSorted(input.changedFiles);
-  const moduleBuckets = uniqueSorted(input.moduleBuckets ?? changedFiles.map((path) => moduleBucket(path)));
+  const moduleBuckets = uniqueSorted(
+    input.moduleBuckets ?? changedFiles.map((path) => moduleBucket(path)),
+  );
   return stableHash(
     JSON.stringify({
       linkedRefs: uniqueSorted(input.linkedRefs),
@@ -119,7 +129,9 @@ function overlapMin(left: Set<string>, right: Set<string>): number {
   return intersection / Math.min(left.size, right.size);
 }
 
-export function buildDeterministicThreadFingerprint(input: FingerprintInput): DeterministicThreadFingerprint {
+export function buildDeterministicThreadFingerprint(
+  input: FingerprintInput,
+): DeterministicThreadFingerprint {
   const titleTokens = tokenize(input.title);
   const bodyTokens = tokenize(input.body);
   const changedFiles = uniqueSorted(input.changedFiles ?? []);
@@ -127,8 +139,16 @@ export function buildDeterministicThreadFingerprint(input: FingerprintInput): De
   const hunkSignatures = uniqueSorted(input.hunkSignatures ?? []);
   const patchIds = uniqueSorted(input.patchIds ?? []);
   const moduleBuckets = uniqueSorted(changedFiles.map((path) => moduleBucket(path)));
-  const salientTitleTokens = uniqueSorted(titleTokens.filter((token) => token.length >= 4 && !TITLE_STOPWORDS.has(token)));
-  const featureHash = fingerprintFeatureHash({ linkedRefs, changedFiles, moduleBuckets, hunkSignatures, patchIds });
+  const salientTitleTokens = uniqueSorted(
+    titleTokens.filter((token) => token.length >= 4 && !TITLE_STOPWORDS.has(token)),
+  );
+  const featureHash = fingerprintFeatureHash({
+    linkedRefs,
+    changedFiles,
+    moduleBuckets,
+    hunkSignatures,
+    patchIds,
+  });
   const materialTokens = [
     ...titleTokens,
     ...bodyTokens,
@@ -187,8 +207,10 @@ export function compareDeterministicFingerprints(
   const maxChangedFiles = Math.max(left.changedFiles.length, right.changedFiles.length);
   const fileBreadthPenalty = breadthPenalty(maxChangedFiles, 40);
   const moduleBreadthPenalty = breadthPenalty(maxChangedFiles, 12);
-  const fileOverlap = jaccard(new Set(left.changedFiles), new Set(right.changedFiles)) * fileBreadthPenalty;
-  const moduleOverlap = jaccard(new Set(left.moduleBuckets), new Set(right.moduleBuckets)) * moduleBreadthPenalty;
+  const fileOverlap =
+    jaccard(new Set(left.changedFiles), new Set(right.changedFiles)) * fileBreadthPenalty;
+  const moduleOverlap =
+    jaccard(new Set(left.moduleBuckets), new Set(right.moduleBuckets)) * moduleBreadthPenalty;
   const hunkOverlap = jaccard(new Set(left.hunkSignatures), new Set(right.hunkSignatures));
   const patchOverlap = overlapMin(new Set(left.patchIds), new Set(right.patchIds));
   return {

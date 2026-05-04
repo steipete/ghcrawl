@@ -1,8 +1,8 @@
-import { rawJsonStorage } from '../db/raw-json-store.js';
-import type { SqliteDatabase } from '../db/sqlite.js';
-import type { CommentSeed, ThreadRow } from '../service-types.js';
-import { nowIso, parseArray } from '../service-utils.js';
-import { buildCanonicalDocument } from './normalize.js';
+import { rawJsonStorage } from "../db/raw-json-store.js";
+import type { SqliteDatabase } from "../db/sqlite.js";
+import type { CommentSeed, ThreadRow } from "../service-types.js";
+import { nowIso, parseArray } from "../service-utils.js";
+import { buildCanonicalDocument } from "./normalize.js";
 
 export function replaceComments(params: {
   db: SqliteDatabase;
@@ -16,9 +16,14 @@ export function replaceComments(params: {
     ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   const tx = params.db.transaction((commentRows: CommentSeed[]) => {
-    params.db.prepare('delete from comments where thread_id = ?').run(params.threadId);
+    params.db.prepare("delete from comments where thread_id = ?").run(params.threadId);
     for (const comment of commentRows) {
-      const raw = rawJsonStorage(params.db, params.dbPath, comment.rawJson, `application/vnd.ghcrawl.${comment.commentType}.raw+json`);
+      const raw = rawJsonStorage(
+        params.db,
+        params.dbPath,
+        comment.rawJson,
+        `application/vnd.ghcrawl.${comment.commentType}.raw+json`,
+      );
       insert.run(
         params.threadId,
         comment.githubId,
@@ -38,12 +43,17 @@ export function replaceComments(params: {
 }
 
 export function refreshThreadDocument(db: SqliteDatabase, threadId: number): void {
-  const thread = db.prepare('select * from threads where id = ?').get(threadId) as ThreadRow;
+  const thread = db.prepare("select * from threads where id = ?").get(threadId) as ThreadRow;
   const comments = db
     .prepare(
-      'select body, author_login, author_type, is_bot from comments where thread_id = ? order by coalesce(created_at_gh, updated_at_gh) asc, id asc',
+      "select body, author_login, author_type, is_bot from comments where thread_id = ? order by coalesce(created_at_gh, updated_at_gh) asc, id asc",
     )
-    .all(threadId) as Array<{ body: string; author_login: string | null; author_type: string | null; is_bot: number }>;
+    .all(threadId) as Array<{
+    body: string;
+    author_login: string | null;
+    author_type: string | null;
+    is_bot: number;
+  }>;
 
   const canonical = buildCanonicalDocument({
     title: thread.title,
@@ -68,5 +78,9 @@ export function refreshThreadDocument(db: SqliteDatabase, threadId: number): voi
        updated_at = excluded.updated_at`,
   ).run(threadId, thread.title, thread.body, canonical.rawText, canonical.dedupeText, nowIso());
 
-  db.prepare('update threads set content_hash = ?, updated_at = ? where id = ?').run(canonical.contentHash, nowIso(), threadId);
+  db.prepare("update threads set content_hash = ?, updated_at = ? where id = ?").run(
+    canonical.contentHash,
+    nowIso(),
+    threadId,
+  );
 }

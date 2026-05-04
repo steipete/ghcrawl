@@ -1,14 +1,14 @@
-import type { SearchHitDto } from '@ghcrawl/api-contract';
+import type { SearchHitDto } from "@ghcrawl/api-contract";
 
-import type { SqliteDatabase } from '../db/sqlite.js';
-import { getLatestClusterRun } from './run-queries.js';
+import type { SqliteDatabase } from "../db/sqlite.js";
+import { getLatestClusterRun } from "./run-queries.js";
 
 export function listStoredClusterNeighbors(params: {
   db: SqliteDatabase;
   repoId: number;
   threadId: number;
   limit: number;
-}): SearchHitDto['neighbors'] {
+}): SearchHitDto["neighbors"] {
   const latestRun = getLatestClusterRun(params.db, params.repoId);
   if (!latestRun) {
     return [];
@@ -60,7 +60,7 @@ export function listStoredClusterNeighbors(params: {
     ) as Array<{
     neighbor_thread_id: number;
     neighbor_number: number;
-    neighbor_kind: 'issue' | 'pull_request';
+    neighbor_kind: "issue" | "pull_request";
     neighbor_title: string;
     score: number;
   }>;

@@ -1,14 +1,19 @@
-import OpenAI from 'openai';
-import { APIConnectionError, APIConnectionTimeoutError, APIError, RateLimitError } from 'openai/error';
-import { zodTextFormat } from 'openai/helpers/zod';
-import { z } from 'zod';
+import OpenAI from "openai";
+import {
+  APIConnectionError,
+  APIConnectionTimeoutError,
+  APIError,
+  RateLimitError,
+} from "openai/error";
+import { zodTextFormat } from "openai/helpers/zod";
+import { z } from "zod";
 
 import {
   LLM_KEY_SUMMARY_SYSTEM_PROMPT,
   llmKeySummarySchema,
   parseLlmKeySummary,
   type LlmKeySummary,
-} from '../cluster/llm-key-summary.js';
+} from "../cluster/llm-key-summary.js";
 
 export type SummaryResult = {
   problemSummary: string;
@@ -27,9 +32,19 @@ export type SummaryUsage = {
 
 export type AiProvider = {
   providerName?: string;
-  summarizeThread: (params: { model: string; text: string }) => Promise<{ summary: SummaryResult; usage?: SummaryUsage }>;
-  generateKeySummary?: (params: { model: string; text: string }) => Promise<{ summary: LlmKeySummary; usage?: SummaryUsage }>;
-  embedTexts: (params: { model: string; texts: string[]; dimensions?: number }) => Promise<number[][]>;
+  summarizeThread: (params: {
+    model: string;
+    text: string;
+  }) => Promise<{ summary: SummaryResult; usage?: SummaryUsage }>;
+  generateKeySummary?: (params: {
+    model: string;
+    text: string;
+  }) => Promise<{ summary: LlmKeySummary; usage?: SummaryUsage }>;
+  embedTexts: (params: {
+    model: string;
+    texts: string[];
+    dimensions?: number;
+  }) => Promise<number[][]>;
 };
 
 const summarySchema = z.object({
@@ -40,7 +55,7 @@ const summarySchema = z.object({
 });
 
 export class OpenAiProvider implements AiProvider {
-  readonly providerName = 'openai';
+  readonly providerName = "openai";
 
   private readonly client: OpenAI;
 
@@ -48,8 +63,11 @@ export class OpenAiProvider implements AiProvider {
     this.client = new OpenAI({ apiKey });
   }
 
-  async summarizeThread(params: { model: string; text: string }): Promise<{ summary: SummaryResult; usage?: SummaryUsage }> {
-    const format = zodTextFormat(summarySchema, 'ghcrawl_thread_summary');
+  async summarizeThread(params: {
+    model: string;
+    text: string;
+  }): Promise<{ summary: SummaryResult; usage?: SummaryUsage }> {
+    const format = zodTextFormat(summarySchema, "ghcrawl_thread_summary");
     let lastError: Error | null = null;
 
     for (const [attemptIndex, maxOutputTokens] of [500, 900, 1400].entries()) {
@@ -58,45 +76,47 @@ export class OpenAiProvider implements AiProvider {
           model: params.model,
           input: [
             {
-              role: 'system',
+              role: "system",
               content: [
                 {
-                  type: 'input_text',
+                  type: "input_text",
                   text: [
-                    'Summarize this GitHub issue or pull request for automated duplicate detection. Your summary will be embedded and clustered.',
-                    '',
-                    'Structure your analysis:',
+                    "Summarize this GitHub issue or pull request for automated duplicate detection. Your summary will be embedded and clustered.",
+                    "",
+                    "Structure your analysis:",
                     '1. First identify the COMPONENT or SUBSYSTEM (e.g., "Discord gateway", "WhatsApp delivery", "Telegram media handler", "CLI routing", "session management")',
-                    '2. Then identify the SPECIFIC PROBLEM or CHANGE within that component',
-                    '3. Combine into a clear dedupe_summary that starts with the component name',
-                    '',
-                    'Ignore completely: template boilerplate, testing instructions, checklists, environment info, reproduction steps, deployment notes, version numbers, cross-references.',
-                    '',
-                    'Return JSON with keys: problem_summary, solution_summary, maintainer_signal_summary, dedupe_summary.',
-                    'Plain text, no markdown, 1-3 sentences each.',
+                    "2. Then identify the SPECIFIC PROBLEM or CHANGE within that component",
+                    "3. Combine into a clear dedupe_summary that starts with the component name",
+                    "",
+                    "Ignore completely: template boilerplate, testing instructions, checklists, environment info, reproduction steps, deployment notes, version numbers, cross-references.",
+                    "",
+                    "Return JSON with keys: problem_summary, solution_summary, maintainer_signal_summary, dedupe_summary.",
+                    "Plain text, no markdown, 1-3 sentences each.",
                     'dedupe_summary format: "[Component]: [specific issue or change]" — this helps cluster by subsystem.',
-                  ].join('\n'),
+                  ].join("\n"),
                 },
               ],
             },
             {
-              role: 'user',
-              content: [{ type: 'input_text', text: params.text }],
+              role: "user",
+              content: [{ type: "input_text", text: params.text }],
             },
           ],
           text: {
             format,
-            verbosity: 'low',
+            verbosity: "low",
           },
           reasoning: {
-            effort: 'low',
+            effort: "low",
           },
           max_output_tokens: maxOutputTokens,
         });
 
-        const raw = response.output_text ?? '';
+        const raw = response.output_text ?? "";
         if (!raw.trim()) {
-          throw new Error(`empty structured output${response.incomplete_details?.reason ? ` (${response.incomplete_details.reason})` : ''}`);
+          throw new Error(
+            `empty structured output${response.incomplete_details?.reason ? ` (${response.incomplete_details.reason})` : ""}`,
+          );
         }
         const parsed = summarySchema.parse(JSON.parse(raw));
 
@@ -125,11 +145,16 @@ export class OpenAiProvider implements AiProvider {
       }
     }
 
-    throw new Error(`OpenAI summarization failed after 3 attempts: ${lastError?.message ?? 'unknown error'}`);
+    throw new Error(
+      `OpenAI summarization failed after 3 attempts: ${lastError?.message ?? "unknown error"}`,
+    );
   }
 
-  async generateKeySummary(params: { model: string; text: string }): Promise<{ summary: LlmKeySummary; usage?: SummaryUsage }> {
-    const format = zodTextFormat(llmKeySummarySchema, 'ghcrawl_key_summary');
+  async generateKeySummary(params: {
+    model: string;
+    text: string;
+  }): Promise<{ summary: LlmKeySummary; usage?: SummaryUsage }> {
+    const format = zodTextFormat(llmKeySummarySchema, "ghcrawl_key_summary");
     let lastError: Error | null = null;
 
     for (const [attemptIndex, maxOutputTokens] of [600, 900, 1200].entries()) {
@@ -138,27 +163,29 @@ export class OpenAiProvider implements AiProvider {
           model: params.model,
           input: [
             {
-              role: 'system',
-              content: [{ type: 'input_text', text: LLM_KEY_SUMMARY_SYSTEM_PROMPT }],
+              role: "system",
+              content: [{ type: "input_text", text: LLM_KEY_SUMMARY_SYSTEM_PROMPT }],
             },
             {
-              role: 'user',
-              content: [{ type: 'input_text', text: params.text }],
+              role: "user",
+              content: [{ type: "input_text", text: params.text }],
             },
           ],
           text: {
             format,
-            verbosity: 'low',
+            verbosity: "low",
           },
           reasoning: {
-            effort: 'low',
+            effort: "low",
           },
           max_output_tokens: maxOutputTokens,
         });
 
-        const raw = response.output_text ?? '';
+        const raw = response.output_text ?? "";
         if (!raw.trim()) {
-          throw new Error(`empty structured output${response.incomplete_details?.reason ? ` (${response.incomplete_details.reason})` : ''}`);
+          throw new Error(
+            `empty structured output${response.incomplete_details?.reason ? ` (${response.incomplete_details.reason})` : ""}`,
+          );
         }
         return {
           summary: parseLlmKeySummary(JSON.parse(raw)),
@@ -180,10 +207,16 @@ export class OpenAiProvider implements AiProvider {
       }
     }
 
-    throw new Error(`OpenAI key summarization failed after 3 attempts: ${lastError?.message ?? 'unknown error'}`);
+    throw new Error(
+      `OpenAI key summarization failed after 3 attempts: ${lastError?.message ?? "unknown error"}`,
+    );
   }
 
-  async embedTexts(params: { model: string; texts: string[]; dimensions?: number }): Promise<number[][]> {
+  async embedTexts(params: {
+    model: string;
+    texts: string[];
+    dimensions?: number;
+  }): Promise<number[][]> {
     if (params.texts.length === 0) {
       return [];
     }
@@ -203,7 +236,7 @@ export class OpenAiProvider implements AiProvider {
           error instanceof RateLimitError ||
           error instanceof APIConnectionError ||
           error instanceof APIConnectionTimeoutError ||
-          (error instanceof APIError && typeof error.status === 'number' && error.status >= 500);
+          (error instanceof APIError && typeof error.status === "number" && error.status >= 500);
         lastError = error instanceof Error ? error : new Error(String(error));
         if (!shouldRetry || attempt === 5) {
           break;
@@ -212,7 +245,9 @@ export class OpenAiProvider implements AiProvider {
       }
     }
 
-    throw new Error(`OpenAI embeddings failed after 5 attempts: ${lastError?.message ?? 'unknown error'}`);
+    throw new Error(
+      `OpenAI embeddings failed after 5 attempts: ${lastError?.message ?? "unknown error"}`,
+    );
   }
 }
 

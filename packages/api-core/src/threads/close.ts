@@ -1,14 +1,18 @@
-import { closeResponseSchema, type CloseResponse, type RepositoryDto } from '@ghcrawl/api-contract';
+import { closeResponseSchema, type CloseResponse, type RepositoryDto } from "@ghcrawl/api-contract";
 
-import { reconcileClusterCloseState } from '../cluster/close-state.js';
-import { getLatestRunClusterIdsForThread } from '../cluster/run-queries.js';
-import type { SqliteDatabase } from '../db/sqlite.js';
-import type { ThreadRow } from '../service-types.js';
-import { nowIso, threadToDto } from '../service-utils.js';
+import { reconcileClusterCloseState } from "../cluster/close-state.js";
+import { getLatestRunClusterIdsForThread } from "../cluster/run-queries.js";
+import type { SqliteDatabase } from "../db/sqlite.js";
+import type { ThreadRow } from "../service-types.js";
+import { nowIso, threadToDto } from "../service-utils.js";
 
-export function closeRepositoryThreadLocally(db: SqliteDatabase, repository: RepositoryDto, threadNumber: number): CloseResponse {
+export function closeRepositoryThreadLocally(
+  db: SqliteDatabase,
+  repository: RepositoryDto,
+  threadNumber: number,
+): CloseResponse {
   const row = db
-    .prepare('select * from threads where repo_id = ? and number = ? limit 1')
+    .prepare("select * from threads where repo_id = ? and number = ? limit 1")
     .get(repository.id, threadNumber) as ThreadRow | undefined;
   if (!row) {
     throw new Error(`Thread #${threadNumber} was not found for ${repository.fullName}.`);
@@ -24,7 +28,7 @@ export function closeRepositoryThreadLocally(db: SqliteDatabase, repository: Rep
   ).run(closedAt, closedAt, row.id);
   const clusterIds = getLatestRunClusterIdsForThread(db, repository.id, row.id);
   const clusterClosed = reconcileClusterCloseState(db, repository.id, clusterIds) > 0;
-  const updated = db.prepare('select * from threads where id = ? limit 1').get(row.id) as ThreadRow;
+  const updated = db.prepare("select * from threads where id = ? limit 1").get(row.id) as ThreadRow;
 
   return closeResponseSchema.parse({
     ok: true,

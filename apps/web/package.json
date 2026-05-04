@@ -2,11 +2,11 @@
   "name": "@ghcrawl/web",
   "version": "0.0.0",
   "private": true,
-  "type": "module",
   "description": "Deferred future Vite + shadcn/ui web app placeholder",
+  "type": "module",
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "tsgo -p tsconfig.build.json",
+    "typecheck": "tsgo -p tsconfig.json --noEmit",
     "test": "tsx --test src/*.test.ts src/**/*.test.ts"
   },
   "dependencies": {

@@ -4,15 +4,20 @@ import {
   type ClusterExplainResponse,
   type DurableClustersResponse,
   type RepositoryDto,
-} from '@ghcrawl/api-contract';
+} from "@ghcrawl/api-contract";
 
-import type { SqliteDatabase } from '../db/sqlite.js';
-import type { ThreadRow } from '../service-types.js';
-import { parseObjectJson, threadToDto } from '../service-utils.js';
+import type { SqliteDatabase } from "../db/sqlite.js";
+import type { ThreadRow } from "../service-types.js";
+import { parseObjectJson, threadToDto } from "../service-utils.js";
 
-type DurableClusterStatus = 'active' | 'closed' | 'merged' | 'split';
-type DurableMemberRole = 'canonical' | 'duplicate' | 'related';
-type DurableMemberState = 'active' | 'removed_by_user' | 'blocked_by_override' | 'pending_review' | 'stale';
+type DurableClusterStatus = "active" | "closed" | "merged" | "split";
+type DurableMemberRole = "canonical" | "duplicate" | "related";
+type DurableMemberState =
+  | "active"
+  | "removed_by_user"
+  | "blocked_by_override"
+  | "pending_review"
+  | "stale";
 
 type DurableClusterRow = {
   id: number;
@@ -49,7 +54,7 @@ export function listStoredDurableClusters(
   }
 
   const clusterIds = clusterRows.map((row) => row.id);
-  const placeholders = clusterIds.map(() => '?').join(',');
+  const placeholders = clusterIds.map(() => "?").join(",");
   const memberRows = db
     .prepare(
       `select
@@ -78,7 +83,8 @@ export function listStoredDurableClusters(
     repository,
     clusters: clusterRows.map((cluster) => {
       const rows = membersByCluster.get(cluster.id) ?? [];
-      const visibleRows = params.memberLimit === undefined ? rows : rows.slice(0, params.memberLimit);
+      const visibleRows =
+        params.memberLimit === undefined ? rows : rows.slice(0, params.memberLimit);
       return {
         clusterId: cluster.id,
         stableKey: cluster.stable_key,
@@ -87,9 +93,9 @@ export function listStoredDurableClusters(
         clusterType: cluster.cluster_type,
         title: cluster.title,
         representativeThreadId: cluster.representative_thread_id,
-        activeCount: rows.filter((row) => row.membership_state === 'active').length,
-        removedCount: rows.filter((row) => row.membership_state === 'removed_by_user').length,
-        blockedCount: rows.filter((row) => row.membership_state === 'blocked_by_override').length,
+        activeCount: rows.filter((row) => row.membership_state === "active").length,
+        removedCount: rows.filter((row) => row.membership_state === "removed_by_user").length,
+        blockedCount: rows.filter((row) => row.membership_state === "blocked_by_override").length,
         members: visibleRows.map((row) => ({
           thread: threadToDto(row),
           role: row.membership_role,
@@ -116,7 +122,9 @@ export function explainStoredDurableCluster(
     )
     .get(repository.id, params.clusterId) as DurableClusterRow | undefined;
   if (!cluster) {
-    throw new Error(`Durable cluster ${params.clusterId} was not found for ${repository.fullName}.`);
+    throw new Error(
+      `Durable cluster ${params.clusterId} was not found for ${repository.fullName}.`,
+    );
   }
 
   const allMembers = db
@@ -156,7 +164,7 @@ export function explainStoredDurableCluster(
     )
     .all(cluster.id) as Array<{
     number: number;
-    action: 'exclude' | 'force_include' | 'force_canonical';
+    action: "exclude" | "force_include" | "force_canonical";
     reason: string | null;
     created_at: string;
     expires_at: string | null;
@@ -169,21 +177,26 @@ export function explainStoredDurableCluster(
        order by created_at desc, id desc
        limit ?`,
     )
-    .all(cluster.id, params.eventLimit ?? 25) as Array<{ event_type: string; actor_kind: string; payload_json: string; created_at: string }>;
+    .all(cluster.id, params.eventLimit ?? 25) as Array<{
+    event_type: string;
+    actor_kind: string;
+    payload_json: string;
+    created_at: string;
+  }>;
 
   let evidence: Array<{
     leftThreadNumber: number;
     rightThreadNumber: number;
     score: number;
-    tier: 'strong' | 'weak';
-    state: 'active' | 'stale' | 'rejected';
+    tier: "strong" | "weak";
+    state: "active" | "stale" | "rejected";
     sources: string[];
     breakdown: Record<string, unknown>;
     lastSeenRunId: number | null;
     updatedAt: string;
   }> = [];
   if (visibleThreadIds.length >= 2) {
-    const placeholders = visibleThreadIds.map(() => '?').join(',');
+    const placeholders = visibleThreadIds.map(() => "?").join(",");
     const rows = db
       .prepare(
         `select
@@ -207,8 +220,8 @@ export function explainStoredDurableCluster(
       left_number: number;
       right_number: number;
       score: number;
-      tier: 'strong' | 'weak';
-      state: 'active' | 'stale' | 'rejected';
+      tier: "strong" | "weak";
+      state: "active" | "stale" | "rejected";
       breakdown_json: string;
       last_seen_run_id: number | null;
       updated_at: string;
@@ -222,7 +235,9 @@ export function explainStoredDurableCluster(
         score: row.score,
         tier: row.tier,
         state: row.state,
-        sources: Array.isArray(rawSources) ? rawSources.filter((source): source is string => typeof source === 'string') : [],
+        sources: Array.isArray(rawSources)
+          ? rawSources.filter((source): source is string => typeof source === "string")
+          : [],
         breakdown,
         lastSeenRunId: row.last_seen_run_id,
         updatedAt: row.updated_at,
@@ -240,9 +255,10 @@ export function explainStoredDurableCluster(
       clusterType: cluster.cluster_type,
       title: cluster.title,
       representativeThreadId: cluster.representative_thread_id,
-      activeCount: allMembers.filter((row) => row.membership_state === 'active').length,
-      removedCount: allMembers.filter((row) => row.membership_state === 'removed_by_user').length,
-      blockedCount: allMembers.filter((row) => row.membership_state === 'blocked_by_override').length,
+      activeCount: allMembers.filter((row) => row.membership_state === "active").length,
+      removedCount: allMembers.filter((row) => row.membership_state === "removed_by_user").length,
+      blockedCount: allMembers.filter((row) => row.membership_state === "blocked_by_override")
+        .length,
       members: visibleMembers.map((row) => ({
         thread: threadToDto(row),
         role: row.membership_role,

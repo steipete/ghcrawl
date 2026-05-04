@@ -1,4 +1,4 @@
-import crypto from 'node:crypto';
+import crypto from "node:crypto";
 
 const TOKEN_RE = /[a-zA-Z0-9_.$/-]+/g;
 const MAX_PATCH_CHARS_FOR_HUNKS = 120_000;
@@ -33,7 +33,7 @@ export type CodeSnapshotSignature = {
 };
 
 function sha256(value: string): string {
-  return crypto.createHash('sha256').update(value).digest('hex');
+  return crypto.createHash("sha256").update(value).digest("hex");
 }
 
 function tokenize(value: string): string[] {
@@ -46,18 +46,22 @@ function tokenHash(lines: string[]): string {
 
 export function normalizePullFile(payload: Record<string, unknown>): PullFileMetadata {
   return {
-    filename: String(payload.filename ?? ''),
-    status: typeof payload.status === 'string' ? payload.status : null,
-    previousFilename: typeof payload.previous_filename === 'string' ? payload.previous_filename : null,
+    filename: String(payload.filename ?? ""),
+    status: typeof payload.status === "string" ? payload.status : null,
+    previousFilename:
+      typeof payload.previous_filename === "string" ? payload.previous_filename : null,
     additions: Number(payload.additions ?? 0),
     deletions: Number(payload.deletions ?? 0),
     changes: Number(payload.changes ?? 0),
-    patch: typeof payload.patch === 'string' ? payload.patch : null,
-    sha: typeof payload.sha === 'string' ? payload.sha : null,
+    patch: typeof payload.patch === "string" ? payload.patch : null,
+    sha: typeof payload.sha === "string" ? payload.sha : null,
   };
 }
 
-export function extractHunkSignatures(path: string, patch: string | null | undefined): HunkSignature[] {
+export function extractHunkSignatures(
+  path: string,
+  patch: string | null | undefined,
+): HunkSignature[] {
   if (!patch) return [];
 
   const signatures: HunkSignature[] = [];
@@ -84,8 +88,8 @@ export function extractHunkSignatures(path: string, patch: string | null | undef
     });
   }
 
-  for (const line of patch.split('\n')) {
-    if (line.startsWith('@@')) {
+  for (const line of patch.split("\n")) {
+    if (line.startsWith("@@")) {
       flush();
       header = line;
       context = [];
@@ -93,13 +97,13 @@ export function extractHunkSignatures(path: string, patch: string | null | undef
       removed = [];
       continue;
     }
-    if (!header || line.startsWith('+++') || line.startsWith('---')) continue;
-    if (line.startsWith('+')) {
+    if (!header || line.startsWith("+++") || line.startsWith("---")) continue;
+    if (line.startsWith("+")) {
       added.push(line.slice(1));
-    } else if (line.startsWith('-')) {
+    } else if (line.startsWith("-")) {
       removed.push(line.slice(1));
     } else {
-      context.push(line.startsWith(' ') ? line.slice(1) : line);
+      context.push(line.startsWith(" ") ? line.slice(1) : line);
     }
   }
   flush();
@@ -107,11 +111,17 @@ export function extractHunkSignatures(path: string, patch: string | null | undef
   return signatures;
 }
 
-export function buildCodeSnapshotSignature(files: Array<Record<string, unknown>>): CodeSnapshotSignature {
+export function buildCodeSnapshotSignature(
+  files: Array<Record<string, unknown>>,
+): CodeSnapshotSignature {
   const normalizedFiles = files.map(normalizePullFile).filter((file) => file.filename.length > 0);
-  const totalPatchChars = normalizedFiles.reduce((total, file) => total + (file.patch?.length ?? 0), 0);
+  const totalPatchChars = normalizedFiles.reduce(
+    (total, file) => total + (file.patch?.length ?? 0),
+    0,
+  );
   const shouldExtractHunks =
-    normalizedFiles.length <= MAX_FILES_FOR_HUNK_EXTRACTION && totalPatchChars <= MAX_PATCH_CHARS_FOR_HUNKS;
+    normalizedFiles.length <= MAX_FILES_FOR_HUNK_EXTRACTION &&
+    totalPatchChars <= MAX_PATCH_CHARS_FOR_HUNKS;
   const hunkSignatures = shouldExtractHunks
     ? normalizedFiles.flatMap((file) => {
         if (isPatchTooBroadForHunks(file)) {
@@ -128,7 +138,7 @@ export function buildCodeSnapshotSignature(files: Array<Record<string, unknown>>
         previousFilename: file.previousFilename,
         additions: file.additions,
         deletions: file.deletions,
-        patchHash: shouldHashPatch(file) ? sha256(file.patch ?? '') : null,
+        patchHash: shouldHashPatch(file) ? sha256(file.patch ?? "") : null,
       })),
     ),
   );
@@ -150,5 +160,9 @@ function isPatchTooBroadForHunks(file: PullFileMetadata): boolean {
 }
 
 function shouldHashPatch(file: PullFileMetadata): boolean {
-  return Boolean(file.patch) && file.patch!.length <= MAX_PATCH_CHARS_PER_FILE && !GENERATED_OR_SETUP_PATH_RE.test(file.filename);
+  return (
+    Boolean(file.patch) &&
+    file.patch!.length <= MAX_PATCH_CHARS_PER_FILE &&
+    !GENERATED_OR_SETUP_PATH_RE.test(file.filename)
+  );
 }

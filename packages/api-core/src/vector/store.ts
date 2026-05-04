@@ -21,7 +21,12 @@ export type VectorQueryParams = {
 export type VectorStore = {
   checkRuntime: () => VectorStoreHealth;
   resetRepository: (params: { storePath: string; dimensions: number }) => void;
-  upsertVector: (params: { storePath: string; dimensions: number; threadId: number; vector: number[] }) => void;
+  upsertVector: (params: {
+    storePath: string;
+    dimensions: number;
+    threadId: number;
+    vector: number[];
+  }) => void;
   deleteVector: (params: { storePath: string; dimensions: number; threadId: number }) => void;
   queryNearest: (params: VectorQueryParams) => VectorNeighbor[];
   close: () => void;

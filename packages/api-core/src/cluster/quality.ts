@@ -1,10 +1,12 @@
-import type { ClusterExperimentClusterSizeStats } from '../service-types.js';
+import type { ClusterExperimentClusterSizeStats } from "../service-types.js";
 
 export function summarizeClusterSizes(
   clusters: Array<{ representativeThreadId: number; members: number[] }>,
 ): ClusterExperimentClusterSizeStats {
   const histogramCounts = new Map<number, number>();
-  const topClusterSizes = clusters.map((cluster) => cluster.members.length).sort((left, right) => right - left);
+  const topClusterSizes = clusters
+    .map((cluster) => cluster.members.length)
+    .sort((left, right) => right - left);
   let soloClusters = 0;
 
   for (const cluster of clusters) {
@@ -27,7 +29,7 @@ export function summarizeClusterSizes(
 
 export function summarizeClusterQuality(
   clusters: Array<{ representativeThreadId: number; members: number[] }>,
-  threadKinds: Map<number, 'issue' | 'pull_request'>,
+  threadKinds: Map<number, "issue" | "pull_request">,
   maxClusterSize: number,
 ): {
   maxClusterSize: number;
@@ -52,8 +54,8 @@ export function summarizeClusterQuality(
     let hasPullRequest = false;
     for (const memberId of cluster.members) {
       const kind = threadKinds.get(memberId);
-      hasIssue ||= kind === 'issue';
-      hasPullRequest ||= kind === 'pull_request';
+      hasIssue ||= kind === "issue";
+      hasPullRequest ||= kind === "pull_request";
       if (hasIssue && hasPullRequest) {
         mixedKindClusterCount += 1;
         break;

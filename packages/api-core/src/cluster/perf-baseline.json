@@ -5,11 +5,7 @@
     "threadsPerCluster": 8,
     "clusterBlockWidth": 4,
     "noiseDimensions": 32,
-    "sourceKinds": [
-      "title",
-      "body",
-      "dedupe_summary"
-    ],
+    "sourceKinds": ["title", "body", "dedupe_summary"],
     "k": 7,
     "minScore": 0.82
   },

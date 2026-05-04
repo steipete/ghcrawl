@@ -13,7 +13,7 @@ const DEFAULT_PROGRESS_INTERVAL_MS = 5_000;
 
 function dotProduct(left: number[], right: number[]): number {
   if (left.length !== right.length) {
-    throw new Error('Embedding dimensions do not match');
+    throw new Error("Embedding dimensions do not match");
   }
   let dot = 0;
   for (let index = 0; index < left.length; index += 1) {
@@ -50,7 +50,11 @@ export function buildSourceKindEdges(
     limit: number;
     minScore: number;
     progressIntervalMs?: number;
-    onProgress?: (progress: { processedItems: number; totalItems: number; currentEdgeEstimate: number }) => void;
+    onProgress?: (progress: {
+      processedItems: number;
+      totalItems: number;
+      currentEdgeEstimate: number;
+    }) => void;
   },
 ): SourceKindEdge[] {
   const topNeighbors = new Map<number, Array<{ neighborId: number; score: number }>>();
@@ -74,19 +78,30 @@ export function buildSourceKindEdges(
         continue;
       }
 
-      currentNeighborEntries += insertBoundedNeighbor(leftNeighbors, { neighborId: right.id, score }, params.limit);
+      currentNeighborEntries += insertBoundedNeighbor(
+        leftNeighbors,
+        { neighborId: right.id, score },
+        params.limit,
+      );
 
       let rightNeighbors = topNeighbors.get(right.id);
       if (!rightNeighbors) {
         rightNeighbors = [];
         topNeighbors.set(right.id, rightNeighbors);
       }
-      currentNeighborEntries += insertBoundedNeighbor(rightNeighbors, { neighborId: left.id, score }, params.limit);
+      currentNeighborEntries += insertBoundedNeighbor(
+        rightNeighbors,
+        { neighborId: left.id, score },
+        params.limit,
+      );
     }
 
     processedItems += 1;
     const now = Date.now();
-    if (params.onProgress && now - lastProgressAt >= (params.progressIntervalMs ?? DEFAULT_PROGRESS_INTERVAL_MS)) {
+    if (
+      params.onProgress &&
+      now - lastProgressAt >= (params.progressIntervalMs ?? DEFAULT_PROGRESS_INTERVAL_MS)
+    ) {
       params.onProgress({
         processedItems,
         totalItems,

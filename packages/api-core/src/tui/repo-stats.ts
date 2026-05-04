@@ -1,11 +1,11 @@
-import { getLatestClusterRun } from '../cluster/run-queries.js';
-import type { GitcrawlConfig } from '../config.js';
-import type { SqliteDatabase } from '../db/sqlite.js';
-import { getEmbeddingWorkset } from '../embedding/workset.js';
-import { isRepoVectorStateCurrent } from '../pipeline-state.js';
-import type { TuiRefreshState, TuiRepoStats } from '../service-types.js';
+import { getLatestClusterRun } from "../cluster/run-queries.js";
+import type { GitcrawlConfig } from "../config.js";
+import type { SqliteDatabase } from "../db/sqlite.js";
+import { getEmbeddingWorkset } from "../embedding/workset.js";
+import { isRepoVectorStateCurrent } from "../pipeline-state.js";
+import type { TuiRefreshState, TuiRepoStats } from "../service-types.js";
 
-export type TuiEmbeddingStatsMode = 'exact' | 'pipeline';
+export type TuiEmbeddingStatsMode = "exact" | "pipeline";
 
 export function getTuiRepoStats(params: {
   db: SqliteDatabase;
@@ -20,23 +20,27 @@ export function getTuiRepoStats(params: {
        where repo_id = ? and state = 'open' and closed_at_local is null
        group by kind`,
     )
-    .all(params.repoId) as Array<{ kind: 'issue' | 'pull_request'; count: number }>;
+    .all(params.repoId) as Array<{ kind: "issue" | "pull_request"; count: number }>;
   const latestRun = getLatestClusterRun(params.db, params.repoId);
   const latestSync =
     (params.db
-      .prepare("select finished_at from sync_runs where repo_id = ? and status = 'completed' order by id desc limit 1")
+      .prepare(
+        "select finished_at from sync_runs where repo_id = ? and status = 'completed' order by id desc limit 1",
+      )
       .get(params.repoId) as { finished_at: string | null } | undefined) ?? null;
   const latestEmbed =
     (params.db
-      .prepare("select finished_at from embedding_runs where repo_id = ? and status = 'completed' order by id desc limit 1")
+      .prepare(
+        "select finished_at from embedding_runs where repo_id = ? and status = 'completed' order by id desc limit 1",
+      )
       .get(params.repoId) as { finished_at: string | null } | undefined) ?? null;
   const embeddingStats =
-    params.embeddingStatsMode === 'pipeline'
+    params.embeddingStatsMode === "pipeline"
       ? getPipelineEmbeddingStats(params)
       : getExactEmbeddingStats(params);
   return {
-    openIssueCount: counts.find((row) => row.kind === 'issue')?.count ?? 0,
-    openPullRequestCount: counts.find((row) => row.kind === 'pull_request')?.count ?? 0,
+    openIssueCount: counts.find((row) => row.kind === "issue")?.count ?? 0,
+    openPullRequestCount: counts.find((row) => row.kind === "pull_request")?.count ?? 0,
     lastGithubReconciliationAt: latestSync?.finished_at ?? null,
     lastEmbedRefreshAt: latestEmbed?.finished_at ?? null,
     staleEmbedThreadCount: embeddingStats.staleThreadCount,
@@ -46,11 +50,19 @@ export function getTuiRepoStats(params: {
   };
 }
 
-function getExactEmbeddingStats(params: { db: SqliteDatabase; config: GitcrawlConfig; repoId: number }): {
+function getExactEmbeddingStats(params: {
+  db: SqliteDatabase;
+  config: GitcrawlConfig;
+  repoId: number;
+}): {
   staleThreadCount: number;
   staleSourceCount: number;
 } {
-  const embeddingWorkset = getEmbeddingWorkset({ db: params.db, config: params.config, repoId: params.repoId });
+  const embeddingWorkset = getEmbeddingWorkset({
+    db: params.db,
+    config: params.config,
+    repoId: params.repoId,
+  });
   const staleThreadIds = new Set<number>(embeddingWorkset.pending.map((task) => task.threadId));
   return {
     staleThreadCount: staleThreadIds.size,
@@ -58,7 +70,11 @@ function getExactEmbeddingStats(params: { db: SqliteDatabase; config: GitcrawlCo
   };
 }
 
-function getPipelineEmbeddingStats(params: { db: SqliteDatabase; config: GitcrawlConfig; repoId: number }): {
+function getPipelineEmbeddingStats(params: {
+  db: SqliteDatabase;
+  config: GitcrawlConfig;
+  repoId: number;
+}): {
   staleThreadCount: number;
   staleSourceCount: number;
 } {
@@ -99,7 +115,10 @@ export function getTuiRepositoryRefreshState(params: {
        from threads
        where repo_id = ?`,
     )
-    .get(params.repository.id) as { thread_updated_at: string | null; thread_closed_at: string | null };
+    .get(params.repository.id) as {
+    thread_updated_at: string | null;
+    thread_closed_at: string | null;
+  };
   const clusterState = params.db
     .prepare(
       `select max(closed_at_local) as cluster_closed_at
@@ -123,10 +142,14 @@ export function getTuiRepositoryRefreshState(params: {
     )
     .get(params.repository.id) as { durable_membership_updated_at: string | null };
   const latestSync = params.db
-    .prepare("select id from sync_runs where repo_id = ? and status = 'completed' order by id desc limit 1")
+    .prepare(
+      "select id from sync_runs where repo_id = ? and status = 'completed' order by id desc limit 1",
+    )
     .get(params.repository.id) as { id: number } | undefined;
   const latestEmbedding = params.db
-    .prepare("select id from embedding_runs where repo_id = ? and status = 'completed' order by id desc limit 1")
+    .prepare(
+      "select id from embedding_runs where repo_id = ? and status = 'completed' order by id desc limit 1",
+    )
     .get(params.repository.id) as { id: number } | undefined;
   const latestClusterRun = getLatestClusterRun(params.db, params.repository.id);
 

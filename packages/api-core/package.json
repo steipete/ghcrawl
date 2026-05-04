@@ -1,35 +1,29 @@
 {
   "name": "@ghcrawl/api-core",
   "version": "0.0.0",
-  "type": "module",
   "description": "ghcrawl core library for GitHub sync, SQLite storage, embeddings, search, and clustering",
-  "author": "PwrDrvr LLC <harold@pwrdrvr.com>",
-  "license": "MIT",
+  "keywords": [
+    "clustering",
+    "embeddings",
+    "ghcrawl",
+    "github",
+    "openai",
+    "sqlite"
+  ],
   "homepage": "https://github.com/pwrdrvr/ghcrawl",
   "bugs": {
     "url": "https://github.com/pwrdrvr/ghcrawl/issues"
   },
+  "license": "MIT",
+  "author": "PwrDrvr LLC <harold@pwrdrvr.com>",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/pwrdrvr/ghcrawl.git"
   },
-  "keywords": [
-    "ghcrawl",
-    "github",
-    "sqlite",
-    "openai",
-    "embeddings",
-    "clustering"
-  ],
-  "engines": {
-    "node": ">=22"
-  },
   "files": [
     "dist"
   ],
-  "publishConfig": {
-    "access": "public"
-  },
+  "type": "module",
   "exports": {
     ".": {
       "development": "./src/index.ts",
@@ -37,23 +31,29 @@
       "default": "./dist/index.js"
     }
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsgo -p tsconfig.build.json",
     "prepack": "pnpm --filter @ghcrawl/api-contract build && pnpm run build",
     "test:cluster-perf": "tsx --tsconfig tsconfig.test.json src/cluster/perf.integration.ts",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsgo -p tsconfig.json --noEmit",
     "test": "tsx --tsconfig tsconfig.test.json --test src/*.test.ts src/**/*.test.ts"
   },
   "dependencies": {
     "@ghcrawl/api-contract": "workspace:*",
-    "@octokit/plugin-retry": "^8.0.3",
-    "@octokit/plugin-throttling": "^11.0.1",
+    "@octokit/plugin-retry": "^8.1.0",
+    "@octokit/plugin-throttling": "^11.0.3",
     "@shutterstock/p-map-iterable": "^1.1.2",
     "better-sqlite3": "^12.9.0",
     "dotenv": "^17.4.2",
-    "octokit": "^5.0.3",
-    "openai": "^6.34.0",
+    "octokit": "^5.0.5",
+    "openai": "^6.35.0",
     "vectorlite": "^0.2.0",
-    "zod": "^4.3.6"
+    "zod": "^4.4.2"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

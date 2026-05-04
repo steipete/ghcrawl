@@ -1,13 +1,16 @@
-import { buildClusters, type SimilarityEdge } from './build.js';
-import { scoreSimilarityEvidence, type SimilarityEvidenceBreakdown } from './evidence-score.js';
-import { buildDeterministicThreadFingerprint, type DeterministicThreadFingerprint } from './thread-fingerprint.js';
+import { buildClusters, type SimilarityEdge } from "./build.js";
+import { scoreSimilarityEvidence, type SimilarityEvidenceBreakdown } from "./evidence-score.js";
+import {
+  buildDeterministicThreadFingerprint,
+  type DeterministicThreadFingerprint,
+} from "./thread-fingerprint.js";
 
 const REF_RE = /(?:#|issues\/|pull\/)(\d+)/gi;
 
 export type DeterministicClusterInput = {
   id: number;
   number: number;
-  kind: 'issue' | 'pull_request';
+  kind: "issue" | "pull_request";
   title: string;
   body: string | null;
   labels: string[];
@@ -24,7 +27,7 @@ export type DeterministicClusterNode = {
 };
 
 export type DeterministicClusterEdge = SimilarityEdge & {
-  tier: 'strong' | 'weak';
+  tier: "strong" | "weak";
   breakdown: SimilarityEvidenceBreakdown;
 };
 
@@ -67,7 +70,11 @@ function buildCandidatePairs(
     const ids = Array.from(bucket).sort((left, right) => left - right);
     for (let leftIndex = 0; leftIndex < ids.length; leftIndex += 1) {
       for (let rightIndex = leftIndex + 1; rightIndex < ids.length; rightIndex += 1) {
-        if (params.seedThreadIds && !params.seedThreadIds.has(ids[leftIndex]) && !params.seedThreadIds.has(ids[rightIndex])) {
+        if (
+          params.seedThreadIds &&
+          !params.seedThreadIds.has(ids[leftIndex]) &&
+          !params.seedThreadIds.has(ids[rightIndex])
+        ) {
           continue;
         }
         const key = `${ids[leftIndex]}:${ids[rightIndex]}`;
@@ -80,7 +87,7 @@ function buildCandidatePairs(
     .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
     .slice(0, fingerprints.size * params.topK)
     .map(([key]) => {
-      const [left, right] = key.split(':').map(Number);
+      const [left, right] = key.split(":").map(Number);
       return [left, right] as [number, number];
     });
 }
@@ -91,7 +98,7 @@ export function buildDeterministicClusterGraph(
 ): DeterministicClusterResult {
   const fingerprints = new Map<number, DeterministicThreadFingerprint>();
   for (const input of inputs) {
-    const inferredRefs = extractDeterministicRefs(`${input.title}\n${input.body ?? ''}`);
+    const inferredRefs = extractDeterministicRefs(`${input.title}\n${input.body ?? ""}`);
     fingerprints.set(
       input.id,
       buildDeterministicThreadFingerprint({
@@ -131,7 +138,7 @@ export function buildDeterministicClusterGraphFromFingerprints(
     const right = fingerprints.get(rightThreadId);
     if (!left || !right) continue;
     const breakdown = scoreSimilarityEvidence(left, right);
-    if (breakdown.tier === 'none') continue;
+    if (breakdown.tier === "none") continue;
     edges.push({
       leftThreadId,
       rightThreadId,

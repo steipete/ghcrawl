@@ -1,14 +1,11 @@
-import type { GitcrawlConfig } from '../config.js';
-import type { SqliteDatabase } from '../db/sqlite.js';
-import { normalizeEmbedding } from '../search/exact.js';
-import { ACTIVE_EMBED_DIMENSIONS } from '../service-constants.js';
-import type { EmbeddingSourceKind } from '../service-types.js';
-import { parseStoredVector } from '../vector/encoding.js';
+import type { GitcrawlConfig } from "../config.js";
+import type { SqliteDatabase } from "../db/sqlite.js";
+import { normalizeEmbedding } from "../search/exact.js";
+import { ACTIVE_EMBED_DIMENSIONS } from "../service-constants.js";
+import type { EmbeddingSourceKind } from "../service-types.js";
+import { parseStoredVector } from "../vector/encoding.js";
 
-export function loadClusterableThreadMeta(params: {
-  db: SqliteDatabase;
-  repoId: number;
-}): {
+export function loadClusterableThreadMeta(params: { db: SqliteDatabase; repoId: number }): {
   items: Array<{ id: number; number: number; title: string }>;
   sourceKinds: EmbeddingSourceKind[];
 } {
@@ -28,7 +25,12 @@ export function loadClusterableThreadMeta(params: {
              and cm.state <> 'removed_by_user'
          )`,
     )
-    .all(params.repoId) as Array<{ id: number; number: number; title: string; source_kind: EmbeddingSourceKind }>;
+    .all(params.repoId) as Array<{
+    id: number;
+    number: number;
+    title: string;
+    source_kind: EmbeddingSourceKind;
+  }>;
 
   const itemsById = new Map<number, { id: number; number: number; title: string }>();
   const sourceKinds = new Set<EmbeddingSourceKind>();
@@ -68,7 +70,12 @@ export function loadClusterableActiveVectorMeta(params: {
          and tv.dimensions = ?
        order by t.number asc`,
     )
-    .all(params.repoId, params.config.embedModel, params.config.embeddingBasis, ACTIVE_EMBED_DIMENSIONS) as Array<{
+    .all(
+      params.repoId,
+      params.config.embedModel,
+      params.config.embeddingBasis,
+      ACTIVE_EMBED_DIMENSIONS,
+    ) as Array<{
     id: number;
     number: number;
     title: string;

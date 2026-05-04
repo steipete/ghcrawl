@@ -1,40 +1,46 @@
-import { threadsResponseSchema, type RepositoryDto, type ThreadsResponse } from '@ghcrawl/api-contract';
+import {
+  threadsResponseSchema,
+  type RepositoryDto,
+  type ThreadsResponse,
+} from "@ghcrawl/api-contract";
 
-import type { SqliteDatabase } from '../db/sqlite.js';
-import type { ThreadRow } from '../service-types.js';
-import { threadToDto } from '../service-utils.js';
+import type { SqliteDatabase } from "../db/sqlite.js";
+import type { ThreadRow } from "../service-types.js";
+import { threadToDto } from "../service-utils.js";
 
 export function listRepositoryThreads(
   db: SqliteDatabase,
   params: {
     repository: RepositoryDto;
-    kind?: 'issue' | 'pull_request';
+    kind?: "issue" | "pull_request";
     numbers?: number[];
     includeClosed?: boolean;
   },
 ): ThreadsResponse {
   const clusterIds = loadLatestClusterIds(db, params.repository.id);
-  let sql = 'select * from threads where repo_id = ?';
+  let sql = "select * from threads where repo_id = ?";
   const args: Array<string | number> = [params.repository.id];
   if (!params.includeClosed) {
     sql += " and state = 'open' and closed_at_local is null";
   }
   if (params.kind) {
-    sql += ' and kind = ?';
+    sql += " and kind = ?";
     args.push(params.kind);
   }
   if (params.numbers && params.numbers.length > 0) {
-    const uniqueNumbers = Array.from(new Set(params.numbers.filter((value) => Number.isSafeInteger(value) && value > 0)));
+    const uniqueNumbers = Array.from(
+      new Set(params.numbers.filter((value) => Number.isSafeInteger(value) && value > 0)),
+    );
     if (uniqueNumbers.length === 0) {
       return threadsResponseSchema.parse({
         repository: params.repository,
         threads: [],
       });
     }
-    sql += ` and number in (${uniqueNumbers.map(() => '?').join(', ')})`;
+    sql += ` and number in (${uniqueNumbers.map(() => "?").join(", ")})`;
     args.push(...uniqueNumbers);
   }
-  sql += ' order by updated_at_gh desc, number desc';
+  sql += " order by updated_at_gh desc, number desc";
 
   const rows = db.prepare(sql).all(...args) as ThreadRow[];
   const orderedRows = orderRowsByRequestedNumbers(rows, params.numbers);
@@ -62,7 +68,10 @@ function loadLatestClusterIds(db: SqliteDatabase, repoId: number): Map<number, n
   return clusterIds;
 }
 
-function orderRowsByRequestedNumbers(rows: ThreadRow[], numbers: number[] | undefined): ThreadRow[] {
+function orderRowsByRequestedNumbers(
+  rows: ThreadRow[],
+  numbers: number[] | undefined,
+): ThreadRow[] {
   if (!numbers || numbers.length === 0) {
     return rows;
   }

@@ -1,4 +1,4 @@
-import type { SqliteDatabase } from './sqlite.js';
+import type { SqliteDatabase } from "./sqlite.js";
 
 const migrationStatements = [
   `
@@ -457,7 +457,7 @@ const migrationStatements = [
     created_at text not null,
     updated_at text not null
   )
-  `
+  `,
 ];
 
 export function migrate(db: SqliteDatabase): void {
@@ -466,81 +466,145 @@ export function migrate(db: SqliteDatabase): void {
   }
 
   const threadColumns = new Set(
-    (db.prepare('pragma table_info(threads)').all() as Array<{ name: string }>).map((column) => column.name),
+    (db.prepare("pragma table_info(threads)").all() as Array<{ name: string }>).map(
+      (column) => column.name,
+    ),
   );
 
-  if (!threadColumns.has('first_pulled_at')) {
-    db.exec('alter table threads add column first_pulled_at text');
+  if (!threadColumns.has("first_pulled_at")) {
+    db.exec("alter table threads add column first_pulled_at text");
   }
-  if (!threadColumns.has('last_pulled_at')) {
-    db.exec('alter table threads add column last_pulled_at text');
+  if (!threadColumns.has("last_pulled_at")) {
+    db.exec("alter table threads add column last_pulled_at text");
   }
-  if (!threadColumns.has('closed_at_local')) {
-    db.exec('alter table threads add column closed_at_local text');
+  if (!threadColumns.has("closed_at_local")) {
+    db.exec("alter table threads add column closed_at_local text");
   }
-  if (!threadColumns.has('close_reason_local')) {
-    db.exec('alter table threads add column close_reason_local text');
+  if (!threadColumns.has("close_reason_local")) {
+    db.exec("alter table threads add column close_reason_local text");
   }
 
   const commentColumns = new Set(
-    (db.prepare('pragma table_info(comments)').all() as Array<{ name: string }>).map((column) => column.name),
+    (db.prepare("pragma table_info(comments)").all() as Array<{ name: string }>).map(
+      (column) => column.name,
+    ),
   );
-  if (!commentColumns.has('raw_json_blob_id')) {
-    db.exec('alter table comments add column raw_json_blob_id integer references blobs(id) on delete set null');
+  if (!commentColumns.has("raw_json_blob_id")) {
+    db.exec(
+      "alter table comments add column raw_json_blob_id integer references blobs(id) on delete set null",
+    );
   }
 
   const clusterColumns = new Set(
-    (db.prepare('pragma table_info(clusters)').all() as Array<{ name: string }>).map((column) => column.name),
+    (db.prepare("pragma table_info(clusters)").all() as Array<{ name: string }>).map(
+      (column) => column.name,
+    ),
   );
-  if (!clusterColumns.has('closed_at_local')) {
-    db.exec('alter table clusters add column closed_at_local text');
+  if (!clusterColumns.has("closed_at_local")) {
+    db.exec("alter table clusters add column closed_at_local text");
   }
-  if (!clusterColumns.has('close_reason_local')) {
-    db.exec('alter table clusters add column close_reason_local text');
+  if (!clusterColumns.has("close_reason_local")) {
+    db.exec("alter table clusters add column close_reason_local text");
   }
 
   const summaryColumns = new Set(
-    (db.prepare('pragma table_info(document_summaries)').all() as Array<{ name: string }>).map((column) => column.name),
+    (db.prepare("pragma table_info(document_summaries)").all() as Array<{ name: string }>).map(
+      (column) => column.name,
+    ),
   );
-  if (!summaryColumns.has('prompt_version')) {
+  if (!summaryColumns.has("prompt_version")) {
     db.exec("alter table document_summaries add column prompt_version text default 'v1'");
   }
 
   const vectorColumns = new Set(
-    (db.prepare('pragma table_info(thread_vectors)').all() as Array<{ name: string }>).map((column) => column.name),
+    (db.prepare("pragma table_info(thread_vectors)").all() as Array<{ name: string }>).map(
+      (column) => column.name,
+    ),
   );
-  if (!vectorColumns.has('vector_backend')) {
+  if (!vectorColumns.has("vector_backend")) {
     db.exec("alter table thread_vectors add column vector_backend text default 'vectorlite'");
   }
 
-  db.exec('create index if not exists idx_threads_repo_number on threads(repo_id, number)');
-  db.exec('create index if not exists idx_threads_repo_state_closed on threads(repo_id, state, closed_at_local)');
-  db.exec('create index if not exists idx_threads_repo_updated on threads(repo_id, updated_at)');
-  db.exec('create index if not exists idx_blobs_sha256 on blobs(sha256)');
-  db.exec('create index if not exists idx_thread_revisions_thread_created on thread_revisions(thread_id, created_at)');
-  db.exec('create index if not exists idx_thread_fingerprints_hash on thread_fingerprints(fingerprint_hash)');
-  db.exec('create index if not exists idx_thread_fingerprints_slug on thread_fingerprints(fingerprint_slug)');
-  db.exec('create index if not exists idx_thread_code_snapshots_revision on thread_code_snapshots(thread_revision_id)');
-  db.exec('create index if not exists idx_thread_changed_files_path on thread_changed_files(path)');
-  db.exec('create index if not exists idx_thread_hunk_signatures_hash on thread_hunk_signatures(hunk_hash)');
-  db.exec('create index if not exists idx_thread_key_summaries_revision_kind on thread_key_summaries(thread_revision_id, summary_kind)');
-  db.exec('create index if not exists idx_document_summaries_thread_model on document_summaries(thread_id, model)');
-  db.exec('create index if not exists idx_thread_vectors_basis_model on thread_vectors(basis, model)');
-  db.exec('create index if not exists idx_pipeline_runs_repo_kind_id on pipeline_runs(repo_id, run_kind, id)');
-  db.exec('create index if not exists idx_sync_runs_repo_status_id on sync_runs(repo_id, status, id)');
-  db.exec('create index if not exists idx_embedding_runs_repo_status_id on embedding_runs(repo_id, status, id)');
-  db.exec('create index if not exists idx_cluster_runs_repo_status_id on cluster_runs(repo_id, status, id)');
-  db.exec('create index if not exists idx_clusters_repo_run_id on clusters(repo_id, cluster_run_id, id)');
-  db.exec('create index if not exists idx_clusters_repo_closed on clusters(repo_id, closed_at_local)');
-  db.exec('create index if not exists idx_cluster_members_thread_cluster on cluster_members(thread_id, cluster_id)');
-  db.exec('create index if not exists idx_similarity_edge_evidence_repo_pair on similarity_edge_evidence(repo_id, left_thread_id, right_thread_id)');
-  db.exec('create index if not exists idx_similarity_edge_evidence_repo_state_score on similarity_edge_evidence(repo_id, state, tier, score)');
-  db.exec('create index if not exists idx_cluster_groups_repo_status on cluster_groups(repo_id, status)');
-  db.exec('create index if not exists idx_cluster_groups_repo_updated on cluster_groups(repo_id, updated_at)');
-  db.exec('create index if not exists idx_cluster_memberships_thread_state on cluster_memberships(thread_id, state)');
-  db.exec('create index if not exists idx_cluster_memberships_cluster_state on cluster_memberships(cluster_id, state)');
-  db.exec('create index if not exists idx_cluster_memberships_cluster_updated on cluster_memberships(cluster_id, updated_at)');
-  db.exec('create index if not exists idx_cluster_overrides_repo_target on cluster_overrides(repo_id, cluster_id, thread_id, action)');
-  db.exec('create index if not exists idx_cluster_events_cluster_created on cluster_events(cluster_id, created_at)');
-  db.exec('create index if not exists idx_cluster_closures_updated on cluster_closures(updated_at)');
+  db.exec("create index if not exists idx_threads_repo_number on threads(repo_id, number)");
+  db.exec(
+    "create index if not exists idx_threads_repo_state_closed on threads(repo_id, state, closed_at_local)",
+  );
+  db.exec("create index if not exists idx_threads_repo_updated on threads(repo_id, updated_at)");
+  db.exec("create index if not exists idx_blobs_sha256 on blobs(sha256)");
+  db.exec(
+    "create index if not exists idx_thread_revisions_thread_created on thread_revisions(thread_id, created_at)",
+  );
+  db.exec(
+    "create index if not exists idx_thread_fingerprints_hash on thread_fingerprints(fingerprint_hash)",
+  );
+  db.exec(
+    "create index if not exists idx_thread_fingerprints_slug on thread_fingerprints(fingerprint_slug)",
+  );
+  db.exec(
+    "create index if not exists idx_thread_code_snapshots_revision on thread_code_snapshots(thread_revision_id)",
+  );
+  db.exec("create index if not exists idx_thread_changed_files_path on thread_changed_files(path)");
+  db.exec(
+    "create index if not exists idx_thread_hunk_signatures_hash on thread_hunk_signatures(hunk_hash)",
+  );
+  db.exec(
+    "create index if not exists idx_thread_key_summaries_revision_kind on thread_key_summaries(thread_revision_id, summary_kind)",
+  );
+  db.exec(
+    "create index if not exists idx_document_summaries_thread_model on document_summaries(thread_id, model)",
+  );
+  db.exec(
+    "create index if not exists idx_thread_vectors_basis_model on thread_vectors(basis, model)",
+  );
+  db.exec(
+    "create index if not exists idx_pipeline_runs_repo_kind_id on pipeline_runs(repo_id, run_kind, id)",
+  );
+  db.exec(
+    "create index if not exists idx_sync_runs_repo_status_id on sync_runs(repo_id, status, id)",
+  );
+  db.exec(
+    "create index if not exists idx_embedding_runs_repo_status_id on embedding_runs(repo_id, status, id)",
+  );
+  db.exec(
+    "create index if not exists idx_cluster_runs_repo_status_id on cluster_runs(repo_id, status, id)",
+  );
+  db.exec(
+    "create index if not exists idx_clusters_repo_run_id on clusters(repo_id, cluster_run_id, id)",
+  );
+  db.exec(
+    "create index if not exists idx_clusters_repo_closed on clusters(repo_id, closed_at_local)",
+  );
+  db.exec(
+    "create index if not exists idx_cluster_members_thread_cluster on cluster_members(thread_id, cluster_id)",
+  );
+  db.exec(
+    "create index if not exists idx_similarity_edge_evidence_repo_pair on similarity_edge_evidence(repo_id, left_thread_id, right_thread_id)",
+  );
+  db.exec(
+    "create index if not exists idx_similarity_edge_evidence_repo_state_score on similarity_edge_evidence(repo_id, state, tier, score)",
+  );
+  db.exec(
+    "create index if not exists idx_cluster_groups_repo_status on cluster_groups(repo_id, status)",
+  );
+  db.exec(
+    "create index if not exists idx_cluster_groups_repo_updated on cluster_groups(repo_id, updated_at)",
+  );
+  db.exec(
+    "create index if not exists idx_cluster_memberships_thread_state on cluster_memberships(thread_id, state)",
+  );
+  db.exec(
+    "create index if not exists idx_cluster_memberships_cluster_state on cluster_memberships(cluster_id, state)",
+  );
+  db.exec(
+    "create index if not exists idx_cluster_memberships_cluster_updated on cluster_memberships(cluster_id, updated_at)",
+  );
+  db.exec(
+    "create index if not exists idx_cluster_overrides_repo_target on cluster_overrides(repo_id, cluster_id, thread_id, action)",
+  );
+  db.exec(
+    "create index if not exists idx_cluster_events_cluster_created on cluster_events(cluster_id, created_at)",
+  );
+  db.exec(
+    "create index if not exists idx_cluster_closures_updated on cluster_closures(updated_at)",
+  );
 }

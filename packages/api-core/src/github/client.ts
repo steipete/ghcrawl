@@ -1,22 +1,51 @@
-import { retry } from '@octokit/plugin-retry';
-import { throttling } from '@octokit/plugin-throttling';
-import { Octokit } from 'octokit';
+import { retry } from "@octokit/plugin-retry";
+import { throttling } from "@octokit/plugin-throttling";
+import { Octokit } from "octokit";
 
 export type GitHubClient = {
-  getRepo: (owner: string, repo: string, reporter?: GitHubReporter) => Promise<Record<string, unknown>>;
+  getRepo: (
+    owner: string,
+    repo: string,
+    reporter?: GitHubReporter,
+  ) => Promise<Record<string, unknown>>;
   listRepositoryIssues: (
     owner: string,
     repo: string,
     since?: string,
     limit?: number,
     reporter?: GitHubReporter,
-    state?: 'open' | 'closed',
+    state?: "open" | "closed",
   ) => Promise<Array<Record<string, unknown>>>;
-  getIssue: (owner: string, repo: string, number: number, reporter?: GitHubReporter) => Promise<Record<string, unknown>>;
-  getPull: (owner: string, repo: string, number: number, reporter?: GitHubReporter) => Promise<Record<string, unknown>>;
-  listPullFiles: (owner: string, repo: string, number: number, reporter?: GitHubReporter) => Promise<Array<Record<string, unknown>>>;
-  listIssueComments: (owner: string, repo: string, number: number, reporter?: GitHubReporter) => Promise<Array<Record<string, unknown>>>;
-  listPullReviews: (owner: string, repo: string, number: number, reporter?: GitHubReporter) => Promise<Array<Record<string, unknown>>>;
+  getIssue: (
+    owner: string,
+    repo: string,
+    number: number,
+    reporter?: GitHubReporter,
+  ) => Promise<Record<string, unknown>>;
+  getPull: (
+    owner: string,
+    repo: string,
+    number: number,
+    reporter?: GitHubReporter,
+  ) => Promise<Record<string, unknown>>;
+  listPullFiles: (
+    owner: string,
+    repo: string,
+    number: number,
+    reporter?: GitHubReporter,
+  ) => Promise<Array<Record<string, unknown>>>;
+  listIssueComments: (
+    owner: string,
+    repo: string,
+    number: number,
+    reporter?: GitHubReporter,
+  ) => Promise<Array<Record<string, unknown>>>;
+  listPullReviews: (
+    owner: string,
+    repo: string,
+    number: number,
+    reporter?: GitHubReporter,
+  ) => Promise<Array<Record<string, unknown>>>;
   listPullReviewComments: (
     owner: string,
     repo: string,
@@ -32,7 +61,7 @@ export class GitHubRequestError extends Error {
 
   constructor(message: string, status?: number) {
     super(message);
-    this.name = 'GitHubRequestError';
+    this.name = "GitHubRequestError";
     this.status = status;
   }
 }
@@ -58,7 +87,8 @@ function formatDuration(ms: number): string {
   if (seconds < 60) return `${seconds}s`;
   const minutes = Math.floor(seconds / 60);
   const remainingSeconds = seconds % 60;
-  if (minutes < 60) return remainingSeconds === 0 ? `${minutes}m` : `${minutes}m ${remainingSeconds}s`;
+  if (minutes < 60)
+    return remainingSeconds === 0 ? `${minutes}m` : `${minutes}m ${remainingSeconds}s`;
   const hours = Math.floor(minutes / 60);
   const remainingMinutes = minutes % 60;
   return remainingMinutes === 0 ? `${hours}h` : `${hours}h ${remainingMinutes}m`;
@@ -72,7 +102,7 @@ function formatResetTime(resetSeconds: string | null | undefined): string | null
 }
 
 export function makeGitHubClient(options: RequestOptions): GitHubClient {
-  const userAgent = options.userAgent ?? 'ghcrawl';
+  const userAgent = options.userAgent ?? "ghcrawl";
   const timeoutMs = options.timeoutMs ?? 30_000;
   const pageDelayMs = options.pageDelayMs ?? 250;
   const BaseOctokit = Octokit.plugin(retry, throttling);
@@ -91,19 +121,21 @@ export function makeGitHubClient(options: RequestOptions): GitHubClient {
       throttle: {
         fallbackSecondaryRateRetryAfter: Math.ceil(pageDelayMs / 1000),
         onRateLimit: (retryAfter, requestOptions) => {
-          const responseHeaders = (requestOptions.response as { headers?: Record<string, string> } | undefined)?.headers;
-          const resetAt = formatResetTime(responseHeaders?.['x-ratelimit-reset']);
-          const remaining = responseHeaders?.['x-ratelimit-remaining'];
-          const method = requestOptions.method ?? 'GET';
-          const url = requestOptions.url ?? 'unknown';
+          const responseHeaders = (
+            requestOptions.response as { headers?: Record<string, string> } | undefined
+          )?.headers;
+          const resetAt = formatResetTime(responseHeaders?.["x-ratelimit-reset"]);
+          const remaining = responseHeaders?.["x-ratelimit-remaining"];
+          const method = requestOptions.method ?? "GET";
+          const url = requestOptions.url ?? "unknown";
           reporter?.(
-            `[github] backoff rate-limited wait=${formatDuration(retryAfter * 1000)}${remaining ? ` remaining=${remaining}` : ''}${resetAt ? ` reset_at=${resetAt}` : ''} method=${method} url=${url}`,
+            `[github] backoff rate-limited wait=${formatDuration(retryAfter * 1000)}${remaining ? ` remaining=${remaining}` : ""}${resetAt ? ` reset_at=${resetAt}` : ""} method=${method} url=${url}`,
           );
           return true;
         },
         onSecondaryRateLimit: (retryAfter, requestOptions) => {
-          const method = requestOptions.method ?? 'GET';
-          const url = requestOptions.url ?? 'unknown';
+          const method = requestOptions.method ?? "GET";
+          const url = requestOptions.url ?? "unknown";
           reporter?.(
             `[github] backoff secondary-rate-limit wait=${formatDuration(retryAfter * 1000)} method=${method} url=${url}`,
           );
@@ -113,14 +145,21 @@ export function makeGitHubClient(options: RequestOptions): GitHubClient {
     });
   }
 
-  async function request<T>(label: string, reporter: GitHubReporter | undefined, fn: (octokit: InstanceType<typeof BaseOctokit>) => Promise<T>): Promise<T> {
+  async function request<T>(
+    label: string,
+    reporter: GitHubReporter | undefined,
+    fn: (octokit: InstanceType<typeof BaseOctokit>) => Promise<T>,
+  ): Promise<T> {
     reporter?.(`[github] request ${label}`);
     const octokit = createOctokit(reporter);
     try {
       return await fn(octokit);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      const status = typeof (error as { status?: unknown })?.status === 'number' ? Number((error as { status?: unknown }).status) : undefined;
+      const status =
+        typeof (error as { status?: unknown })?.status === "number"
+          ? Number((error as { status?: unknown }).status)
+          : undefined;
       throw new GitHubRequestError(`GitHub request failed for ${label}: ${message}`, status);
     }
   }
@@ -139,10 +178,13 @@ export function makeGitHubClient(options: RequestOptions): GitHubClient {
       let pageIndex = 0;
       for await (const page of iteratorFactory(octokit)) {
         pageIndex += 1;
-        const remaining = typeof limit === 'number' ? Math.max(limit - out.length, 0) : page.data.length;
+        const remaining =
+          typeof limit === "number" ? Math.max(limit - out.length, 0) : page.data.length;
         out.push(...page.data.slice(0, remaining));
-        reporter?.(`[github] page ${pageIndex} fetched count=${page.data.length} accumulated=${out.length}`);
-        if (typeof limit === 'number' && out.length >= limit) {
+        reporter?.(
+          `[github] page ${pageIndex} fetched count=${page.data.length} accumulated=${out.length}`,
+        );
+        if (typeof limit === "number" && out.length >= limit) {
           break;
         }
         await delay(pageDelayMs);
@@ -150,7 +192,10 @@ export function makeGitHubClient(options: RequestOptions): GitHubClient {
       return out;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      const status = typeof (error as { status?: unknown })?.status === 'number' ? Number((error as { status?: unknown }).status) : undefined;
+      const status =
+        typeof (error as { status?: unknown })?.status === "number"
+          ? Number((error as { status?: unknown }).status)
+          : undefined;
       throw new GitHubRequestError(`GitHub pagination failed for ${label}: ${message}`, status);
     }
   }
@@ -162,7 +207,7 @@ export function makeGitHubClient(options: RequestOptions): GitHubClient {
         return response.data as Record<string, unknown>;
       });
     },
-    async listRepositoryIssues(owner, repo, since, limit, reporter, state = 'open') {
+    async listRepositoryIssues(owner, repo, since, limit, reporter, state = "open") {
       return paginate(
         `GET /repos/${owner}/${repo}/issues state=${state} per_page=100`,
         limit,
@@ -172,8 +217,8 @@ export function makeGitHubClient(options: RequestOptions): GitHubClient {
             owner,
             repo,
             state,
-            sort: 'updated',
-            direction: 'desc',
+            sort: "updated",
+            direction: "desc",
             per_page: 100,
             since,
           }) as AsyncIterable<OctokitPage<Record<string, unknown>>>,

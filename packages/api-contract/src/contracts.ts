@@ -1,9 +1,9 @@
-import { z } from 'zod';
+import { z } from "zod";
 
-export const threadKindSchema = z.enum(['issue', 'pull_request']);
+export const threadKindSchema = z.enum(["issue", "pull_request"]);
 export type ThreadKind = z.infer<typeof threadKindSchema>;
 
-export const searchModeSchema = z.enum(['keyword', 'semantic', 'hybrid']);
+export const searchModeSchema = z.enum(["keyword", "semantic", "hybrid"]);
 export type SearchMode = z.infer<typeof searchModeSchema>;
 
 export const repositorySchema = z.object({
@@ -52,7 +52,7 @@ export const repositoriesResponseSchema = z.object({
 });
 export type RepositoriesResponse = z.infer<typeof repositoriesResponseSchema>;
 
-export const runKindSchema = z.enum(['sync', 'summary', 'embedding', 'cluster']);
+export const runKindSchema = z.enum(["sync", "summary", "embedding", "cluster"]);
 export type RunKind = z.infer<typeof runKindSchema>;
 
 export const runRecordSchema = z.object({
@@ -177,8 +177,8 @@ export type ClusterSummariesResponse = z.infer<typeof clusterSummariesResponseSc
 
 export const durableClusterMemberSchema = z.object({
   thread: threadSchema,
-  role: z.enum(['canonical', 'duplicate', 'related']),
-  state: z.enum(['active', 'removed_by_user', 'blocked_by_override', 'pending_review', 'stale']),
+  role: z.enum(["canonical", "duplicate", "related"]),
+  state: z.enum(["active", "removed_by_user", "blocked_by_override", "pending_review", "stale"]),
   scoreToRepresentative: z.number().nullable(),
 });
 export type DurableClusterMemberDto = z.infer<typeof durableClusterMemberSchema>;
@@ -187,7 +187,7 @@ export const durableClusterSchema = z.object({
   clusterId: z.number().int().positive(),
   stableKey: z.string(),
   stableSlug: z.string(),
-  status: z.enum(['active', 'closed', 'merged', 'split']),
+  status: z.enum(["active", "closed", "merged", "split"]),
   clusterType: z.string().nullable(),
   title: z.string().nullable(),
   representativeThreadId: z.number().int().positive().nullable(),
@@ -236,7 +236,7 @@ export type ClusterExplainAliasDto = z.infer<typeof clusterExplainAliasSchema>;
 
 export const clusterExplainOverrideSchema = z.object({
   threadNumber: z.number().int().positive(),
-  action: z.enum(['exclude', 'force_include', 'force_canonical']),
+  action: z.enum(["exclude", "force_include", "force_canonical"]),
   reason: z.string().nullable(),
   createdAt: z.string(),
   expiresAt: z.string().nullable(),
@@ -255,8 +255,8 @@ export const clusterExplainEvidenceSchema = z.object({
   leftThreadNumber: z.number().int().positive(),
   rightThreadNumber: z.number().int().positive(),
   score: z.number(),
-  tier: z.enum(['strong', 'weak']),
-  state: z.enum(['active', 'stale', 'rejected']),
+  tier: z.enum(["strong", "weak"]),
+  state: z.enum(["active", "stale", "rejected"]),
   sources: z.array(z.string()),
   breakdown: z.record(z.string(), z.unknown()),
   lastSeenRunId: z.number().int().positive().nullable(),
@@ -320,7 +320,7 @@ export const refreshResponseSchema = z.object({
 export type RefreshResponse = z.infer<typeof refreshResponseSchema>;
 
 export const optimizeTargetSchema = z.object({
-  name: z.enum(['main', 'vector']),
+  name: z.enum(["main", "vector"]),
   path: z.string(),
   existed: z.boolean(),
   pageSize: z.number().int().nonnegative(),
@@ -427,8 +427,8 @@ export const clusterOverrideResponseSchema = z.object({
   repository: repositorySchema,
   clusterId: z.number().int().positive(),
   thread: threadSchema,
-  action: z.enum(['exclude', 'force_include', 'force_canonical']),
-  state: z.enum(['active', 'removed_by_user', 'blocked_by_override']),
+  action: z.enum(["exclude", "force_include", "force_canonical"]),
+  state: z.enum(["active", "removed_by_user", "blocked_by_override"]),
   message: z.string(),
 });
 export type ClusterOverrideResponse = z.infer<typeof clusterOverrideResponseSchema>;
@@ -452,7 +452,7 @@ export const clusterSplitResponseSchema = z.object({
 });
 export type ClusterSplitResponse = z.infer<typeof clusterSplitResponseSchema>;
 
-export const rerunActionSchema = z.enum(['summarize', 'embed', 'cluster']);
+export const rerunActionSchema = z.enum(["summarize", "embed", "cluster"]);
 export type RerunAction = z.infer<typeof rerunActionSchema>;
 
 export const actionRequestSchema = z.object({

@@ -1,33 +1,27 @@
 {
   "name": "@ghcrawl/api-contract",
   "version": "0.0.0",
-  "type": "module",
   "description": "ghcrawl shared transport contracts and validation schemas",
-  "author": "PwrDrvr LLC <harold@pwrdrvr.com>",
-  "license": "MIT",
+  "keywords": [
+    "api",
+    "contracts",
+    "ghcrawl",
+    "zod"
+  ],
   "homepage": "https://github.com/pwrdrvr/ghcrawl",
   "bugs": {
     "url": "https://github.com/pwrdrvr/ghcrawl/issues"
   },
+  "license": "MIT",
+  "author": "PwrDrvr LLC <harold@pwrdrvr.com>",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/pwrdrvr/ghcrawl.git"
   },
-  "keywords": [
-    "ghcrawl",
-    "api",
-    "contracts",
-    "zod"
-  ],
-  "engines": {
-    "node": ">=22"
-  },
   "files": [
     "dist"
   ],
-  "publishConfig": {
-    "access": "public"
-  },
+  "type": "module",
   "exports": {
     ".": {
       "development": "./src/index.ts",
@@ -35,13 +29,19 @@
       "default": "./dist/index.js"
     }
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsgo -p tsconfig.build.json",
     "prepack": "pnpm run build",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsgo -p tsconfig.json --noEmit",
     "test": "tsx --test src/*.test.ts src/**/*.test.ts"
   },
   "dependencies": {
-    "zod": "^4.3.6"
+    "zod": "^4.4.2"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

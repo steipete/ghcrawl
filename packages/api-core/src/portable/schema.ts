@@ -1,4 +1,4 @@
-import type { SqliteDatabase } from '../db/sqlite.js';
+import type { SqliteDatabase } from "../db/sqlite.js";
 
 export function createPortableSyncSchema(db: SqliteDatabase): void {
   db.exec(`

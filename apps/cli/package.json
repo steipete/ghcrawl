@@ -1,52 +1,52 @@
 {
   "name": "ghcrawl",
   "version": "0.0.0",
-  "type": "module",
   "description": "ghcrawl terminal UI and CLI runtime",
-  "author": "PwrDrvr LLC <harold@pwrdrvr.com>",
-  "license": "MIT",
+  "keywords": [
+    "cli",
+    "embeddings",
+    "ghcrawl",
+    "github",
+    "sqlite",
+    "tui"
+  ],
   "homepage": "https://github.com/pwrdrvr/ghcrawl",
   "bugs": {
     "url": "https://github.com/pwrdrvr/ghcrawl/issues"
   },
+  "license": "MIT",
+  "author": "PwrDrvr LLC <harold@pwrdrvr.com>",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/pwrdrvr/ghcrawl.git"
-  },
-  "keywords": [
-    "ghcrawl",
-    "github",
-    "cli",
-    "tui",
-    "sqlite",
-    "embeddings"
-  ],
-  "engines": {
-    "node": ">=22"
-  },
-  "files": [
-    "bin",
-    "dist"
-  ],
-  "publishConfig": {
-    "access": "public"
   },
   "bin": {
     "ghcrawl": "./bin/ghcrawl.js",
     "gitcrawl": "./bin/ghcrawl.js"
   },
+  "files": [
+    "bin",
+    "dist"
+  ],
+  "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsgo -p tsconfig.build.json",
     "cli": "node ./bin/ghcrawl.js",
     "prepack": "node ../../scripts/sync-package-readmes.mjs && pnpm --filter @ghcrawl/api-contract build && pnpm --filter @ghcrawl/api-core build && pnpm run build",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsgo -p tsconfig.json --noEmit",
     "test": "tsx --tsconfig tsconfig.runtime.json --test src/*.test.ts src/**/*.test.ts"
   },
   "dependencies": {
-    "@clack/prompts": "^1.2.0",
+    "@clack/prompts": "^1.3.0",
     "@ghcrawl/api-core": "workspace:*",
     "@types/blessed": "^0.1.27",
     "neo-blessed": "^0.2.0",
-    "tsx": "^4.20.5"
+    "tsx": "^4.21.0"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

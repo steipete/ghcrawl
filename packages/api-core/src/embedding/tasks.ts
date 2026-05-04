@@ -1,22 +1,22 @@
-import type { EmbeddingBasis } from '../config.js';
+import type { EmbeddingBasis } from "../config.js";
 import {
   ACTIVE_EMBED_DIMENSIONS,
   ACTIVE_EMBED_PIPELINE_VERSION,
   EMBED_ESTIMATED_CHARS_PER_TOKEN,
   EMBED_MAX_ITEM_TOKENS,
   EMBED_TRUNCATION_MARKER,
-} from '../service-constants.js';
-import type { ActiveVectorTask, EmbeddingSourceKind } from '../service-types.js';
-import { normalizeSummaryText, stableContentHash } from '../service-utils.js';
+} from "../service-constants.js";
+import type { ActiveVectorTask, EmbeddingSourceKind } from "../service-types.js";
+import { normalizeSummaryText, stableContentHash } from "../service-utils.js";
 
 export function activeVectorSourceKind(embeddingBasis: EmbeddingBasis): EmbeddingSourceKind {
-  if (embeddingBasis === 'title_summary') {
-    return 'dedupe_summary';
+  if (embeddingBasis === "title_summary") {
+    return "dedupe_summary";
   }
-  if (embeddingBasis === 'llm_key_summary') {
-    return 'llm_key_summary';
+  if (embeddingBasis === "llm_key_summary") {
+    return "llm_key_summary";
   }
-  return 'body';
+  return "body";
 }
 
 export function buildActiveVectorTask(params: {
@@ -30,26 +30,26 @@ export function buildActiveVectorTask(params: {
   embedModel: string;
 }): ActiveVectorTask | null {
   const sections = [`title: ${normalizeSummaryText(params.title)}`];
-  if (params.embeddingBasis === 'title_summary') {
-    const summary = normalizeSummaryText(params.dedupeSummary ?? '');
+  if (params.embeddingBasis === "title_summary") {
+    const summary = normalizeSummaryText(params.dedupeSummary ?? "");
     if (!summary) {
       return null;
     }
     sections.push(`summary: ${summary}`);
-  } else if (params.embeddingBasis === 'llm_key_summary') {
-    const keySummary = normalizeSummaryText(params.keySummary ?? '');
+  } else if (params.embeddingBasis === "llm_key_summary") {
+    const keySummary = normalizeSummaryText(params.keySummary ?? "");
     if (!keySummary) {
       return null;
     }
     sections.push(`key_summary:\n${keySummary}`);
   } else {
-    const body = normalizeSummaryText(params.body ?? '');
+    const body = normalizeSummaryText(params.body ?? "");
     if (body) {
       sections.push(`body: ${body}`);
     }
   }
 
-  const prepared = prepareEmbeddingText(sections.join('\n\n'), EMBED_MAX_ITEM_TOKENS);
+  const prepared = prepareEmbeddingText(sections.join("\n\n"), EMBED_MAX_ITEM_TOKENS);
   if (!prepared) {
     return null;
   }

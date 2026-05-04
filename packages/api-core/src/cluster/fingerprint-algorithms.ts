@@ -1,28 +1,31 @@
-import crypto from 'node:crypto';
+import crypto from "node:crypto";
 
 const MASK_64 = (1n << 64n) - 1n;
 
 function stableHash64(value: string, seed = 0): bigint {
-  const digest = crypto.createHash('sha256').update(`${seed}:${value}`).digest();
+  const digest = crypto.createHash("sha256").update(`${seed}:${value}`).digest();
   return digest.readBigUInt64BE(0);
 }
 
 export function buildShingles(tokens: string[], size = 3): string[] {
   const normalizedSize = Math.max(1, Math.trunc(size));
   if (tokens.length === 0) return [];
-  if (tokens.length < normalizedSize) return [tokens.join(' ')];
+  if (tokens.length < normalizedSize) return [tokens.join(" ")];
   const shingles: string[] = [];
   for (let index = 0; index <= tokens.length - normalizedSize; index += 1) {
-    shingles.push(tokens.slice(index, index + normalizedSize).join(' '));
+    shingles.push(tokens.slice(index, index + normalizedSize).join(" "));
   }
   return Array.from(new Set(shingles));
 }
 
-export function minhashSignature(tokens: string[], params: { permutations?: number; shingleSize?: number } = {}): string[] {
+export function minhashSignature(
+  tokens: string[],
+  params: { permutations?: number; shingleSize?: number } = {},
+): string[] {
   const permutations = Math.max(1, Math.trunc(params.permutations ?? 64));
   const shingles = buildShingles(tokens, params.shingleSize ?? 3);
   if (shingles.length === 0) {
-    return Array.from({ length: permutations }, () => '0');
+    return Array.from({ length: permutations }, () => "0");
   }
 
   const signature: string[] = [];
@@ -34,7 +37,7 @@ export function minhashSignature(tokens: string[], params: { permutations?: numb
         minValue = value;
       }
     }
-    signature.push((minValue ?? 0n).toString(16).padStart(16, '0'));
+    signature.push((minValue ?? 0n).toString(16).padStart(16, "0"));
   }
   return signature;
 }
@@ -63,7 +66,7 @@ export function simhash64(tokens: string[]): string {
       value |= 1n << BigInt(bit);
     }
   }
-  return value.toString(16).padStart(16, '0');
+  return value.toString(16).padStart(16, "0");
 }
 
 export function simhashSimilarity(leftHex: string, rightHex: string): number {
@@ -78,12 +81,15 @@ export function simhashSimilarity(leftHex: string, rightHex: string): number {
   return Math.max(0, 1 - distance / 64);
 }
 
-export function winnowingFingerprints(tokens: string[], params: { kgram?: number; window?: number } = {}): string[] {
+export function winnowingFingerprints(
+  tokens: string[],
+  params: { kgram?: number; window?: number } = {},
+): string[] {
   const kgram = Math.max(1, Math.trunc(params.kgram ?? 5));
   const window = Math.max(1, Math.trunc(params.window ?? 4));
   const grams = buildShingles(tokens, kgram);
   if (grams.length === 0) return [];
-  const hashes = grams.map((gram) => stableHash64(gram).toString(16).padStart(16, '0'));
+  const hashes = grams.map((gram) => stableHash64(gram).toString(16).padStart(16, "0"));
   if (hashes.length <= window) {
     return [hashes.reduce((min, value) => (value < min ? value : min), hashes[0])];
   }

@@ -1,10 +1,14 @@
-import type { HealthResponse } from '@ghcrawl/api-contract';
+import type { HealthResponse } from "@ghcrawl/api-contract";
 
-import type { GitcrawlConfig } from './config.js';
-import type { DoctorResult } from './service-types.js';
-import type { VectorStore } from './vector/store.js';
+import type { GitcrawlConfig } from "./config.js";
+import type { DoctorResult } from "./service-types.js";
+import type { VectorStore } from "./vector/store.js";
 
-export function buildDoctorResult(params: { health: HealthResponse; config: GitcrawlConfig; vectorStore: VectorStore }): DoctorResult {
+export function buildDoctorResult(params: {
+  health: HealthResponse;
+  config: GitcrawlConfig;
+  vectorStore: VectorStore;
+}): DoctorResult {
   const github = {
     configured: Boolean(params.config.githubToken),
     source: params.config.githubTokenSource,
@@ -18,10 +22,10 @@ export function buildDoctorResult(params: { health: HealthResponse; config: Gitc
     error: null as string | null,
   };
   if (!github.configured) {
-    github.error = 'Set GITHUB_TOKEN to crawl GitHub data.';
+    github.error = "Set GITHUB_TOKEN to crawl GitHub data.";
   }
   if (!openai.configured) {
-    openai.error = 'Set OPENAI_API_KEY only for summary or embedding commands.';
+    openai.error = "Set OPENAI_API_KEY only for summary or embedding commands.";
   }
 
   const vectorliteHealth = params.vectorStore.checkRuntime();
@@ -31,7 +35,7 @@ export function buildDoctorResult(params: { health: HealthResponse; config: Gitc
     github,
     openai,
     vectorlite: {
-      configured: params.config.vectorBackend === 'vectorlite',
+      configured: params.config.vectorBackend === "vectorlite",
       runtimeOk: vectorliteHealth.ok,
       error: vectorliteHealth.error,
     },

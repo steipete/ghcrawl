@@ -1,6 +1,10 @@
-import { compareDeterministicFingerprints, type DeterministicThreadFingerprint, type FingerprintPairBreakdown } from './thread-fingerprint.js';
+import {
+  compareDeterministicFingerprints,
+  type DeterministicThreadFingerprint,
+  type FingerprintPairBreakdown,
+} from "./thread-fingerprint.js";
 
-export type EvidenceTier = 'strong' | 'weak' | 'none';
+export type EvidenceTier = "strong" | "weak" | "none";
 
 export type OptionalEnrichmentEvidence = {
   embeddingSimilarity?: number | null;
@@ -34,8 +38,8 @@ export const DEFAULT_EVIDENCE_SCORE_CONFIG: EvidenceScoreConfig = {
   weightLineage: 0.18,
   weightStructure: 0.36,
   weightLinkedRefs: 0.14,
-  weightTitle: 0.10,
-  weightMinhash: 0.10,
+  weightTitle: 0.1,
+  weightMinhash: 0.1,
   weightSimhash: 0.08,
   weightWinnow: 0.04,
   weightEmbedding: 0.03,
@@ -67,15 +71,16 @@ export function scoreSimilarityEvidence(
     config.weightEmbedding * clamp01(embeddingSimilarity) +
     config.weightLlmKey * clamp01(llmKeySimilarity);
 
-  let tier: EvidenceTier = 'none';
+  let tier: EvidenceTier = "none";
   if (
     base.lineage >= 0.8 ||
     base.hunkOverlap >= 0.8 ||
-    (base.fileOverlap >= 0.8 && (base.titleOverlap >= 0.15 || base.tokenSimhash >= 0.5 || base.tokenMinhash >= 0.2)) ||
+    (base.fileOverlap >= 0.8 &&
+      (base.titleOverlap >= 0.15 || base.tokenSimhash >= 0.5 || base.tokenMinhash >= 0.2)) ||
     (base.linkedRefOverlap >= 0.8 && (base.structure >= 0.25 || base.titleOverlap >= 0.25)) ||
     score >= config.strongScore
   ) {
-    tier = 'strong';
+    tier = "strong";
   } else if (
     score >= config.minScore ||
     base.fileOverlap >= 0.4 ||
@@ -84,7 +89,7 @@ export function scoreSimilarityEvidence(
     (base.structure >= 0.5 && base.tokenSimhash >= 0.55) ||
     (base.linkedRefOverlap >= 0.5 && base.tokenMinhash >= 0.25)
   ) {
-    tier = 'weak';
+    tier = "weak";
   }
 
   return {

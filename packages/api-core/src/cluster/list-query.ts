@@ -1,7 +1,12 @@
-import { clustersResponseSchema, type ClusterDto, type ClustersResponse, type RepositoryDto } from '@ghcrawl/api-contract';
+import {
+  clustersResponseSchema,
+  type ClusterDto,
+  type ClustersResponse,
+  type RepositoryDto,
+} from "@ghcrawl/api-contract";
 
-import type { SqliteDatabase } from '../db/sqlite.js';
-import { isEffectivelyClosed } from '../service-utils.js';
+import type { SqliteDatabase } from "../db/sqlite.js";
+import { isEffectivelyClosed } from "../service-utils.js";
 
 export function listStoredClusters(
   db: SqliteDatabase,
@@ -9,7 +14,9 @@ export function listStoredClusters(
   params: { includeClosed?: boolean } = {},
 ): ClustersResponse {
   const latestRun = db
-    .prepare("select id from cluster_runs where repo_id = ? and status = 'completed' order by id desc limit 1")
+    .prepare(
+      "select id from cluster_runs where repo_id = ? and status = 'completed' order by id desc limit 1",
+    )
     .get(repository.id) as { id: number } | undefined;
 
   if (!latestRun) {
@@ -37,7 +44,7 @@ export function listStoredClusters(
     thread_id: number | null;
     score_to_representative: number | null;
     number: number | null;
-    kind: 'issue' | 'pull_request' | null;
+    kind: "issue" | "pull_request" | null;
     title: string | null;
     state: string | null;
     thread_closed_at_local: string | null;
@@ -60,7 +67,9 @@ export function listStoredClusters(
         threadId: row.thread_id,
         number: row.number,
         kind: row.kind,
-        isClosed: row.state !== null && isEffectivelyClosed({ state: row.state, closed_at_local: row.thread_closed_at_local }),
+        isClosed:
+          row.state !== null &&
+          isEffectivelyClosed({ state: row.state, closed_at_local: row.thread_closed_at_local }),
         title: row.title,
         scoreToRepresentative: row.score_to_representative,
       });
@@ -70,11 +79,15 @@ export function listStoredClusters(
 
   const clusterValues = Array.from(clusters.values()).map((cluster) => ({
     ...cluster,
-    isClosed: cluster.isClosed || (cluster.memberCount > 0 && cluster.members.every((member) => member.isClosed)),
+    isClosed:
+      cluster.isClosed ||
+      (cluster.memberCount > 0 && cluster.members.every((member) => member.isClosed)),
   }));
 
   return clustersResponseSchema.parse({
     repository,
-    clusters: clusterValues.filter((cluster) => (params.includeClosed ?? true ? true : !cluster.isClosed)),
+    clusters: clusterValues.filter((cluster) =>
+      (params.includeClosed ?? true) ? true : !cluster.isClosed,
+    ),
   });
 }

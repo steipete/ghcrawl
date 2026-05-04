@@ -1,9 +1,9 @@
-import test from 'node:test';
-import assert from 'node:assert/strict';
+import test from "node:test";
+import assert from "node:assert/strict";
 
-import { formatMemoryUsage } from './heap-diagnostics.js';
+import { formatMemoryUsage } from "./heap-diagnostics.js";
 
-test('formatMemoryUsage renders the major memory counters', () => {
+test("formatMemoryUsage renders the major memory counters", () => {
   const rendered = formatMemoryUsage({
     rss: 1024 * 1024 * 512,
     heapTotal: 1024 * 1024 * 256,

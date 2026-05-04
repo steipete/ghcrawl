@@ -1,7 +1,7 @@
-import { ACTIVE_EMBED_DIMENSIONS, EMBED_CONTEXT_RETRY_ATTEMPTS } from '../service-constants.js';
-import type { ActiveVectorTask } from '../service-types.js';
-import type { AiProvider } from '../openai/provider.js';
-import { isEmbeddingContextError, parseEmbeddingContextError, shrinkEmbeddingTask } from './retry.js';
+import { ACTIVE_EMBED_DIMENSIONS, EMBED_CONTEXT_RETRY_ATTEMPTS } from "../service-constants.js";
+import type { ActiveVectorTask } from "../service-types.js";
+import type { AiProvider } from "../openai/provider.js";
+import { parseEmbeddingContextError, shrinkEmbeddingTask } from "./retry.js";
 
 export async function embedBatchWithRecovery(params: {
   ai: AiProvider;
@@ -32,7 +32,9 @@ export async function embedBatchWithRecovery(params: {
       throw error;
     }
 
-    params.onProgress?.(`[embed] batch context error; isolating ${params.batch.length} item(s) to find oversized input(s)`);
+    params.onProgress?.(
+      `[embed] batch context error; isolating ${params.batch.length} item(s) to find oversized input(s)`,
+    );
 
     const recovered: Array<{ task: ActiveVectorTask; embedding: number[] }> = [];
     for (const task of params.batch) {
@@ -57,7 +59,11 @@ async function embedSingleTaskWithRecovery(params: {
   onProgress?: (message: string) => void;
 }): Promise<{ task: ActiveVectorTask; embedding: number[] }> {
   let current = params.initialContext
-    ? shrinkForRetry(params.task, { embedModel: params.embedModel, context: params.initialContext, onProgress: params.onProgress })
+    ? shrinkForRetry(params.task, {
+        embedModel: params.embedModel,
+        context: params.initialContext,
+        onProgress: params.onProgress,
+      })
     : params.task;
 
   for (let attempt = 0; attempt < EMBED_CONTEXT_RETRY_ATTEMPTS; attempt += 1) {
@@ -74,11 +80,17 @@ async function embedSingleTaskWithRecovery(params: {
         throw error;
       }
 
-      current = shrinkForRetry(current, { embedModel: params.embedModel, context, onProgress: params.onProgress });
+      current = shrinkForRetry(current, {
+        embedModel: params.embedModel,
+        context,
+        onProgress: params.onProgress,
+      });
     }
   }
 
-  throw new Error(`Unable to shrink embedding input for #${params.task.threadNumber}:${params.task.basis} below model limits`);
+  throw new Error(
+    `Unable to shrink embedding input for #${params.task.threadNumber}:${params.task.basis} below model limits`,
+  );
 }
 
 function shrinkForRetry(
@@ -89,9 +101,14 @@ function shrinkForRetry(
     onProgress?: (message: string) => void;
   },
 ): ActiveVectorTask {
-  const next = shrinkEmbeddingTask(task, { embedModel: params.embedModel, context: params.context });
+  const next = shrinkEmbeddingTask(task, {
+    embedModel: params.embedModel,
+    context: params.context,
+  });
   if (!next || next.text === task.text) {
-    throw new Error(`Unable to shrink embedding input for #${task.threadNumber}:${task.basis} below model limits`);
+    throw new Error(
+      `Unable to shrink embedding input for #${task.threadNumber}:${task.basis} below model limits`,
+    );
   }
   params.onProgress?.(
     `[embed] shortened #${task.threadNumber}:${task.basis} after context error est_tokens=${task.estimatedTokens}->${next.estimatedTokens}`,
