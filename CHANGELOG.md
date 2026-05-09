@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.8.0 - 2026-05-09
+
 ### Internal
 
 - Use Node's native `node:sqlite` runtime instead of `better-sqlite3`, removing the native npm dependency while preserving SQLite pragmas, transactions, extension loading, and Buffer row behavior.
