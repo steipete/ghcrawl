@@ -1,12 +1,10 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 
-import BetterSqlite3 from "better-sqlite3";
-
-import type { SqliteDatabase } from "../db/sqlite.js";
+import { SqliteDatabase } from "../db/sqlite.js";
 
 export function openReadonlyDb(dbPath: string): SqliteDatabase {
-  return new BetterSqlite3(dbPath, { readonly: true, fileMustExist: true });
+  return new SqliteDatabase(dbPath, { readonly: true, fileMustExist: true });
 }
 
 export function listTables(db: SqliteDatabase): Set<string> {

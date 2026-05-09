@@ -42,7 +42,6 @@
     "check": "pnpm lint && pnpm typecheck && pnpm test"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^25.6.0",
     "@typescript/native-preview": "7.0.0-dev.20260503.1",
     "oxfmt": "^0.47.0",
@@ -55,7 +54,6 @@
   "packageManager": "pnpm@10.29.3",
   "pnpm": {
     "onlyBuiltDependencies": [
-      "better-sqlite3",
       "esbuild"
     ]
   }

@@ -46,7 +46,6 @@
     "@octokit/plugin-retry": "^8.1.0",
     "@octokit/plugin-throttling": "^11.0.3",
     "@shutterstock/p-map-iterable": "^1.1.2",
-    "better-sqlite3": "^12.9.0",
     "dotenv": "^17.4.2",
     "octokit": "^5.0.5",
     "openai": "^6.35.0",
